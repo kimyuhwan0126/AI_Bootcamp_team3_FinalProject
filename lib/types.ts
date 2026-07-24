@@ -37,9 +37,10 @@ export interface PlaceCandidate {
   category: string;
   emoji: string;
   distanceM: number;
-  rating: number;
+  rating: number;           // 0 = 정보 없음(실 데이터엔 평점이 없어 미표시)
   reservable: boolean;
   depositPerHead: number;   // 유료서비스: 1인 선입금
+  url?: string;             // 카카오맵 상세 페이지 (실 데이터일 때만)
 }
 
 // AI 대화 메시지

@@ -13,6 +13,7 @@ import type {
   Participant,
   Transport,
   RegionCandidate,
+  PlaceCandidate,
   ChatMsg,
 } from "./types";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
@@ -237,12 +238,15 @@ export function appendSystemChat(code: string, text: string) {
 
 // ── 지역 확정 (AI 도구 또는 방장 수동) ──
 //  regionId: 기존 후보 id / 또는 커스텀 후보 객체(후보 밖 지역 합의 시)
-export function confirmRegion(input: {
-  code: string;
-  regionId?: string;
-  custom?: RegionCandidate;
-  by: "ai" | "leader";
-}): { ok: boolean; error?: string; regionName?: string } {
+export function confirmRegion(
+  input: {
+    code: string;
+    regionId?: string;
+    custom?: RegionCandidate;
+    by: "ai" | "leader";
+  },
+  opts?: { places?: PlaceCandidate[] } // 카카오 실검색 결과 주입(없으면 mock)
+): { ok: boolean; error?: string; regionName?: string } {
   const m = meetings.get(input.code.toUpperCase());
   if (!m) return { ok: false, error: "모임 없음" };
   if (m.stage !== "chat") return { ok: false, error: "대화 단계가 아니에요." };
@@ -260,7 +264,7 @@ export function confirmRegion(input: {
   if (!region) return { ok: false, error: "해당 지역 후보가 없어요." };
 
   m.winnerRegionId = region.id;
-  m.places = generatePlaces(region.name);
+  m.places = opts?.places?.length ? opts.places : generatePlaces(region.name);
   m.aiPhase = "place";
   pushMsg(
     m,

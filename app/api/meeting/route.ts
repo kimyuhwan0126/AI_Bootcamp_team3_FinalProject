@@ -12,7 +12,7 @@ import {
   reserve,
   getState,
 } from "@/lib/store";
-import { resolveGeocode, recommendRegions } from "@/lib/routing";
+import { resolveGeocode, recommendRegions, recommendPlaces } from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
 
 // 인메모리 스토어를 쓰므로 항상 동적 처리 (캐시 금지)
@@ -114,10 +114,20 @@ export async function POST(req: NextRequest) {
       if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
       const me = st.participants.find((p: any) => p.id === body.participantId);
       if (!me?.isLeader) return NextResponse.json({ error: "방장만 확정할 수 있어요." }, { status: 400 });
-      const r =
-        body.target === "place"
-          ? confirmPlace({ code: body.code, placeId: String(body.id), by: "leader" })
-          : confirmRegion({ code: body.code, regionId: String(body.id), by: "leader" });
+      let r;
+      if (body.target === "place") {
+        r = confirmPlace({ code: body.code, placeId: String(body.id), by: "leader" });
+      } else {
+        // 지역 수동 확정 시에도 실제 가게를 검색해 주입 (실패 시 mock 폴백)
+        const region = st.regions.find((x: any) => x.id === String(body.id));
+        const real = region
+          ? await recommendPlaces(region.name, { lat: region.lat, lng: region.lng })
+          : undefined;
+        r = confirmRegion(
+          { code: body.code, regionId: String(body.id), by: "leader" },
+          { places: real }
+        );
+      }
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true });
     }

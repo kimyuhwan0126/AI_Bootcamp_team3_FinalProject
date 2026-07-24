@@ -42,7 +42,7 @@ export async function searchPlacesKakao(
   keyword: string,
   center: Coord,
   size = 5
-): Promise<{ name: string; category: string; distanceM: number; lat: number; lng: number }[] | null> {
+): Promise<{ name: string; category: string; distanceM: number; lat: number; lng: number; url: string }[] | null> {
   if (!env.kakaoRest) return null;
   try {
     const url =
@@ -57,6 +57,7 @@ export async function searchPlacesKakao(
       distanceM: Number(doc.distance) || 0,
       lat: parseFloat(doc.y),
       lng: parseFloat(doc.x),
+      url: doc.place_url || "",
     }));
   } catch {
     return null;

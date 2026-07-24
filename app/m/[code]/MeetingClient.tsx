@@ -434,7 +434,7 @@ export default function MeetingClient({ code }: { code: string }) {
                       title="탭하면 지지 의견을 보내요"
                     >
                       <b>{p.emoji} {p.name}</b>
-                      <span>{p.category} · ⭐{p.rating}{p.reservable ? " · 예약가능" : ""}</span>
+                      <span>{p.category} · {p.distanceM}m{p.rating > 0 ? ` · ⭐${p.rating}` : ""}{p.reservable ? " · 예약가능" : ""}</span>
                     </button>
                   ))}
                 </div>
@@ -504,9 +504,23 @@ export default function MeetingClient({ code }: { code: string }) {
                 <>
                   <h2 className="sec" style={{ fontSize: 20 }}>{state.winnerPlace.emoji} {state.winnerPlace.name}</h2>
                   <p className="muted" style={{ fontSize: 12.5 }}>
-                    {state.winnerRegion?.name} · {state.winnerPlace.category} · ⭐ {state.winnerPlace.rating} · {state.winnerPlace.distanceM}m
+                    {state.winnerRegion?.name} · {state.winnerPlace.category}
+                    {state.winnerPlace.rating > 0 ? ` · ⭐ ${state.winnerPlace.rating}` : ""} · {state.winnerPlace.distanceM}m
                   </p>
-                  <span className="chip ac" style={{ fontSize: 10.5 }}>💬 AI 대화로 함께 정했어요</span>
+                  <div className="row" style={{ gap: 6, justifyContent: "center" }}>
+                    <span className="chip ac" style={{ fontSize: 10.5 }}>💬 AI 대화로 함께 정했어요</span>
+                    {state.winnerPlace.url && (
+                      <a
+                        className="chip line"
+                        style={{ fontSize: 10.5, textDecoration: "none" }}
+                        href={state.winnerPlace.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        🗺️ 카카오맵에서 보기
+                      </a>
+                    )}
+                  </div>
                 </>
               ) : (
                 <p className="muted">확정된 장소가 없어요.</p>
@@ -641,7 +655,7 @@ export default function MeetingClient({ code }: { code: string }) {
                 >
                   {state.aiPhase === "region"
                     ? `${c.name} — 최대 ${c.maxMin}분 · 편차 ${c.devMin}분`
-                    : `${c.emoji} ${c.name} (${c.category} · ⭐${c.rating})`}
+                    : `${c.emoji} ${c.name} (${c.category}${c.rating > 0 ? ` · ⭐${c.rating}` : ""})`}
                 </button>
               ))}
               <button className="btn ghost" onClick={() => setShowManual(false)}>취소</button>

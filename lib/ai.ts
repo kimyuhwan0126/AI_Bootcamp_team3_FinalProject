@@ -15,7 +15,7 @@ import {
   confirmRegion,
   confirmPlace,
 } from "./store";
-import { resolveGeocode, travelMinutes } from "./routing";
+import { resolveGeocode, travelMinutes, recommendPlaces } from "./routing";
 
 // ── 설정 (.env.local에서 오버라이드 가능) ──
 const PRIMARY_URL = process.env.OLLAMA_PRIMARY_URL || "http://10.20.2.164:11434/v1";
@@ -156,15 +156,23 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
   try {
     switch (name) {
       case "confirm_region": {
+        // 확정 전에 실제 가게를 검색해 함께 주입 (실패 시 store가 mock 폴백)
+        const target = m.regions.find((r) => r.id === String(args.region_id));
+        const real = target
+          ? await recommendPlaces(target.name, { lat: target.lat, lng: target.lng })
+          : undefined;
         // 단계 가드: 수동 확정과 경합해도 stale 확정은 거부됨
-        const r = confirmRegion({ code, regionId: String(args.region_id), by: "ai" });
+        const r = confirmRegion(
+          { code, regionId: String(args.region_id), by: "ai" },
+          { places: real }
+        );
         if (!r.ok) return JSON.stringify({ error: r.error });
         const places = getMeeting(code)?.places ?? [];
         return JSON.stringify({
           confirmed: r.regionName,
-          note: "지역 확정 완료. 이제 아래 장소 후보로 장소 논의를 시작하라.",
+          note: "지역 확정 완료. 아래는 카카오 검색 기반 실제 가게 후보다. 이걸로 장소 논의를 시작하라.",
           place_candidates: places.map((p) => ({
-            id: p.id, name: p.name, category: p.category, rating: p.rating,
+            id: p.id, name: p.name, category: p.category,
             distance_m: p.distanceM, reservable: p.reservable, deposit_per_head: p.depositPerHead,
           })),
         });
@@ -220,7 +228,7 @@ function buildSystemPrompt(m: Meeting, force: boolean): string {
     .map((r) => `- [${r.id}] ${r.name}: 최대 ${r.maxMin}분, 편차 ${r.devMin}분 (${r.perParticipant.map((x) => `${x.name} ${x.min}분`).join(", ")})`)
     .join("\n");
   const places = m.places
-    .map((p) => `- [${p.id}] ${p.emoji} ${p.name} (${p.category}, ⭐${p.rating}, ${p.distanceM}m${p.reservable ? ", 예약가능" : ""})`)
+    .map((p) => `- [${p.id}] ${p.emoji} ${p.name} (${p.category}${p.rating > 0 ? `, ⭐${p.rating}` : ""}, ${p.distanceM}m${p.reservable ? ", 예약가능" : ""})`)
     .join("\n");
 
   let phaseGuide = "";
