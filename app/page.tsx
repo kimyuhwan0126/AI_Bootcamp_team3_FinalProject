@@ -29,7 +29,10 @@ export default function Home() {
   }, []);
 
   // 외부 API 연결 상태
-  const [status, setStatus] = useState<{ kakao: boolean; odsay: boolean; tmap: boolean } | null>(null);
+  const [status, setStatus] = useState<{
+    kakao: boolean; odsay: boolean; tmap: boolean;
+    ai?: { ok: boolean; active: string; model: string; url: string };
+  } | null>(null);
   useEffect(() => {
     fetch("/api/status").then((r) => r.json()).then(setStatus).catch(() => {});
   }, [kakaoName]);
@@ -213,6 +216,16 @@ export default function Home() {
                   {on ? "● 연결됨" : "○ mock"} · {label}
                 </span>
               ))}
+              {status.ai && (
+                <span
+                  className={"chip " + (status.ai.ok ? "ok" : "warn")}
+                  title={status.ai.url}
+                >
+                  {status.ai.ok
+                    ? `● AI 챗봇 · Ollama ${status.ai.active === "primary" ? "원격" : "로컬"} · ${status.ai.model}`
+                    : "✕ AI 챗봇 · Ollama 연결 안 됨 (방장 직접 확정만 가능)"}
+                </span>
+              )}
             </div>
             <p className="hint" style={{ marginTop: 8, textAlign: "left" }}>
               키 미설정 항목은 자동으로 mock 데이터로 동작해요. 키 입력 후 서버 재시작 시 연결됩니다.

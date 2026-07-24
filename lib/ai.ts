@@ -64,16 +64,21 @@ async function chatCompletion(
 
 // primary 실패 시 fallback으로 전환해 재시도
 async function llm(body: any): Promise<any> {
+  const t0 = Date.now();
   if (S.active === "primary") {
     try {
-      // 첫 판단은 짧은 타임아웃(접속 확인), 성공 이력 있으면 길게
-      return await chatCompletion(PRIMARY_URL, PRIMARY_MODEL, body, GEN_TIMEOUT_MS);
+      const r = await chatCompletion(PRIMARY_URL, PRIMARY_MODEL, body, GEN_TIMEOUT_MS);
+      // 검증용 로그: 어떤 Ollama/모델이 몇 초 만에 응답했는지 매번 기록
+      console.log(`[ai] ✔ ${PRIMARY_MODEL} @ ${PRIMARY_URL} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+      return r;
     } catch (e: any) {
       console.warn(`[ai] primary(${PRIMARY_MODEL}) 실패 → fallback(${FALLBACK_MODEL}) 전환:`, e?.message);
       S.active = "fallback";
     }
   }
-  return await chatCompletion(FALLBACK_URL, FALLBACK_MODEL, body, GEN_TIMEOUT_MS);
+  const r = await chatCompletion(FALLBACK_URL, FALLBACK_MODEL, body, GEN_TIMEOUT_MS);
+  console.log(`[ai] ✔ ${FALLBACK_MODEL} @ ${FALLBACK_URL} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+  return r;
 }
 
 // 서버 살아있는지 빠른 확인 (첫 접속 시 6초 안에 폴백 결정)
@@ -350,3 +355,33 @@ export const aiInfo = () => ({
   primary: `${PRIMARY_MODEL} @ ${PRIMARY_URL}`,
   fallback: `${FALLBACK_MODEL} @ ${FALLBACK_URL}`,
 });
+
+// ── 상태 확인용: 두 Ollama 서버에 실제로 핑을 쏴서 어느 쪽이 살아있는지 반환 ──
+async function ping(base: string): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(base.replace(/\/v1$/, "") + "/api/version", { signal: ctrl.signal });
+    clearTimeout(t);
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function probeAi(): Promise<{
+  ok: boolean;
+  active: "primary" | "fallback" | "none";
+  model: string;
+  url: string;
+}> {
+  if (await ping(PRIMARY_URL)) {
+    S.active = "primary"; // 원격이 복구됐으면 primary로 복귀
+    return { ok: true, active: "primary", model: PRIMARY_MODEL, url: PRIMARY_URL };
+  }
+  if (await ping(FALLBACK_URL)) {
+    S.active = "fallback";
+    return { ok: true, active: "fallback", model: FALLBACK_MODEL, url: FALLBACK_URL };
+  }
+  return { ok: false, active: "none", model: "-", url: "-" };
+}
