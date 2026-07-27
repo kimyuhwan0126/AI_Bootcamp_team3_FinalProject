@@ -6,6 +6,8 @@
 //  · 모임별 락 + pending 큐: 동시 발화에도 판단 유실 없음
 //  · AI 완전 장애 시에도 앱은 동작 (방장 수동 확정이 안전망)
 // ─────────────────────────────────────────────────────────────
+import fs from "node:fs";
+import path from "node:path";
 import type { Meeting, RegionCandidate } from "./types";
 import {
   getMeeting,
@@ -38,6 +40,32 @@ const g = globalThis as unknown as {
 };
 const S = g.__moimerAi ?? (g.__moimerAi = { active: "primary", locks: new Map(), pending: new Map() });
 
+// ═════════ 추적(trace): Ollama가 뭘 하는지 전부 기록 ═════════
+// logs/ai-trace.jsonl 에 한 줄당 하나의 이벤트를 append.
+// 조회: GET /api/ai-trace (개발용) 또는 파일을 직접 열기.
+const TRACE_FILE = path.join(process.cwd(), "logs", "ai-trace.jsonl");
+
+export function traceEvent(entry: Record<string, unknown>) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), ...entry });
+  try {
+    fs.mkdirSync(path.dirname(TRACE_FILE), { recursive: true });
+    fs.appendFileSync(TRACE_FILE, line + "\n", "utf8");
+  } catch {
+    /* 추적 실패가 챗봇을 막으면 안 됨 */
+  }
+}
+
+export function readTrace(limit = 50): Record<string, unknown>[] {
+  try {
+    const lines = fs.readFileSync(TRACE_FILE, "utf8").trim().split("\n");
+    return lines.slice(-limit).map((l) => {
+      try { return JSON.parse(l); } catch { return { raw: l }; }
+    });
+  } catch {
+    return [];
+  }
+}
+
 // ═════════ LLM 호출 (fetch 기반, 의존성 없음) ═════════
 
 async function chatCompletion(
@@ -62,23 +90,44 @@ async function chatCompletion(
   }
 }
 
-// primary 실패 시 fallback으로 전환해 재시도
-async function llm(body: any): Promise<any> {
+// primary 실패 시 fallback으로 전환해 재시도. ctx는 추적용 메타데이터.
+async function llm(body: any, ctx?: Record<string, unknown>): Promise<any> {
   const t0 = Date.now();
+  const finish = (r: any, model: string, url: string) => {
+    const ms = Date.now() - t0;
+    const msg = r?.choices?.[0]?.message;
+    console.log(`[ai] ✔ ${model} @ ${url} (${(ms / 1000).toFixed(1)}s)`);
+    traceEvent({
+      type: "llm_call",
+      ...ctx,
+      model,
+      url,
+      ms,
+      // Ollama가 실제로 얼마나 일했는지: 입력/출력 토큰 수
+      usage: r?.usage
+        ? { prompt: r.usage.prompt_tokens, completion: r.usage.completion_tokens }
+        : undefined,
+      reply_preview: (msg?.content || "").slice(0, 150) || undefined,
+      tool_calls: msg?.tool_calls?.map((c: any) => ({
+        name: c.function?.name,
+        args: (c.function?.arguments || "").slice(0, 200),
+      })),
+    });
+    return r;
+  };
+
   if (S.active === "primary") {
     try {
       const r = await chatCompletion(PRIMARY_URL, PRIMARY_MODEL, body, GEN_TIMEOUT_MS);
-      // 검증용 로그: 어떤 Ollama/모델이 몇 초 만에 응답했는지 매번 기록
-      console.log(`[ai] ✔ ${PRIMARY_MODEL} @ ${PRIMARY_URL} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-      return r;
+      return finish(r, PRIMARY_MODEL, PRIMARY_URL);
     } catch (e: any) {
       console.warn(`[ai] primary(${PRIMARY_MODEL}) 실패 → fallback(${FALLBACK_MODEL}) 전환:`, e?.message);
+      traceEvent({ type: "failover", ...ctx, from: PRIMARY_URL, to: FALLBACK_URL, reason: String(e?.message).slice(0, 200) });
       S.active = "fallback";
     }
   }
   const r = await chatCompletion(FALLBACK_URL, FALLBACK_MODEL, body, GEN_TIMEOUT_MS);
-  console.log(`[ai] ✔ ${FALLBACK_MODEL} @ ${FALLBACK_URL} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-  return r;
+  return finish(r, FALLBACK_MODEL, FALLBACK_URL);
 }
 
 // 서버 살아있는지 빠른 확인 (첫 접속 시 6초 안에 폴백 결정)
@@ -298,9 +347,16 @@ async function decide(code: string, force: boolean): Promise<void> {
   await probePrimary();
 
   const messages: any[] = buildMessages(m, force);
+  const lastUser = [...m.chat].reverse().find((c) => c.role === "user");
+  const baseCtx = {
+    code,
+    phase: m.aiPhase,
+    force: force || undefined,
+    trigger: lastUser ? `${lastUser.name}: ${lastUser.text.slice(0, 60)}` : undefined,
+  };
 
   for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
-    const resp = await llm({ messages, tools: TOOL_SPECS, temperature: 0.4 });
+    const resp = await llm({ messages, tools: TOOL_SPECS, temperature: 0.4 }, { ...baseCtx, round: i + 1 });
     const msg = resp?.choices?.[0]?.message;
     if (!msg) return;
 
@@ -308,13 +364,24 @@ async function decide(code: string, force: boolean): Promise<void> {
       messages.push(msg);
       for (const call of msg.tool_calls) {
         const result = await runTool(code, call.function?.name, call.function?.arguments);
+        traceEvent({
+          type: "tool_exec",
+          ...baseCtx,
+          round: i + 1,
+          tool: call.function?.name,
+          args: (call.function?.arguments || "").slice(0, 200),
+          result_preview: result.slice(0, 200),
+        });
         messages.push({ role: "tool", tool_call_id: call.id, content: result });
       }
       continue; // 도구 결과 반영해 재판단 (확정 후 안내 멘트 생성 등)
     }
 
     const text = (msg.content || "").trim();
-    if (!text || text.includes(SILENT)) return; // 침묵
+    if (!text || text.includes(SILENT)) {
+      traceEvent({ type: "silent", ...baseCtx, round: i + 1 });
+      return; // 침묵
+    }
     appendAiChat(code, text);
     return;
   }
