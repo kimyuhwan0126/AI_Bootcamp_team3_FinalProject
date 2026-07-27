@@ -15,6 +15,7 @@ import type {
   RegionCandidate,
   PlaceCandidate,
   ChatMsg,
+  MeetingPrefs,
 } from "./types";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
 
@@ -79,6 +80,7 @@ export function createMeeting(input: {
     regions: [],
     places: [],
     chat: [],
+    prefs: {},
     winnerRegionId: null,
     winnerPlaceId: null,
     reservation: null,
@@ -204,7 +206,8 @@ export function openChat(
     "AI",
     `안녕하세요! 출발지 기준으로 공평한 중간지역을 뽑아봤어요.\n${lines.join("\n")}\n` +
       `데이터상으론 ${top.name}이(가) 가장 균형적이에요. 어디가 끌리세요? ` +
-      `다른 동네가 좋으면 이름만 말해주세요 — 이동시간을 바로 계산해 드릴게요 🙂`
+      `다른 동네가 좋으면 이름만 말해주세요 — 이동시간을 바로 계산해 드릴게요 🙂\n` +
+      `언제 만날지, 어떤 분위기(조용한/신나는)나 예산 생각도 편하게 말해주시면 반영할게요!`
   );
   return { ok: true };
 }
@@ -224,6 +227,21 @@ export function appendUserChat(input: {
   if (!text) return { ok: false, error: "빈 메시지" };
   pushMsg(m, "user", p.name, text);
   return { ok: true };
+}
+
+// AI가 대화에서 수집한 선호·일정 병합 (lib/ai.ts의 save_preferences 도구가 호출)
+export function updatePrefs(code: string, partial: MeetingPrefs): { ok: boolean; dateChanged: boolean; prefs?: MeetingPrefs } {
+  const m = meetings.get(code.toUpperCase());
+  if (!m) return { ok: false, dateChanged: false };
+  const before = `${m.prefs.dateText ?? ""}|${m.prefs.timeText ?? ""}`;
+  for (const [k, v] of Object.entries(partial)) {
+    if (typeof v === "string" && v.trim()) (m.prefs as any)[k] = v.trim().slice(0, 60);
+  }
+  const dateChanged = before !== `${m.prefs.dateText ?? ""}|${m.prefs.timeText ?? ""}`;
+  if (dateChanged && (m.prefs.dateText || m.prefs.timeText)) {
+    pushMsg(m, "system", "", `📅 일정 기록: ${[m.prefs.dateText, m.prefs.timeText].filter(Boolean).join(" ")}`);
+  }
+  return { ok: true, dateChanged, prefs: m.prefs };
 }
 
 // AI/시스템 메시지 추가 (lib/ai.ts에서 사용)
@@ -383,6 +401,7 @@ export function getState(code: string): MeetingState | null {
     regions: m.regions,
     places: m.places,
     chat: m.chat.slice(-80),
+    prefs: m.prefs,
     winnerRegion: m.regions.find((r) => r.id === m.winnerRegionId) ?? null,
     winnerPlace: m.places.find((p) => p.id === m.winnerPlaceId) ?? null,
     reservation: m.reservation,

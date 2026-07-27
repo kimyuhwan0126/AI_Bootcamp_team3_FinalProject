@@ -43,6 +43,19 @@ export interface PlaceCandidate {
   url?: string;             // 카카오맵 상세 페이지 (실 데이터일 때만)
 }
 
+// AI가 대화에서 수집하는 모임 선호·일정 (폼 없이 채워짐)
+export interface MeetingPrefs {
+  purpose?: string;   // 모임 목적 (회식/스터디/데이트…)
+  mood?: string;      // 분위기 (조용한/왁자지껄…)
+  budget?: string;    // 1인 예산 (예: "2만원대")
+  dietary?: string;   // 알러지·채식 등 (예: "새우 알러지 1명")
+  alcohol?: string;   // 음주 여부 (예: "가볍게 한잔")
+  dateText?: string;  // 날짜 원문 (예: "다음주 토요일")
+  dateIso?: string;   // 정규화 날짜 YYYY-MM-DD
+  timeText?: string;  // 시간 원문 (예: "저녁 7시")
+  timeHhmm?: string;  // 정규화 시간 HH:MM
+}
+
 // AI 대화 메시지
 export interface ChatMsg {
   id: string;
@@ -73,6 +86,7 @@ export interface Meeting {
   regions: RegionCandidate[];
   places: PlaceCandidate[];
   chat: ChatMsg[];
+  prefs: MeetingPrefs;
   winnerRegionId: string | null;
   winnerPlaceId: string | null;
   reservation: Reservation | null;
@@ -92,6 +106,7 @@ export interface MeetingState {
   regions: RegionCandidate[];
   places: PlaceCandidate[];
   chat: ChatMsg[];               // 최근 대화
+  prefs: MeetingPrefs;           // AI가 대화에서 수집한 선호·일정
   winnerRegion: RegionCandidate | null;
   winnerPlace: PlaceCandidate | null;
   reservation: Reservation | null;

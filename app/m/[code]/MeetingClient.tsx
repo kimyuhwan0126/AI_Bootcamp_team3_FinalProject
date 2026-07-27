@@ -455,6 +455,10 @@ export default function MeetingClient({ code }: { code: string }) {
                 )}
               </div>
 
+              {/* AI가 대화에서 수집한 모임 정보 (폼 없이 채워짐) */}
+              <PrefChips prefs={state.prefs} />
+
+
               <div className="chatlog">
                 {state.chat.map((c: ChatMsg) => {
                   const cls =
@@ -507,6 +511,11 @@ export default function MeetingClient({ code }: { code: string }) {
                     {state.winnerRegion?.name} · {state.winnerPlace.category}
                     {state.winnerPlace.rating > 0 ? ` · ⭐ ${state.winnerPlace.rating}` : ""} · {state.winnerPlace.distanceM}m
                   </p>
+                  {(state.prefs.dateText || state.prefs.timeText) && (
+                    <span className="chip ok" style={{ fontSize: 11 }}>
+                      📅 {[state.prefs.dateText, state.prefs.timeText].filter(Boolean).join(" ")}
+                    </span>
+                  )}
                   <div className="row" style={{ gap: 6, justifyContent: "center" }}>
                     <span className="chip ac" style={{ fontSize: 10.5 }}>💬 AI 대화로 함께 정했어요</span>
                     {state.winnerPlace.url && (
@@ -737,9 +746,46 @@ export default function MeetingClient({ code }: { code: string }) {
   );
 }
 
-// ── .ics 캘린더 파일 생성 ──
+// ── AI가 수집한 모임 정보 칩 ──
+function PrefChips({ prefs }: { prefs: MeetingState["prefs"] }) {
+  const items: [string, string | undefined][] = [
+    ["🎯", prefs.purpose],
+    ["✨", prefs.mood],
+    ["📅", [prefs.dateText, prefs.timeText].filter(Boolean).join(" ") || undefined],
+    ["💰", prefs.budget],
+    ["🍺", prefs.alcohol],
+    ["🥗", prefs.dietary],
+  ];
+  const filled = items.filter(([, v]) => v);
+  if (filled.length === 0) return null;
+  return (
+    <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+      {filled.map(([icon, v]) => (
+        <span key={icon} className="chip line" style={{ fontSize: 10.5 }}>
+          {icon} {v}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── .ics 캘린더 파일 생성 (AI가 대화에서 수집한 날짜·시간 사용) ──
 function downloadIcs(state: MeetingState) {
-  const dt = "20260813T190000";
+  // AI 수집 일정 → DTSTART. 없으면 다음 주 토요일 19시 기본값.
+  let start: Date;
+  if (state.prefs.dateIso) {
+    const [h, m] = (state.prefs.timeHhmm || "19:00").split(":").map(Number);
+    start = new Date(`${state.prefs.dateIso}T00:00:00`);
+    start.setHours(h || 19, m || 0, 0, 0);
+  } else {
+    start = new Date();
+    start.setDate(start.getDate() + ((6 - start.getDay() + 7) % 7 || 7)); // 다음 토요일
+    start.setHours(19, 0, 0, 0);
+  }
+  const end = new Date(start.getTime() + 2 * 3600 * 1000);
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}` +
+    `T${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
   const place = state.winnerPlace ? `${state.winnerPlace.name} (${state.winnerRegion?.name})` : state.name;
   const ics = [
     "BEGIN:VCALENDAR",
@@ -747,8 +793,8 @@ function downloadIcs(state: MeetingState) {
     "PRODID:-//Moimer//KO",
     "BEGIN:VEVENT",
     `UID:${state.code}@moimer`,
-    `DTSTART:${dt}`,
-    `DTEND:20260813T210000`,
+    `DTSTART:${fmt(start)}`,
+    `DTEND:${fmt(end)}`,
     `SUMMARY:${state.name}`,
     `LOCATION:${place}`,
     `DESCRIPTION:모이머 AI 대화로 정한 모임 · 참여자 ${state.totalParticipants}명`,

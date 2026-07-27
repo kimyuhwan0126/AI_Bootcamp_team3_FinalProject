@@ -16,6 +16,7 @@ import {
   appendSystemChat,
   confirmRegion,
   confirmPlace,
+  updatePrefs,
 } from "./store";
 import { resolveGeocode, travelMinutes, recommendPlaces, emojiFor } from "./routing";
 import { searchPlacesKakao } from "./kakao";
@@ -197,6 +198,28 @@ const TOOL_SPECS = [
   {
     type: "function",
     function: {
+      name: "save_preferences",
+      description:
+        "대화에서 모임의 목적/분위기/예산/알러지·채식/음주/날짜/시간 정보를 알게 되면 즉시 기록한다. 알게 된 필드만 부분 업데이트하면 된다. 날짜·시간은 원문과 함께 가능하면 정규화값(date_iso, time_hhmm)도 채워라.",
+      parameters: {
+        type: "object",
+        properties: {
+          purpose: { type: "string", description: "모임 목적 (예: 회식, 스터디, 친목)" },
+          mood: { type: "string", description: "원하는 분위기 (예: 조용한, 왁자지껄)" },
+          budget: { type: "string", description: "1인 예산 (예: 2만원대)" },
+          dietary: { type: "string", description: "알러지·채식 등 (예: 새우 알러지 1명)" },
+          alcohol: { type: "string", description: "음주 여부 (예: 가볍게 한잔, 안 마심)" },
+          date_text: { type: "string", description: "합의된 날짜 원문 (예: 다음주 토요일)" },
+          date_iso: { type: "string", description: "정규화 날짜 YYYY-MM-DD" },
+          time_text: { type: "string", description: "합의된 시간 원문 (예: 저녁 7시)" },
+          time_hhmm: { type: "string", description: "정규화 시간 HH:MM (24시간제)" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_more_places",
       description:
         "장소 논의 단계에서, 현재 후보에 없는 종류의 가게를 참가자가 원할 때(예: 고기집, 파스타, 노래방) 확정된 지역 근처에서 실제 가게를 더 검색해 후보에 추가한다. 결과를 대화로 제안하라.",
@@ -253,6 +276,25 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
         const r = confirmPlace({ code, placeId: String(args.place_id), by: "ai" });
         if (!r.ok) return JSON.stringify({ error: r.error });
         return JSON.stringify({ confirmed: r.placeName, note: "최종 확정 완료. 축하 인사와 함께 요약해라." });
+      }
+      case "save_preferences": {
+        const r = updatePrefs(code, {
+          purpose: args.purpose,
+          mood: args.mood,
+          budget: args.budget,
+          dietary: args.dietary,
+          alcohol: args.alcohol,
+          dateText: args.date_text,
+          dateIso: args.date_iso,
+          timeText: args.time_text,
+          timeHhmm: args.time_hhmm,
+        });
+        if (!r.ok) return JSON.stringify({ error: "모임 없음" });
+        return JSON.stringify({
+          saved: true,
+          prefs: r.prefs,
+          note: "기록 완료. 굳이 언급할 필요 없으면 대화를 자연스럽게 이어가라.",
+        });
       }
       case "search_more_places": {
         const kw = String(args.keyword || "").trim();
@@ -341,6 +383,21 @@ function buildSystemPrompt(m: Meeting, force: boolean): string {
   const people = m.participants
     .map((p) => `- ${p.name}${p.isLeader ? "(방장)" : ""}: ${p.origin ?? "출발지 미등록"} · ${p.transport === "car" ? "자차" : "대중교통"}`)
     .join("\n");
+
+  // 수집된 선호·일정 현황 (모르는 항목은 대화 중 자연스럽게 물어볼 대상)
+  const P = m.prefs;
+  const prefLine = (label: string, v?: string) => `- ${label}: ${v ?? "아직 모름"}`;
+  const prefsBlock = [
+    prefLine("목적", P.purpose),
+    prefLine("분위기", P.mood),
+    prefLine("1인 예산", P.budget),
+    prefLine("알러지·채식", P.dietary),
+    prefLine("음주", P.alcohol),
+    prefLine("날짜", P.dateText ? `${P.dateText}${P.dateIso ? ` (${P.dateIso})` : ""}` : undefined),
+    prefLine("시간", P.timeText ? `${P.timeText}${P.timeHhmm ? ` (${P.timeHhmm})` : ""}` : undefined),
+  ].join("\n");
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")} (${"일월화수목금토"[today.getDay()]})`;
   const regions = m.regions
     .map((r) => `- [${r.id}] ${r.name}: 최대 ${r.maxMin}분, 편차 ${r.devMin}분 (${r.perParticipant.map((x) => `${x.name} ${x.min}분`).join(", ")})`)
     .join("\n");
@@ -364,6 +421,8 @@ ${places}
 
 - 의견이 모이면 confirm_place로 확정하라.
 - 후보에 없는 종류를 원하면(예: "고기 먹고 싶다") search_more_places로 실제 가게를 더 찾아 제안하라.
+- 검색 키워드에 수집된 선호를 반영하라: 음주 원함→술집/이자카야, 조용한 분위기→조용한 카페, 예산 낮음→가성비, 채식→채식 식당 등.
+- 알러지·채식 정보가 있으면 확정 전에 반드시 고려해 언급하라.
 - 취향이 갈리면 카테고리·거리·예약가능 여부를 근거로 절충을 유도하라.`;
   }
 
@@ -373,9 +432,18 @@ ${places}
 
   return `너는 모임앱 "모이머"의 채팅방에 상주하는 모임 도우미 AI다.
 목적: 참가자들이 부담 없이 수다 떨듯 대화하면 네가 의견을 모아 중간지역과 장소를 확정하는 것. (투표를 대체한다)
+오늘 날짜: ${todayStr}
 
 모임: ${m.name} · 참가자 ${m.participants.length}명
 ${people}
+
+[수집된 모임 정보]
+${prefsBlock}
+
+[정보 수집 규칙]
+- 대화에서 목적/분위기/예산/알러지·채식/음주/날짜/시간을 알게 되면 즉시 save_preferences로 기록하라. 기록했다고 티낼 필요는 없다.
+- 날짜·시간이 합의되면 오늘 날짜 기준으로 date_iso(YYYY-MM-DD)와 time_hhmm(HH:MM)을 정규화해 함께 저장하라 (예: "다음주 토요일 저녁 7시" → 계산된 날짜 + 19:00).
+- "아직 모름" 항목은 대화가 자연스러운 순간에 **한 번에 하나씩만** 물어라. 심문하듯 몰아서 묻지 마라. 장소 결정에 지장 없으면 안 물어도 된다.
 
 ${phaseGuide}
 
