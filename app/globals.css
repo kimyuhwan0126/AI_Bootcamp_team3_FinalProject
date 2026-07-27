@@ -177,6 +177,13 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 .aithink .dots i:nth-child(2){animation-delay:.2s}
 .aithink .dots i:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+/* 경로 상세 시트 (시안1·2) */
+.ropt{border:2px solid var(--hair);border-radius:13px;padding:11px;background:var(--panel)}
+.ropt.sel{border-color:var(--ac);background:var(--ac-soft)}
+.travelrow{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;
+  padding:6px 4px;border-radius:10px;cursor:pointer;text-align:left;font-family:inherit;color:var(--ink)}
+.travelrow:hover{background:var(--panel2)}
+
 .candmini{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
 .candmini .cc{flex:0 0 auto;min-width:120px;border:1px solid var(--hair);background:var(--panel2);border-radius:12px;padding:8px 10px;cursor:pointer;text-align:left}
 .candmini .cc.win{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 8%,var(--panel2))}

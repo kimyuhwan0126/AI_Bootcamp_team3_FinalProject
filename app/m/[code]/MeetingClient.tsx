@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { MeetingState, ChatMsg } from "@/lib/types";
+import type { MeetingState, ChatMsg, RegionCandidate } from "@/lib/types";
 import { getIdentities, getActive, setActive, addIdentity, type Identity } from "@/lib/identity";
 import KakaoMap from "@/app/components/KakaoMap";
+import RouteSheet from "@/app/components/RouteSheet";
 
 const DEV = process.env.NODE_ENV !== "production";
 const DBG_STATIONS = ["강남역", "홍대입구", "잠실", "사당", "건대입구", "수원역", "노원", "부천"];
@@ -29,6 +30,7 @@ export default function MeetingClient({ code }: { code: string }) {
   const [showManual, setShowManual] = useState(false);
   const [dbg, setDbg] = useState(false);
   const [mapFallback, setMapFallback] = useState(false); // 카카오맵 로드 실패 시 스키매틱으로
+  const [routeFor, setRouteFor] = useState<string | null>(null); // 경로 상세 시트 대상 참가자
 
   // origin form
   const [origin, setOrigin] = useState("");
@@ -190,6 +192,8 @@ export default function MeetingClient({ code }: { code: string }) {
   const isLeader = !!meRow?.isLeader;
   const stage = state.stage;
   const located = state.participants.filter((p) => p.lat != null);
+  // 경로 상세의 목적지: 확정 지역 우선, 없으면 1순위 후보
+  const destRegion: RegionCandidate | null = state.winnerRegion ?? state.regions[0] ?? null;
   const centroid =
     located.length > 0
       ? {
@@ -444,6 +448,9 @@ export default function MeetingClient({ code }: { code: string }) {
               </p>
             </div>
 
+            {/* 참가자별 이동시간 + 경로 상세 (시안1·2) */}
+            {destRegion && <TravelTimes state={state} dest={destRegion} onOpen={setRouteFor} />}
+
             {/* 채팅 패널 */}
             <div className="card stack" style={{ gap: 10 }}>
               <div className="between">
@@ -536,16 +543,25 @@ export default function MeetingClient({ code }: { code: string }) {
               )}
             </div>
 
-            <div className="card stack" style={{ gap: 8 }}>
-              <span className="eyebrow">참여자 {state.totalParticipants}명</span>
-              {state.participants.map((p) => (
-                <div className="row" key={p.id} style={{ gap: 10 }}>
-                  <div className={"av" + (p.transport === "car" ? " car" : "")}>{p.name.slice(0, 1)}</div>
-                  <div className="grow"><b style={{ fontSize: 13 }}>{p.name}</b>{p.isLeader && <span className="chip leader" style={{ fontSize: 9, marginLeft: 6 }}>방장</span>}</div>
-                  <span className="faint" style={{ fontSize: 11 }}>{p.origin || "-"}</span>
-                </div>
-              ))}
-            </div>
+            {destRegion ? (
+              <TravelTimes
+                state={state}
+                dest={destRegion}
+                title={`참여자 ${state.totalParticipants}명 · 이동시간`}
+                onOpen={setRouteFor}
+              />
+            ) : (
+              <div className="card stack" style={{ gap: 8 }}>
+                <span className="eyebrow">참여자 {state.totalParticipants}명</span>
+                {state.participants.map((p) => (
+                  <div className="row" key={p.id} style={{ gap: 10 }}>
+                    <div className={"av" + (p.transport === "car" ? " car" : "")}>{p.name.slice(0, 1)}</div>
+                    <div className="grow"><b style={{ fontSize: 13 }}>{p.name}</b>{p.isLeader && <span className="chip leader" style={{ fontSize: 9, marginLeft: 6 }}>방장</span>}</div>
+                    <span className="faint" style={{ fontSize: 11 }}>{p.origin || "-"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* 유료서비스: 가게 예약 > 결제(선입금) */}
             {state.winnerPlace && (
@@ -580,7 +596,8 @@ export default function MeetingClient({ code }: { code: string }) {
             {/* 부가기능 */}
             <div className="card stack" style={{ gap: 8 }}>
               <span className="eyebrow">부가기능</span>
-              <button className="btn ghost" onClick={() => downloadIcs(state)}>📅 캘린더에 추가 (.ics)</button>
+              <button className="btn" onClick={() => openGoogleCalendar(state)}>📅 Google 캘린더에 추가</button>
+              <button className="btn ghost" onClick={() => downloadIcs(state)}>📄 .ics 다운로드 (Apple·Outlook용)</button>
               <button
                 className="btn ghost"
                 onClick={() => {
@@ -673,6 +690,16 @@ export default function MeetingClient({ code }: { code: string }) {
         </div>
       )}
 
+      {/* 경로 상세 바텀시트 (시안1·2) */}
+      {routeFor && destRegion && (
+        <RouteSheet
+          code={code}
+          participantId={routeFor}
+          dest={{ name: destRegion.name, lat: destRegion.lat, lng: destRegion.lng }}
+          onClose={() => setRouteFor(null)}
+        />
+      )}
+
       {/* Add-participant modal (테스트용) */}
       {showAdd && <AddParticipant code={code} onClose={() => setShowAdd(false)} onAdded={(id) => { setIds(getIdentities(code)); setMe(getActive(code)); setShowAdd(false); load(); flash(`${id.name} 님으로 참여했어요`); }} />}
 
@@ -746,6 +773,55 @@ export default function MeetingClient({ code }: { code: string }) {
   );
 }
 
+// ── 참가자별 이동시간 카드 (행 탭 → 경로 상세 시트) — 시안1·2 진입점 ──
+function TravelTimes({
+  state,
+  dest,
+  title,
+  onOpen,
+}: {
+  state: MeetingState;
+  dest: RegionCandidate;
+  title?: string;
+  onOpen: (pid: string) => void;
+}) {
+  const rows = state.participants.filter((p) => p.lat != null);
+  if (rows.length === 0) return null;
+  const mins = new Map(dest.perParticipant.map((x) => [x.pid, x.min]));
+  const max = Math.max(1, ...dest.perParticipant.map((x) => x.min));
+  return (
+    <div className="card stack" style={{ gap: 2 }}>
+      <div className="between" style={{ marginBottom: 6 }}>
+        <span className="eyebrow">{title ?? "참가자별 이동시간"}</span>
+        <span className="faint" style={{ fontSize: 11 }}>→ {dest.name} 기준</span>
+      </div>
+      {rows.map((p) => {
+        const m = mins.get(p.id);
+        return (
+          <button key={p.id} className="travelrow" onClick={() => onOpen(p.id)} title="탭하면 경로 상세를 볼 수 있어요">
+            <div className={"av" + (p.transport === "car" ? " car" : "")}>{p.name.slice(0, 1)}</div>
+            <div className="grow" style={{ minWidth: 0 }}>
+              <div className="between" style={{ marginBottom: 3 }}>
+                <span className="muted" style={{ fontSize: 11.5, fontWeight: 700 }}>{p.name}</span>
+                <span className="row" style={{ gap: 5 }}>
+                  <span className="chip ok" style={{ fontSize: 8.5, padding: "2px 7px" }}>실시간</span>
+                  <b className="tnum" style={{ fontSize: 11.5, color: "var(--ac)" }}>{m != null ? `${m}분` : "—"}</b>
+                </span>
+              </div>
+              <div className="bar sm">
+                <i style={{ width: `${m != null ? Math.round((m / max) * 100) : 0}%`, background: p.transport === "car" ? "#fb923c" : undefined }} />
+              </div>
+              <div className="faint" style={{ fontSize: 10, marginTop: 3 }}>
+                {p.transport === "car" ? "🚗 자차" : "🚇 대중교통"} · <b style={{ color: "var(--ac)" }}>경로 상세 ›</b>
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── AI가 수집한 모임 정보 칩 ──
 function PrefChips({ prefs }: { prefs: MeetingState["prefs"] }) {
   const items: [string, string | undefined][] = [
@@ -769,9 +845,8 @@ function PrefChips({ prefs }: { prefs: MeetingState["prefs"] }) {
   );
 }
 
-// ── .ics 캘린더 파일 생성 (AI가 대화에서 수집한 날짜·시간 사용) ──
-function downloadIcs(state: MeetingState) {
-  // AI 수집 일정 → DTSTART. 없으면 다음 주 토요일 19시 기본값.
+// ── 모임 일정 계산 (AI가 대화에서 수집한 날짜·시간 사용, 없으면 다음 토요일 19시) ──
+function meetingSchedule(state: MeetingState): { start: Date; end: Date; fmt: (d: Date) => string } {
   let start: Date;
   if (state.prefs.dateIso) {
     const [h, m] = (state.prefs.timeHhmm || "19:00").split(":").map(Number);
@@ -786,6 +861,29 @@ function downloadIcs(state: MeetingState) {
   const fmt = (d: Date) =>
     `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}` +
     `T${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
+  return { start, end, fmt };
+}
+
+// ── Google 캘린더에 추가 (원클릭, 파일 다운로드 없음) ──
+function openGoogleCalendar(state: MeetingState) {
+  const { start, end, fmt } = meetingSchedule(state);
+  const place = state.winnerPlace ? `${state.winnerPlace.name} (${state.winnerRegion?.name})` : state.name;
+  const p = new URLSearchParams({
+    action: "TEMPLATE",
+    text: state.name,
+    dates: `${fmt(start)}/${fmt(end)}`,
+    location: place,
+    details:
+      `모이머 AI 대화로 정한 모임 · 참여자 ${state.totalParticipants}명` +
+      (state.winnerPlace?.url ? `\n카카오맵: ${state.winnerPlace.url}` : "") +
+      `\n모임 페이지: ${location.origin}/m/${state.code}`,
+  });
+  window.open(`https://calendar.google.com/calendar/render?${p.toString()}`, "_blank", "noopener");
+}
+
+// ── .ics 캘린더 파일 생성 (Apple/Outlook용 보조) ──
+function downloadIcs(state: MeetingState) {
+  const { start, end, fmt } = meetingSchedule(state);
   const place = state.winnerPlace ? `${state.winnerPlace.name} (${state.winnerRegion?.name})` : state.name;
   const ics = [
     "BEGIN:VCALENDAR",
