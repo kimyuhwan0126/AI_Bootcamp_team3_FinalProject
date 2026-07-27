@@ -17,7 +17,8 @@ import {
   confirmRegion,
   confirmPlace,
 } from "./store";
-import { resolveGeocode, travelMinutes, recommendPlaces } from "./routing";
+import { resolveGeocode, travelMinutes, recommendPlaces, emojiFor } from "./routing";
+import { searchPlacesKakao } from "./kakao";
 
 // ── 설정 (.env.local에서 오버라이드 가능) ──
 const PRIMARY_URL = process.env.OLLAMA_PRIMARY_URL || "http://10.20.2.164:11434/v1";
@@ -193,7 +194,24 @@ const TOOL_SPECS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "search_more_places",
+      description:
+        "장소 논의 단계에서, 현재 후보에 없는 종류의 가게를 참가자가 원할 때(예: 고기집, 파스타, 노래방) 확정된 지역 근처에서 실제 가게를 더 검색해 후보에 추가한다. 결과를 대화로 제안하라.",
+      parameters: {
+        type: "object",
+        properties: {
+          keyword: { type: "string", description: "찾을 가게 종류 (예: 고기집, 파스타, 이자카야)" },
+        },
+        required: ["keyword"],
+      },
+    },
+  },
 ];
+
+const MAX_PLACES = 8; // 장소 후보 상한
 
 // ═════════ 도구 실행 ═════════
 
@@ -235,6 +253,51 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
         const r = confirmPlace({ code, placeId: String(args.place_id), by: "ai" });
         if (!r.ok) return JSON.stringify({ error: r.error });
         return JSON.stringify({ confirmed: r.placeName, note: "최종 확정 완료. 축하 인사와 함께 요약해라." });
+      }
+      case "search_more_places": {
+        const kw = String(args.keyword || "").trim();
+        if (!kw) return JSON.stringify({ error: "keyword가 비었어요" });
+        if (m.aiPhase !== "place") return JSON.stringify({ error: "장소 논의 단계가 아니에요" });
+        const region = m.regions.find((r) => r.id === m.winnerRegionId);
+        if (!region) return JSON.stringify({ error: "확정된 지역이 없어요" });
+
+        const found = await searchPlacesKakao(`${region.name} ${kw}`, { lat: region.lat, lng: region.lng }, 4);
+        if (!found?.length) {
+          return JSON.stringify({ found: 0, note: `'${kw}' 검색 결과가 없어요. 다른 키워드를 제안하거나 기존 후보로 진행하라.` });
+        }
+        // 중복 제외 후 상한(MAX_PLACES=8)까지 추가. 꽉 차면 뒤에서부터 교체.
+        const existing = new Set(m.places.map((p) => p.name));
+        const added: string[] = [];
+        let replaceIdx = m.places.length - 1;
+        for (const doc of found) {
+          if (existing.has(doc.name)) continue;
+          const cand = {
+            id: "tmp",
+            name: doc.name,
+            category: doc.category,
+            emoji: emojiFor(doc.category, "🍽️"),
+            distanceM: doc.distanceM,
+            rating: 0,
+            reservable: true,
+            depositPerHead: 10000,
+            url: doc.url || undefined,
+          };
+          if (m.places.length < MAX_PLACES) {
+            m.places.push(cand);
+          } else if (replaceIdx >= 0) {
+            m.places[replaceIdx--] = cand; // 상한 도달 → 오래된 뒷순위부터 교체
+          } else break;
+          added.push(doc.name);
+        }
+        m.places = m.places.map((p, i) => ({ ...p, id: `p${i + 1}` })); // id 재부여
+        return JSON.stringify({
+          found: added.length,
+          added,
+          note: added.length
+            ? `후보에 추가됨(전체 ${m.places.length}/${MAX_PLACES}개). 새 후보를 거리와 함께 대화로 제안하라.`
+            : "전부 이미 후보에 있어요.",
+          all_candidates: m.places.map((p) => ({ id: p.id, name: p.name, category: p.category, distance_m: p.distanceM })),
+        });
       }
       case "evaluate_region": {
         const nm = String(args.name || "").trim();
@@ -300,7 +363,8 @@ ${regions}
 ${places}
 
 - 의견이 모이면 confirm_place로 확정하라.
-- 취향이 갈리면 카테고리·평점·예약가능 여부를 근거로 절충을 유도하라.`;
+- 후보에 없는 종류를 원하면(예: "고기 먹고 싶다") search_more_places로 실제 가게를 더 찾아 제안하라.
+- 취향이 갈리면 카테고리·거리·예약가능 여부를 근거로 절충을 유도하라.`;
   }
 
   const forceGuide = force

@@ -108,7 +108,7 @@ const PLACE_QUERIES: { kw: string; emoji: string; deposit: number }[] = [
   { kw: "술집",  emoji: "🍺", deposit: 10000 },
   { kw: "카페",  emoji: "☕", deposit: 5000 },
 ];
-function emojiFor(category: string, fallback: string): string {
+export function emojiFor(category: string, fallback: string): string {
   if (/카페|커피|디저트|베이커리/.test(category)) return "☕";
   if (/호프|술집|포차|바|이자카야|맥주/.test(category)) return "🍺";
   if (/일식|초밥|돈까스|라멘/.test(category)) return "🍽️";
@@ -116,6 +116,8 @@ function emojiFor(category: string, fallback: string): string {
   if (/한식|국밥|찌개|백반/.test(category)) return "🍲";
   if (/중식|중국/.test(category)) return "🥟";
   if (/양식|파스타|피자|버거/.test(category)) return "🍕";
+  if (/노래|코인노래|유흥/.test(category)) return "🎤";
+  if (/와인/.test(category)) return "🍷";
   return fallback;
 }
 
