@@ -23,7 +23,9 @@ import { resolveGeocode, travelMinutes, recommendPlaces, emojiFor } from "./rout
 import { searchPlacesKakao } from "./kakao";
 
 // ── 설정 (.env.local에서 오버라이드 가능) ──
-const PRIMARY_URL = process.env.OLLAMA_PRIMARY_URL || "http://10.20.2.164:11434/v1";
+// 1순위 주소는 코드에 박지 않는다 — 팀 내부망 주소가 공개 저장소에 남고,
+// /api/status 의 ai.url 로 그대로 응답에 실려 나간다. 쓸 사람이 .env.local 에 넣는다.
+const PRIMARY_URL = process.env.OLLAMA_PRIMARY_URL || "";
 const PRIMARY_MODEL = process.env.OLLAMA_PRIMARY_MODEL || "glm-5.2:cloud";
 const FALLBACK_URL = process.env.OLLAMA_FALLBACK_URL || "http://localhost:11434/v1";
 const FALLBACK_MODEL = process.env.OLLAMA_FALLBACK_MODEL || "qwen2.5-coder:7b";

@@ -94,7 +94,7 @@ export default function ApiLive() {
               <div className="muted" style={{ fontSize: 12.5 }}>주소/역명 → 좌표 변환</div>
               {geoOk && (
                 <div style={{ background: "var(--panel2)", border: "1px solid var(--hair)", borderRadius: 10, padding: "9px 11px", fontSize: 12.5 }}>
-                  <div className="faint" style={{ fontSize: 11 }}>실호출: "역삼동 강남파이낸스센터"</div>
+                  <div className="faint" style={{ fontSize: 11 }}>실호출: &quot;역삼동 강남파이낸스센터&quot;</div>
                   <div className="tnum" style={{ fontWeight: 700, marginTop: 2 }}>
                     → {d.parsed.geocode.lat.toFixed(5)}, {d.parsed.geocode.lng.toFixed(5)}
                   </div>
