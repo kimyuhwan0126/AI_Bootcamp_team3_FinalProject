@@ -97,6 +97,7 @@ CEO 결정: 새 저장소에서 팀원들과 각자 브랜치로 **동시에** �
 | 2026-07-30 | Claude(AI) | `app/components/ServiceWorkerRegistrar.tsx` (신규), `app/layout.tsx` | 운영 빌드에서만 SW 등록 + PWA 메타데이터 | 개발 중 SW 가 살아있으면 코드를 고쳐도 옛 화면이 나온다 |
 | 2026-07-30 | Claude(AI) | `docs/APK.md` (신규) | PWA → Bubblewrap → APK 절차, Flutter 를 쓰지 않는 이유 | 발표날 팀원 폰 설치가 목표. 당일에 처음 시도하면 안 되는 작업 |
 | 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md` (신규) | 브랜치 모델 · 저장소 보호 설정 · 파일 소유권 · Vercel Preview · AI 개발 규칙 | 팀원이 읽고 그대로 따라 할 수 있는 한 장 |
+| 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md`, `docs/노션_통합개발환경.md` | 저장소 보호 절차를 최신 GitHub UI 기준으로 정정 — `Settings → Branches` → **`Settings → Rules → Rulesets`**, Secret scanning 위치(`Advanced Security` 하단) 명시 | 사이드바에 `Branches` 항목이 없어 팀원이 문서대로 따라갈 수 없었다(CEO 확인). Ruleset 은 `Enforcement: Active` 로 바꿔야 적용된다는 함정도 함께 기록 |
 | 2026-07-30 | Claude(AI) | `lib/scoring/CLAUDE.md` (신규) | 스코어러 추가 방법 + 절대 규칙 4개 (복붙 템플릿 포함) | 컨텍스트가 짧은 모델(GLM)은 긴 루트 지시의 뒷부분을 흘린다 — 폴더별 짧은 지시가 더 잘 지켜진다 |
 | 2026-07-30 | Claude(AI) | `CLAUDE.md` | 채팅=플래그 기능으로 위상 정정 · 팀 동시 개발 규칙 · 400줄 상한 · 하위 CLAUDE.md 안내 | §0 이 "대화는 카카오톡에서"라 채팅 코드를 범위 외로 오해할 수 있었다 |
 | 2026-07-30 | Claude(AI) | `.env.example`, `package.json` | 플래그 4종 문서화 · `test:smoke`/`verify` 스크립트 · `@playwright/test` | — |
