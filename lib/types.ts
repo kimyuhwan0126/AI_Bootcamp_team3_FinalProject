@@ -34,6 +34,8 @@ export interface RegionCandidate {
   maxMin: number;           // 참가자 중 최대 이동시간(분)
   devMin: number;           // 편차(분)
   reason: string;           // 선정 근거
+  /** 참가자가 직접 제안한 후보면 제안자 이름 (자동 추천 후보에는 없음) */
+  proposedBy?: string;
   perParticipant: { pid: string; name: string; min: number }[];
 }
 

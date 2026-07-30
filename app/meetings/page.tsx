@@ -10,6 +10,7 @@ import BottomNav from "../components/v8/BottomNav";
 import V8Header from "../components/v8/V8Header";
 import { IcSearch, IcPeople } from "../components/v8/Icons";
 import { addIdentity } from "@/lib/identity";
+import { useSession } from "../components/v8/useSession";
 import type { MeetingState } from "@/lib/types";
 
 const STAGE_LABEL: Record<string, { text: string; on: boolean }> = {
@@ -31,6 +32,8 @@ function myCodes(): string[] {
 function MeetingsInner() {
   const router = useRouter();
   const params = useSearchParams();
+  // 로그인해 들어왔으면 이름을 다시 묻지 않는다 — 비워두면 세션 이름을 쓴다
+  const { session } = useSession();
   const [meetings, setMeetings] = useState<MeetingState[]>([]);
   const [filter, setFilter] = useState("");
   const [modal, setModal] = useState<"create" | "join" | null>(null);
@@ -94,7 +97,8 @@ function MeetingsInner() {
     setErr(null);
     setBusy(true);
     try {
-      const leaderName = cLeader || "방장";
+      // 비워두면 로그인 이름 → 그것도 없으면 "방장"
+      const leaderName = cLeader.trim() || session?.name || "방장";
       const headcount = 8;
       const d = await post({ action: "create", name: cName, password: cPw, headcount, leaderName });
       addIdentity(d.code, { id: d.participantId, name: leaderName, isLeader: true });
@@ -124,13 +128,20 @@ function MeetingsInner() {
 
   async function handleJoin() {
     setErr(null);
+    // 이름을 비웠으면 로그인 이름으로 참여한다 (임시/카카오 공통).
+    // 로그인도 안 한 채 직접 URL로 열었다면 이름이 필요하다.
+    const name = jName.trim() || session?.name || "";
+    if (!name) {
+      setErr("이름을 입력해주세요.");
+      return;
+    }
     setBusy(true);
     try {
       // URL 붙여넣기 지원: /m/CODE 형태에서 코드 추출 (회의록: URL 또는 이름+패스워드)
       const m = jCode.match(/\/m\/([A-Za-z0-9]{4,8})/);
       const code = (m ? m[1] : jCode).toUpperCase().trim();
-      const d = await post({ action: "join", code, password: jPw, name: jName });
-      addIdentity(d.code, { id: d.participantId, name: jName, isLeader: false });
+      const d = await post({ action: "join", code, password: jPw, name });
+      addIdentity(d.code, { id: d.participantId, name, isLeader: false });
       router.push(`/m/${d.code}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "요청 실패");
@@ -266,8 +277,13 @@ function MeetingsInner() {
                 <input className="input" value={cPw} onChange={(e) => setCPw(e.target.value)} placeholder="참여자에게 공유할 비밀번호" />
               </div>
               <div>
-                <label className="label">내 이름 (방장)</label>
-                <input className="input" value={cLeader} onChange={(e) => setCLeader(e.target.value)} placeholder="예: 유환" />
+                <label className="label">내 이름 (방장{session ? " · 선택" : ""})</label>
+                <input
+                  className="input"
+                  value={cLeader}
+                  onChange={(e) => setCLeader(e.target.value)}
+                  placeholder={session ? `비워두면 '${session.name}'(으)로 만들어요` : "예: 유환"}
+                />
               </div>
               <div>
                 <label className="label">몇 시에 만나요? (선택)</label>
@@ -300,11 +316,17 @@ function MeetingsInner() {
               <input className="input" value={jPw} onChange={(e) => setJPw(e.target.value)} />
             </div>
             <div>
-              <label className="label">내 이름</label>
-              <input className="input" value={jName} onChange={(e) => setJName(e.target.value)} placeholder="예: 유나" />
+              <label className="label">내 이름{session ? " (선택)" : ""}</label>
+              <input
+                className="input"
+                value={jName}
+                onChange={(e) => setJName(e.target.value)}
+                placeholder={session ? `비워두면 '${session.name}'(으)로 참여해요` : "예: 유나"}
+              />
             </div>
             {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
-            <button className="btn" onClick={handleJoin} disabled={busy || !jCode || !jPw || !jName}>
+            {/* 이름은 로그인 상태면 선택사항 — 비회원이 직접 URL로 연 경우에만 필수 */}
+            <button className="btn" onClick={handleJoin} disabled={busy || !jCode || !jPw || (!jName.trim() && !session)}>
               {busy ? <span className="spinner" /> : "참여하기"}
             </button>
             <button className="btn ghost" onClick={closeModal}>닫기</button>

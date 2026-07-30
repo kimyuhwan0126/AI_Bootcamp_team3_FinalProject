@@ -453,6 +453,49 @@ export async function castVote(input: {
   return { ok: true };
 }
 
+// ── 후보 직접 등록 — 방장 포함 누구나 원하는 지역을 후보에 올린다 ──
+//  자동 추천 3곳이 마음에 안 들 때(특히 서울↔부산처럼 중간이 애매할 때)의
+//  핵심 탈출구. id 를 "rc_" 접두사로 구분해, 출발지 변경으로 자동 후보가
+//  재계산돼도 살아남게 한다(재계산 쪽에서 rc_* 를 보존·지표 갱신).
+export async function addRegionCandidate(input: {
+  code: string;
+  name: string;
+  lat: number;
+  lng: number;
+  maxMin: number;
+  devMin: number;
+  perParticipant: { pid: string; name: string; min: number }[];
+  proposedBy: string;
+}): Promise<{ ok: boolean; error?: string; candidate?: RegionCandidate; existing?: boolean }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  if (m.stage === "result") return { ok: false, error: "이미 끝난 모임이에요." };
+  if (m.aiPhase !== "region") return { ok: false, error: "이미 거점이 확정됐어요." };
+
+  // 같은 지역 중복 등록 방지 (공백 무시 비교)
+  const norm = (s: string) => s.replace(/\s/g, "");
+  const dup = m.regions.find((r) => norm(r.name) === norm(input.name));
+  if (dup) return { ok: true, candidate: dup, existing: true };
+
+  if (m.regions.length >= 8) return { ok: false, error: "후보는 최대 8개까지예요. 기존 후보로 투표해주세요." };
+
+  const candidate: RegionCandidate = {
+    id: genId("rc_"),
+    name: input.name,
+    lat: input.lat,
+    lng: input.lng,
+    maxMin: input.maxMin,
+    devMin: input.devMin,
+    proposedBy: input.proposedBy,
+    reason: `${input.proposedBy} 님 제안 — 최대 ${input.maxMin}분 · 편차 ${input.devMin}분`,
+    perParticipant: input.perParticipant,
+  };
+  m.regions.push(candidate);
+  await write(m);
+  // 후보가 "늘어나는" 것은 기존 표를 무효화하지 않는다 — 표는 그대로 둔다
+  return { ok: true, candidate };
+}
+
 // ── 거점 후보 갱신 (출발지가 바뀌면 재계산) ──
 //  stage 는 건드리지 않는다 — 메인 화면에서도 투표할 수 있게 하기 위함.
 export async function setRegionCandidates(
@@ -463,18 +506,25 @@ export async function setRegionCandidates(
   if (!m) return { ok: false, error: "모임 없음" };
   if (m.winnerRegionId) return { ok: true }; // 이미 확정된 뒤엔 후보를 흔들지 않는다
 
-  // ⚠️ 후보 id 는 순위(r1·r2·r3)라 후보가 완전히 바뀌어도 그대로다 —
+  // 참가자가 직접 등록한 후보(rc_*)는 재계산에 밀려 사라지면 안 된다.
+  // 호출자(regions 액션)가 지표를 갱신해 함께 넘기는 게 정석이지만,
+  // 빠뜨린 호출이 있어도 유실되지 않게 여기서 한 번 더 보존한다.
+  const passedIds = new Set(regions.map((r) => r.id));
+  const keptProposals = m.regions.filter((r) => r.id.startsWith("rc_") && !passedIds.has(r.id));
+  const nextList = [...regions, ...keptProposals];
+
+  // ⚠️ 자동 후보 id 는 순위(r1·r2·r3)라 후보가 완전히 바뀌어도 그대로다 —
   //    id 로 비교하면 "달라졌는지"를 절대 감지할 수 없어(예전 버그),
   //    엉뚱한 지역에 찍힌 표가 그대로 남았다. 지역 이름으로 비교한다.
   const prev = m.regions.map((r) => r.name).join(",");
-  const next = regions.map((r) => r.name).join(",");
+  const next = nextList.map((r) => r.name).join(",");
   // 후보가 그대로면 쓸 이유가 없다 — 1.8초 폴링마다 DB에 쓰지 않도록 막는다
   if (prev === next) return { ok: true };
 
-  m.regions = regions;
+  m.regions = nextList;
   m.regionVotes = {};
   await write(m);
-  // 후보가 달라졌으니 기존 표는 의미가 없다
+  // 후보가 달라졌으니 기존 표는 의미가 없다 (출발지가 바뀌어 지표가 전부 달라진 상황)
   await clearVotes(m.code, "region");
   return { ok: true };
 }

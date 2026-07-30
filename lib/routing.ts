@@ -120,6 +120,26 @@ async function recommendDynamicRegions(located: Located[]): Promise<RegionCandid
   return scoreCandidates(uniq, located);
 }
 
+// ── 특정 지점의 공평성 점수 — 참가자 전원의 이동시간·편차 ──
+//  참가자가 직접 제안한 후보(다른 후보 등록)와 AI evaluate_region 이 함께 쓴다.
+export async function scoreRegionForParticipants(
+  hub: Coord,
+  participants: Participant[]
+): Promise<{ maxMin: number; devMin: number; perParticipant: { pid: string; name: string; min: number }[] }> {
+  const located = participants.filter((p) => p.lat != null && p.lng != null);
+  const perParticipant = await Promise.all(
+    located.map(async (p) => ({
+      pid: p.id,
+      name: p.name,
+      min: await travelMinutes({ lat: p.lat!, lng: p.lng! }, hub, p.transport),
+    }))
+  );
+  const mins = perParticipant.map((x) => x.min);
+  const maxMin = mins.length ? Math.max(...mins) : 0;
+  const devMin = mins.length ? maxMin - Math.min(...mins) : 0;
+  return { maxMin, devMin, perParticipant };
+}
+
 // ── 중간지역 추천(실 이동시간 기반) ──
 export async function recommendRegions(participants: Participant[]): Promise<RegionCandidate[]> {
   const located = participants.filter((p) => p.lat != null && p.lng != null) as Located[];
