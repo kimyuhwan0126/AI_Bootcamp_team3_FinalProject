@@ -13,7 +13,11 @@
 ## 0. 프로젝트 한 줄 요약
 
 각자의 출발지에서 **가장 공평한 중간 지점**을 찾아, **거점 투표 → 가게 투표 → 최종 확정**으로
-모임 장소를 정하는 Next.js + Supabase 서비스. 대화는 카카오톡에서 하고, 모이머는 장소만 담당한다.
+모임 장소를 정하는 Next.js + Supabase 서비스. 모이머의 핵심은 **장소 결정**이다.
+
+앱 안 채팅(AI 파실리테이터)은 **플래그로 켜는 선택 기능**이다 — 기본은 꺼져 있고,
+대화는 카카오톡에서 한다는 전제로 화면이 설계돼 있다. 채팅 코드를 "범위 외"로
+취급하지 말 것: 되살릴 수 있게 보존하는 것이 v8 의 결정이다 (`NEXT_PUBLIC_FF_AI_CHAT`).
 
 ---
 
@@ -26,9 +30,14 @@
 - **지도**: 카카오맵 JS SDK (`app/components/KakaoMap.tsx`)
 - **이동시간·경로**: ODsay(대중교통) · TMAP(자차)
 - **장소·지오코딩**: 카카오 로컬 API
-- **AI**: Ollama(OpenAI 호환) 파실리테이터 — **v8에서는 UI 비활성.**
-  `AI_CHAT_ENABLED = false` (`app/m/[code]/MeetingClient.tsx`). 코드는 지우지 않는다.
-- **배포**: Vercel + Supabase
+- **파싱**: `lib/parse.ts` — **규칙 기반**(정규식·키워드). 날짜·시간·예산·선호를 뽑는다.
+  LLM 없이 항상 동작한다. AI 는 이 결과를 **보강**하는 역할이지 대체가 아니다.
+- **AI**: Ollama(OpenAI 호환) 파실리테이터 — **v8 기본 비활성.**
+  `NEXT_PUBLIC_FF_AI_CHAT=1` 로 켠다 (`lib/flags.ts`). 코드는 지우지 않는다.
+- **추천 점수**: `lib/scoring/` — 스코어러 플러그인. 자세히는 `lib/scoring/CLAUDE.md`
+- **테스트**: Playwright 스모크 (`tests/smoke.spec.ts`) — `npm run verify`
+- **배포**: Vercel + Supabase. 안드로이드는 **PWA + TWA(Bubblewrap) → APK** (`docs/APK.md`).
+  Flutter/React Native 재작성은 하지 않는다 — 지금 웹앱이 그대로 앱이 된다.
 - **결제**: ❌ 범위 외. 결과 화면의 선입금은 **모의결제**이며 실제 카드·계좌 정보를 받지 않는다.
 
 ---
@@ -40,10 +49,16 @@
 ```
 app/            라우트 · 화면 · API 라우트 · 컴포넌트(app/components)
 lib/            도메인 로직 · 데이터 계층 · 외부 API 래퍼
-supabase/       schema.sql
+lib/scoring/    추천 점수 스코어러 (파일 = 관점 하나 = 담당자 한 명)
+tests/          Playwright 스모크
+docs/           APK 만들기 · 팀 개발환경
+supabase/       schema.sql + migrations/
 mds/            초기 가이드 원본 (읽기 전용 참고)
 memory/         작업 상태·인계 메모
 ```
+
+**하위 폴더의 `CLAUDE.md` 가 있으면 그쪽이 더 구체적이다** — 그 폴더에서 작업할 땐
+먼저 읽는다: `lib/scoring/CLAUDE.md`, `app/m/[code]/CLAUDE.md`.
 
 자세한 파일별 역할은 `README.md` §구조 참고.
 
@@ -52,14 +67,18 @@ memory/         작업 상태·인계 메모
 ## 3. 핵심 규칙
 
 1. **결제/선입금/환불** — 범위 외. 결과 화면은 모의결제이며 실제 결제 연동을 추가하지 않는다.
-2. **Android 네이티브 / 독립 채팅 / OCR / 자동 카톡 동기화** — 범위 외.
+2. **네이티브 재작성(Flutter·React Native) / OCR / 자동 카톡 동기화** — 범위 외.
+   안드로이드 앱은 **PWA + TWA 로 지금 웹앱을 그대로 감싼다** (`docs/APK.md`).
+   앱 안 채팅은 범위 외가 아니라 **플래그 뒤에 있는 선택 기능**이다.
 3. TypeScript `any` 금지 — `unknown` + 타입 가드를 쓴다.
 4. **외부 API는 반드시 mock 폴백을 갖는다.** 키가 없어도 `npm run dev` 만으로 전체 플로우가
    돌아야 한다(팀원이 키 없이 개발·시연할 수 있어야 함). 새 연동도 이 패턴을 지킨다.
 5. **실 API 성공값만 캐시한다.** 폴백값을 캐시하면 키를 나중에 넣어도 계속 mock이 나온다.
 6. **가짜 데이터를 실제인 것처럼 그리지 않는다.** 경로 폴리라인은 직선 근사일 때
    `real: false` 로 내려보내고 UI가 그렇게 표시한다.
-7. 커밋 전 `npx tsc --noEmit` + `npm run build` 통과. 눈/버튼/로그 3관점 스모크.
+7. 커밋 전 **`npm run verify`** (= `tsc --noEmit` + `build` + 브라우저 스모크) 통과.
+   ⚠️ **빌드 통과 ≠ 화면 렌더.** 타입검사·빌드를 둘 다 통과하고도 모임 상세 화면이
+   통째로 안 그려진 적이 있다(`useEffect` 를 조건부 `return` 뒤에 배치). 눈/버튼/로그 3관점.
 
 ### 색상 규칙 (중요)
 
@@ -77,6 +96,24 @@ memory/         작업 상태·인계 메모
 - 쓰기 단위를 지킨다: 모임 행은 `saveMeeting`, 참가자는 `upsertParticipant`, 표는 `setVote`.
   참가자·투표를 모임 행에 함께 담으면 동시 쓰기에 표가 사라진다.
 - Supabase 모드에서는 인메모리 캐시를 두지 않는다 (서버리스 인스턴스 간 불일치).
+- DB 스키마를 바꿀 땐 `supabase/schema.sql` 이 아니라 `supabase/migrations/NNN_*.sql` 을
+  **새로 추가**한다 (여러 명이 같은 파일을 고치면 매번 충돌).
+
+### 팀 동시 개발 규칙 (여러 명이 붙을 때)
+
+전체 절차는 `docs/팀_개발환경.md`. 코드를 쓸 때 지킬 것만 여기 적는다.
+
+- **🔒 공용 파일은 통합 담당자 소유**다. 고쳐야 할 것 같으면 **멈추고 PR 설명에 이유를 쓴다**:
+  `lib/types.ts` · `lib/store.ts` · `lib/persistence.ts` · `lib/flags.ts` ·
+  `lib/scoring/{index,types}.ts` · `app/globals.css` · `app/api/meeting/route.ts` ·
+  `supabase/schema.sql` · `package.json` · `CLAUDE.md`
+  (`.github/CODEOWNERS` 가 리뷰를 강제한다)
+- **한 파일 400줄을 넘기지 않는다.** 넘으면 쪼갠다. 큰 파일은 AI 가 엉뚱한 곳을 고치고,
+  두 사람이 동시에 만지면 매일 충돌난다.
+- **만드는 중인 기능은 플래그 뒤에 둔다** (`lib/flags.ts`). 절반만 된 상태로 develop 에
+  들어가도 남의 화면이 안 깨진다.
+- **켜고 끄는 걸 상수로 하지 않는다.** 브랜치마다 값이 달라져 머지할 때마다 충돌난다.
+  `.env.local` 의 `NEXT_PUBLIC_FF_*` 로 한다.
 
 ---
 

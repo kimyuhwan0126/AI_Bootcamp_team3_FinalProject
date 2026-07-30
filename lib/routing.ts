@@ -21,6 +21,8 @@ import { geocodeKakao, coord2AddressKakao, searchPlacesKakao, type Coord } from 
 import { transitRouteOdsay } from "./odsay";
 import { carRouteTmap } from "./tmap";
 import type { Participant, RegionCandidate, PlaceCandidate } from "./types";
+import { rankCandidates } from "./scoring";
+import type { LocatedParticipant } from "./scoring/types";
 
 // 프로세스 캐시(재로드에도 유지)
 const g = globalThis as unknown as {
@@ -66,42 +68,50 @@ export async function travelMinutes(from: Coord, to: Coord, transport: string): 
   return estMinutes(haversineKm(from, to), transport);
 }
 
-type Located = Pick<Participant, "id" | "name" | "transport"> & { lat: number; lng: number };
+type Located = LocatedParticipant;
 
+// 후보들을 스코어러 등록소(lib/scoring)에 넘겨 평가한다.
+//
+// 점수식을 여기서 직접 쓰지 않는 이유: 담당자 여러 명이 관점(공평성·상권·날씨·
+// 개인선호)을 각자 추가할 때, 식이 이 파일에 있으면 전부 같은 줄에서 충돌한다.
+// 등록소 방식이면 각자 lib/scoring/<자기파일>.ts 만 만들면 된다.
 async function scoreCandidates(
   candidates: { name: string; hub: { lat: number; lng: number } }[],
   located: Located[]
 ): Promise<RegionCandidate[]> {
-  const scored = await Promise.all(
-    candidates.map(async ({ name, hub }) => {
-      const per = await Promise.all(
+  const ranked = await rankCandidates(
+    candidates,
+    { participants: located },
+    // 이동시간은 여기서 한 번만 구해 넘긴다 — 스코어러마다 다시 부르면
+    // 유료 API를 (후보 수 × 스코어러 수)만큼 때린다 (CLAUDE.md §4).
+    (hub) =>
+      Promise.all(
         located.map(async (p) => ({
           pid: p.id,
           name: p.name,
           min: await travelMinutes({ lat: p.lat, lng: p.lng }, hub, p.transport),
         }))
-      );
-      const mins = per.map((x) => x.min);
-      const maxMin = Math.max(...mins);
-      const devMin = maxMin - Math.min(...mins);
-      return { name, hub, per, maxMin, devMin, score: maxMin + devMin * 0.8 };
-    })
+      )
   );
-  scored.sort((a, b) => a.score - b.score);
 
-  return scored.slice(0, 3).map((s, i) => ({
-    id: `r${i + 1}`,
-    name: s.name,
-    lat: s.hub.lat,
-    lng: s.hub.lng,
-    maxMin: s.maxMin,
-    devMin: s.devMin,
-    reason:
-      i === 0
-        ? `가장 균형적 — 최대 ${s.maxMin}분 · 편차 ${s.devMin}분`
-        : `최대 ${s.maxMin}분 · 편차 ${s.devMin}분`,
-    perParticipant: s.per,
-  }));
+  return ranked.slice(0, 3).map((s, i) => {
+    // 스코어러가 남긴 근거를 그대로 이어붙인다. 지금은 공평성 하나뿐이라
+    // "최대 N분 · 편차 M분" 이고, 상권·날씨가 붙으면 자동으로 늘어난다.
+    const detail = s.breakdown
+      .map((b) => b.explain)
+      .filter((x): x is string => !!x)
+      .join(" · ");
+    return {
+      id: `r${i + 1}`,
+      name: s.name,
+      lat: s.hub.lat,
+      lng: s.hub.lng,
+      maxMin: s.maxMin,
+      devMin: s.devMin,
+      reason: i === 0 ? `가장 균형적 — ${detail}` : detail,
+      perParticipant: s.travel,
+    };
+  });
 }
 
 // 참가자가 수도권 밖(예: 안동·대구)이면 고정 후보 12곳(서울 지하철역)은 전부

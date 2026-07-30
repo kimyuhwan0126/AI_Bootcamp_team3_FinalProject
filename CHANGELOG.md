@@ -70,6 +70,44 @@ CEO 결정: v8 클릭 프로토타입의 방향을 채택. 프로토타입의 �
 
 ---
 
+## v8.1.0 — 2026-07-30
+
+### 팀 동시 개발 기반 — 머지 충돌이 안 나는 구조로 재배치
+
+CEO 결정: 새 저장소에서 팀원들과 각자 브랜치로 **동시에** 개발하고, 통합 담당자가
+머지를 전담한다. 팀원 중 일부는 Ollama+GLM 으로 Claude Code 를 쓴다.
+그래서 (1) 파일을 소유자 단위로 쪼개고 (2) 켜고 끄는 걸 코드가 아니라 환경변수로
+옮기고 (3) 사람 리뷰 전에 기계가 먼저 잡도록 CI 를 세웠다.
+안드로이드 배포는 **Flutter 재작성이 아니라 PWA + TWA** 로 확정.
+
+| 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
+|---|---|---|---|---|
+| 2026-07-30 | Claude(AI) | `lib/flags.ts` (신규) | `NEXT_PUBLIC_FF_*` 환경변수 기반 기능 플래그 4종 | 상수(`AI_CHAT_ENABLED=false`)는 켜려면 코드를 고쳐야 해 브랜치마다 값이 달라지고, 머지할 때마다 같은 줄에서 충돌난다 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/MeetingClient.tsx` | `AI_CHAT_ENABLED` 를 `FLAGS.aiChat` 에서 읽도록 변경 (14곳 사용부는 그대로) | 위와 동일. 개발하려고 켠 걸 실수로 커밋하면 남의 화면까지 켜졌다 |
+| 2026-07-30 | Claude(AI) | `lib/scoring/{types,index,fairness}.ts` (신규) | 점수 계산을 **스코어러 플러그인** 구조로. 파일 = 관점 하나 = 담당자 한 명 | 상권·날씨·개인선호를 여러 명이 붙이는데, 점수식이 한 줄에 있으면 전원이 그 줄에서 충돌한다 |
+| 2026-07-30 | Claude(AI) | `lib/geo.ts`, `lib/routing.ts` | 복제돼 있던 점수식(`maxMin + devMin*0.8`) 2곳을 `fairnessRaw()` 한 곳으로 통합 | 같은 식이 두 파일에 있어 한쪽만 고치는 사고가 나는 자리였다 |
+| 2026-07-30 | Claude(AI) | `lib/scoring/types.ts` | `decayScore()`(0~1 정규화) · `worstOf()`(평균 대신 최솟값) 제공 | 구버전 `enhanced-scoring.ts` 경고 반영 — 분 단위 점수 하나가 0~1 점수 전부를 압도했다. 공평성은 평균이 아니라 최악 기준이어야 한다 |
+| 2026-07-30 | Claude(AI) | `lib/parse.ts` (신규) | 규칙 기반 한국어 파싱 — 날짜·시간·예산·목적·분위기·음주·식이 | 팀원 PC 의 Ollama 는 배포 환경·발표날 스마트폰에서 닿지 않는다. LLM 없이 항상 도는 경로가 필요 (§4 의 mock 폴백 원칙을 파싱에 적용) |
+| 2026-07-30 | Claude(AI) | `tests/smoke.spec.ts`, `playwright.config.ts` (신규) | 핵심 경로(생성→출발지→거점투표→확정)를 실제 브라우저로 검증 | `tsc`·`build` 를 **둘 다 통과**하고도 화면이 통째로 안 그려진 적이 있다. 일부러 깨뜨려 이 테스트가 잡는 것을 확인함 |
+| 2026-07-30 | Claude(AI) | `.github/workflows/ci.yml` (신규) | `tsc` + `build` + 스모크를 flags-off / flags-on **두 번** 실행 | 안 돌려보는 플래그는 "언제든 켤 수 있는 코드"가 아니라 "켤 수 있어 보이는 죽은 코드"다 |
+| 2026-07-30 | Claude(AI) | `.github/CODEOWNERS` (신규) | 공용 파일에 통합 담당자 리뷰 강제, 기능별 담당 자리 표시 | 여러 명이 같은 파일을 고치는 것을 사람 기억이 아니라 GitHub 이 막게 |
+| 2026-07-30 | Claude(AI) | `supabase/migrations/` (신규) | 스키마 변경은 `schema.sql` 수정이 아니라 번호 붙은 파일 추가로 | 세 사람이 컬럼을 추가할 때마다 같은 파일에서 충돌난다 |
+| 2026-07-30 | Claude(AI) | `app/manifest.ts`, `public/sw.js`, `public/offline.html`, `public/icon-*.png` (신규) | PWA — 매니페스트 · 서비스 워커 · 아이콘 4종 | 안드로이드 APK(TWA)의 전제 조건. Flutter 재작성 없이 지금 웹앱이 그대로 앱이 된다 |
+| 2026-07-30 | Claude(AI) | `public/sw.js` | `/api/*`·비GET·타 출처를 **캐시하지 않음**. 하는 일은 오프라인 안내뿐 | 1.8초 폴링으로 남의 투표를 받아오는 앱이라, 서비스 워커가 캐시하면 "투표가 반영 안 되는" 재현 어려운 버그가 난다 |
+| 2026-07-30 | Claude(AI) | `app/components/ServiceWorkerRegistrar.tsx` (신규), `app/layout.tsx` | 운영 빌드에서만 SW 등록 + PWA 메타데이터 | 개발 중 SW 가 살아있으면 코드를 고쳐도 옛 화면이 나온다 |
+| 2026-07-30 | Claude(AI) | `docs/APK.md` (신규) | PWA → Bubblewrap → APK 절차, Flutter 를 쓰지 않는 이유 | 발표날 팀원 폰 설치가 목표. 당일에 처음 시도하면 안 되는 작업 |
+| 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md` (신규) | 브랜치 모델 · 저장소 보호 설정 · 파일 소유권 · Vercel Preview · AI 개발 규칙 | 팀원이 읽고 그대로 따라 할 수 있는 한 장 |
+| 2026-07-30 | Claude(AI) | `lib/scoring/CLAUDE.md` (신규) | 스코어러 추가 방법 + 절대 규칙 4개 (복붙 템플릿 포함) | 컨텍스트가 짧은 모델(GLM)은 긴 루트 지시의 뒷부분을 흘린다 — 폴더별 짧은 지시가 더 잘 지켜진다 |
+| 2026-07-30 | Claude(AI) | `CLAUDE.md` | 채팅=플래그 기능으로 위상 정정 · 팀 동시 개발 규칙 · 400줄 상한 · 하위 CLAUDE.md 안내 | §0 이 "대화는 카카오톡에서"라 채팅 코드를 범위 외로 오해할 수 있었다 |
+| 2026-07-30 | Claude(AI) | `.env.example`, `package.json` | 플래그 4종 문서화 · `test:smoke`/`verify` 스크립트 · `@playwright/test` | — |
+
+**검증**: `npx tsc --noEmit` · `npm run build` · 스모크 3/3 통과.
+추천 결과가 리팩터 전과 **동일**함을 실서버로 확인
+(강남역+홍대입구 → `종로3가(48/13)` → `시청(48/19)` → `사당(55/26)`, 순서·문구 그대로).
+스모크의 실효성은 `MeetingClient` 를 일부러 깨뜨려 확인 — 빌드는 통과하고 스모크만 실패했다.
+
+---
+
 ## v7.0.0 — 2026-07-28
 
 ### v7 — v3 인프라 재사용 + 피그마/목업 IA 재구성 (feat/v7-mockup)

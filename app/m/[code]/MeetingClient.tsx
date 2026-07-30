@@ -11,13 +11,17 @@ import BottomNav from "@/app/components/v8/BottomNav";
 import type { GeoSuggest } from "@/app/api/geocode/route";
 import { arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
 import { formatMinutes, formatGap } from "@/lib/format";
+import { FLAGS } from "@/lib/flags";
 
 const DEV = process.env.NODE_ENV !== "production";
 
 // v8 결정: AI 채팅/챗봇 비활성 (코드는 보존, 진입점만 차단 — 후순위 분류).
 // 이 화면은 v3에서 그대로 넘어와 채팅 UI를 갖고 있으므로 플래그로 가린다.
-// 다시 켜려면 true 로만 바꾸면 된다 — 코드는 지우지 않았다.
-const AI_CHAT_ENABLED = false;
+//
+// 켜는 법: `.env.local` 에 `NEXT_PUBLIC_FF_AI_CHAT=1` 한 줄.
+//   상수를 직접 고치지 않는다 — 브랜치마다 이 값이 달라지면 머지할 때마다
+//   같은 줄에서 충돌나고, 개발하려고 켠 걸 실수로 커밋하면 남의 화면까지 켜진다.
+const AI_CHAT_ENABLED = FLAGS.aiChat;
 const DBG_STATIONS = ["강남역", "홍대입구", "잠실", "사당", "건대입구", "수원역", "노원", "부천"];
 
 // 지도 좌표 → 박스 내 위치(%)

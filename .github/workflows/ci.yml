@@ -1,0 +1,72 @@
+# ─────────────────────────────────────────────────────────────
+# CI — 사람 리뷰 전에 기계가 먼저 잡는다
+#
+# 왜 스모크 테스트까지 도는가
+#   이 프로젝트에서 `npx tsc --noEmit` 과 `npm run build` 를 **둘 다 통과**하고도
+#   모임 상세 화면이 통째로 안 그려진 적이 있다(useEffect 를 조건부 return 뒤에
+#   둔 경우). 타입검사·빌드는 "렌더링된다"를 보장하지 않는다.
+#   실제로 브라우저를 띄워 핵심 경로를 클릭해봐야 잡힌다.
+#
+# 왜 매트릭스인가
+#   flags-off = 발표에 쓸 기본 경로.
+#   flags-on  = 꺼둔 기능(AI 채팅 등)이 썩지 않았는지. 안 돌려보는 플래그는
+#               "언제든 켤 수 있는 코드"가 아니라 "켤 수 있어 보이는 죽은 코드"다.
+#
+# 외부 API 키는 CI 에 넣지 않는다. 키 없이도 mock 폴백으로 전체 플로우가
+# 돌아야 한다는 게 프로젝트 규칙(CLAUDE.md §4)이라, CI 가 그 규칙의 검사이기도 하다.
+# ─────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: flags-off
+            ff_ai_chat: "0"
+          - name: flags-on
+            ff_ai_chat: "1"
+    name: verify (${{ matrix.name }})
+    env:
+      NEXT_PUBLIC_FF_AI_CHAT: ${{ matrix.ff_ai_chat }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: 타입 검사
+        run: npx tsc --noEmit
+
+      - name: 빌드
+        run: npm run build
+
+      - name: Chromium 설치
+        run: npx playwright install --with-deps chromium
+
+      - name: 스모크 (실제로 브라우저에서 열어본다)
+        run: npm run test:smoke
+
+      - name: 실패 시 스크린샷·트레이스 업로드
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.name }}
+          path: playwright-report/
+          retention-days: 7

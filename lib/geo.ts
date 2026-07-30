@@ -4,6 +4,7 @@
 //  KAKAO/ODsay/TMAP 키를 넣으면 이 파일만 교체하면 됩니다.)
 // ─────────────────────────────────────────────────────────────
 import type { Participant, RegionCandidate, PlaceCandidate } from "./types";
+import { fairnessRaw } from "./scoring/fairness";
 
 // 서울 주요 거점 좌표(대략값). 지오코딩/후보지 풀로 함께 사용.
 export const HUBS: Record<string, { lat: number; lng: number }> = {
@@ -192,8 +193,10 @@ function scoreAndPick(
       const mins = per.map((x) => x.min);
       const maxMin = Math.max(...mins);
       const devMin = maxMin - Math.min(...mins);
-      // 공평성 점수: 최대 이동시간 + 편차 가중(편차가 클수록 불리)
-      return { name, hub, per, maxMin, devMin, score: maxMin + devMin * 0.8 };
+      // 공평성 점수 — 식은 lib/scoring/fairness.ts 한 곳에만 있다.
+      // 여기는 브라우저에서도 도는 즉시 추정 경로라, 서버 스코어러(날씨·상권 등)를
+      // await 할 수 없어 공평성만 본다. 실계산은 lib/routing.ts 가 전체 스코어러로 한다.
+      return { name, hub, per, maxMin, devMin, score: fairnessRaw(maxMin, devMin) };
     })
     .sort((a, b) => a.score - b.score);
 
