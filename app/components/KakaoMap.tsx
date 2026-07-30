@@ -15,17 +15,68 @@ declare global {
   }
 }
 
+// ── 출발지 칩 · 지도 핀 공용 팔레트 ──────────────────────────
+// 로그인 후 모임원 화면은 도착 상태를 신호등(초록/노랑/빨강)으로 표시한다.
+// 출발지 구분색이 그 셋과 섞이면 "늦는 사람"으로 오독되므로,
+// 여기서는 초록·노랑·빨강 계열(색상환 0~60°, 90~150°)을 의도적으로 배제하고
+// 청록~파랑~보라~마젠타(170~310°)만 사용한다.
+export const PIN_COLORS = [
+  "#2f6fed", // 파랑
+  "#0aa8a0", // 청록
+  "#9b51e0", // 보라
+  "#1f9bd6", // 하늘파랑
+  "#c94fc9", // 마젠타
+  "#5b4bc4", // 남보라
+  "#157f7a", // 진청록
+  "#7d6bb0", // 연보라
+];
+export const pinColor = (i: number) => PIN_COLORS[i % PIN_COLORS.length];
+
+/** 중간 추천 지역 마커 색 — 참가자 색과 완전히 분리된 강조색 */
+export const MIDPOINT_COLOR = "#f0324b";
+
 export interface MapPin {
   lat: number;
   lng: number;
   label: string;
-  emoji: string;       // 🧑 / 🚗
+  color: string;       // 출발지 칩과 동일한 색 (PIN_COLORS) — 다른 참가자와 구분용
+  index: number;       // 칩에 표시되는 순번 (1부터)
+  /** 도착 신호등 색(있으면 원 안쪽 채우기를 이 색으로, 테두리는 color로) */
+  statusColor?: string;
+  /** 출발지 칩을 눌러 이 핀의 경로만 강조하는 중이면 true — 원을 키우고 링을 굵게 */
+  focused?: boolean;
+}
+
+/** 출발지 → 목적지 경로. color 는 해당 출발지 핀과 같은 색을 쓴다. */
+export interface MapRoute {
+  id: string;
+  points: { lat: number; lng: number }[];
+  color: string;
+  /** 실제 도로 경로면 실선, 직선 근사면 점선으로 구분해 그린다 */
+  real: boolean;
+  /** 지정하면 real 여부 기반 기본 두께/불투명도 대신 이 값을 쓴다 — 특정 출발지만
+   *  포커스했을 때 나머지를 옅게, "전체 위치 보기"에서 겹침을 옅게 하는 용도 */
+  weight?: number;
+  opacity?: number;
 }
 export interface MapCenterPin {
   lat: number;
   lng: number;
   label: string;       // "왕십리" | "예상 중간지점"
 }
+
+/** 투표 후보 — 지도 위 라벨 박스(이름+N표)로 표시되고, 누르면 투표된다 */
+export interface MapCandidate {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  votes: number;
+  /** 내가 투표한 후보 — 주황 테두리로 강조 (피그마) */
+  mine: boolean;
+}
+/** 내가 투표한 후보 강조색 (피그마의 주황 테두리) */
+const CAND_MINE = "#f2803d";
 
 const JS_KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY || "";
 
@@ -57,14 +108,43 @@ export default function KakaoMap({
   pins,
   center,
   onFail,
+  view = "all",
+  focusIndex = 0,
+  routes = [],
+  candidates = [],
+  onCandidateClick,
 }: {
   pins: MapPin[];
   center: MapCenterPin | null;
   onFail: () => void;
+  /** all: 모든 핀이 보이게 / me: 특정 출발지 중심으로 확대 */
+  view?: "all" | "me";
+  /** view="me" 일 때 중심이 될 핀 인덱스 */
+  focusIndex?: number;
+  /** 출발지별 경로 (없으면 그리지 않음) */
+  routes?: MapRoute[];
+  /** 투표 후보 라벨 박스 — 누르면 onCandidateClick(id) */
+  candidates?: MapCandidate[];
+  onCandidateClick?: (id: string) => void;
 }) {
+  // 호출부는 pins/routes 를 렌더마다 새 배열로 만든다. 모임 상세는 1.8초마다
+  // 폴링하므로 배열 참조를 그대로 의존성에 쓰면 오버레이가 계속 지워졌다 다시
+  // 그려져 깜빡인다. 내용이 같으면 다시 그리지 않도록 서명으로 비교한다.
+  const sig = JSON.stringify([
+    pins.map((p) => [p.lat, p.lng, p.label, p.color, p.index, p.statusColor, p.focused]),
+    center && [center.lat, center.lng, center.label],
+    routes.map((r) => [r.id, r.color, r.real, r.points.length, r.points[0], r.points[r.points.length - 1], r.weight, r.opacity]),
+    candidates.map((c) => [c.id, c.lat, c.lng, c.name, c.votes, c.mine]),
+  ]);
+
+  // 클릭 콜백은 렌더마다 새 함수여도 오버레이를 다시 그릴 필요가 없다 → ref로 보관
+  const clickRef = useRef(onCandidateClick);
+  clickRef.current = onCandidateClick;
+
   const boxRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
+  const linesRef = useRef<any[]>([]);
   const [ready, setReady] = useState(false);
 
   // SDK 로드 + 지도 생성
@@ -97,25 +177,76 @@ export default function KakaoMap({
     const { kakao } = window;
     const map = mapRef.current;
 
-    // 기존 오버레이 제거
+    // 기존 오버레이/경로 제거
     overlaysRef.current.forEach((o) => o.setMap(null));
     overlaysRef.current = [];
+    linesRef.current.forEach((l) => l.setMap(null));
+    linesRef.current = [];
+
+    // 경로선 — 핀보다 먼저 그려 핀이 위에 오도록
+    for (const rt of routes) {
+      if (!rt.points || rt.points.length < 2) continue;
+      const line = new kakao.maps.Polyline({
+        path: rt.points.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
+        strokeWeight: rt.weight ?? (rt.real ? 5 : 3),
+        strokeColor: rt.color,
+        strokeOpacity: rt.opacity ?? (rt.real ? 0.85 : 0.55),
+        strokeStyle: rt.real ? "solid" : "shortdash",
+      });
+      line.setMap(map);
+      linesRef.current.push(line);
+    }
 
     const bounds = new kakao.maps.LatLngBounds();
     let hasAny = false;
 
-    // 참가자 핀 (이모지 + 이름 라벨)
+    // 참가자 핀 — 출발지 칩과 동일한 "색상 원 + 번호" (이모지는 작아서 식별이 어려움)
     for (const p of pins) {
       const pos = new kakao.maps.LatLng(p.lat, p.lng);
       bounds.extend(pos);
       hasAny = true;
       const el = document.createElement("div");
       el.style.cssText =
-        "display:flex;flex-direction:column;align-items:center;transform:translateY(-4px);pointer-events:none;";
+        "display:flex;flex-direction:column;align-items:center;pointer-events:none;";
+      // 도착 신호등 색이 있으면 원 채우기를 그걸로 쓰고, 테두리를 참가자 구분색으로
+      // 돌려 route 선과 여전히 매칭되게 한다(둘 다 identity색이면 신호등 신호를 잃는다).
+      const fill = p.statusColor ?? p.color;
+      const ring = p.statusColor ? p.color : "#fff";
+      // 포커스된 핀은 살짝 키우고 강조 테두리를 둘러 "지금 이 경로를 보고 있다"를 알려준다
+      const size = p.focused ? 32 : 26;
+      const ringWidth = p.focused ? 3.5 : 2.5;
+      const focusHalo = p.focused
+        ? `outline:3px solid color-mix(in srgb, ${p.color} 55%, transparent);outline-offset:2px;`
+        : "";
       el.innerHTML =
-        `<div style="font-size:20px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.25))">${p.emoji}</div>` +
-        `<div style="font-size:10px;font-weight:800;background:#fff;border:1px solid #d8dee9;border-radius:999px;padding:1px 7px;margin-top:1px;color:#1c2433;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.12)">${p.label}</div>`;
+        `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${fill};color:#fff;` +
+        `font-size:${p.focused ? 13 : 12}px;font-weight:900;display:flex;align-items:center;justify-content:center;` +
+        `border:${ringWidth}px solid ${ring};box-shadow:0 2px 6px rgba(0,0,0,.3);${focusHalo}">${p.index}</div>` +
+        `<div style="font-size:10px;font-weight:800;background:#fff;border:1px solid #d8dee9;border-radius:999px;padding:1px 7px;margin-top:2px;color:#1c2433;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.12)">${p.label}</div>`;
       const ov = new kakao.maps.CustomOverlay({ position: pos, content: el, yAnchor: 1 });
+      ov.setMap(map);
+      overlaysRef.current.push(ov);
+    }
+
+    // 투표 후보 라벨 박스 — 피그마: 흰 박스에 이름 + 파란 "N표" 뱃지, 클릭=투표
+    for (const cd of candidates) {
+      const pos = new kakao.maps.LatLng(cd.lat, cd.lng);
+      bounds.extend(pos);
+      hasAny = true;
+      const el = document.createElement("div");
+      el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+      el.innerHTML =
+        `<button type="button" style="pointer-events:auto;cursor:pointer;font:inherit;` +
+        `display:flex;flex-direction:column;align-items:center;gap:2px;background:#fff;` +
+        `border:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};border-radius:12px;padding:5px 10px;` +
+        `box-shadow:0 3px 10px rgba(0,0,0,.18)">` +
+        `<span style="font-size:12px;font-weight:900;color:#1c2433;white-space:nowrap">${cd.name}</span>` +
+        `<span style="font-size:10px;font-weight:900;color:#1f5ae0;background:#e8f0ff;border-radius:999px;padding:1px 8px">${cd.votes}표</span>` +
+        `</button>` +
+        // 박스 아래 작은 꼬리
+        `<div style="width:8px;height:8px;background:#fff;border-right:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};border-bottom:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};transform:rotate(45deg);margin-top:-6px"></div>`;
+      el.querySelector("button")!.addEventListener("click", () => clickRef.current?.(cd.id));
+      const ov = new kakao.maps.CustomOverlay({ position: pos, content: el, yAnchor: 1, clickable: true });
       ov.setMap(map);
       overlaysRef.current.push(ov);
     }
@@ -128,19 +259,62 @@ export default function KakaoMap({
       const el = document.createElement("div");
       el.style.cssText =
         "display:flex;flex-direction:column;align-items:center;pointer-events:none;";
+      // 물방울(teardrop) 지도핀 — 참가자의 원형 핀과 모양으로도 구분된다
       el.innerHTML =
-        `<div style="font-size:11px;font-weight:900;background:#2f6fed;color:#fff;border-radius:999px;padding:3px 10px;margin-bottom:3px;white-space:nowrap;box-shadow:0 2px 8px rgba(47,111,237,.45)">📍 ${center.label}</div>` +
-        `<div style="width:14px;height:14px;border-radius:50%;background:#2f6fed;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>`;
+        `<div style="font-size:11px;font-weight:900;background:${MIDPOINT_COLOR};color:#fff;border-radius:999px;` +
+        `padding:3px 10px;margin-bottom:4px;white-space:nowrap;box-shadow:0 2px 8px rgba(240,50,75,.4)">${center.label}</div>` +
+        `<svg width="30" height="38" viewBox="0 0 30 38" style="filter:drop-shadow(0 3px 5px rgba(0,0,0,.35))">` +
+        `<path d="M15 37C15 37 28 22.5 28 14A13 13 0 1 0 2 14c0 8.5 13 23 13 23z" fill="${MIDPOINT_COLOR}" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>` +
+        `<circle cx="15" cy="14" r="5" fill="#fff"/></svg>`;
       const ov = new kakao.maps.CustomOverlay({ position: pos, content: el, yAnchor: 1 });
       ov.setMap(map);
       overlaysRef.current.push(ov);
     }
 
-    if (hasAny) {
-      map.setBounds(bounds, 40, 40, 40, 40); // 모든 핀이 보이도록
-      if (pins.length + (center ? 1 : 0) === 1) map.setLevel(5); // 핀 1개면 과확대 방지
-    }
-  }, [ready, pins, center]);
+    if (!hasAny) return;
 
-  return <div ref={boxRef} style={{ position: "absolute", inset: 0 }} />;
+    const focus = pins[focusIndex] ?? pins[0];
+    if (view === "me" && focus) {
+      // 내 위치 보기 — 내 출발지와 목적지(중간지점)가 "함께" 보여야 한다.
+      // 내 핀만 확대하면 목적지가 화면 밖으로 나가 경로를 읽을 수 없다.
+      const dest = center ?? null;
+      if (dest) {
+        const b = new kakao.maps.LatLngBounds();
+        b.extend(new kakao.maps.LatLng(focus.lat, focus.lng));
+        b.extend(new kakao.maps.LatLng(dest.lat, dest.lng));
+        map.setBounds(b, 70, 70, 70, 70);
+      } else {
+        // 목적지가 아직 없으면 기존처럼 내 위치만 확대
+        map.setCenter(new kakao.maps.LatLng(focus.lat, focus.lng));
+        map.setLevel(5);
+      }
+    } else {
+      map.setBounds(bounds, 40, 40, 40, 40); // 모든 핀·후보가 보이도록
+      // 점이 딱 하나뿐일 때만 과확대를 막는다. 투표 후보 박스(candidates)를 빼먹으면
+      // "참가자 1명 + 후보 3곳"인데도 1개로 세어 setBounds 결과를 setLevel(5)가
+      // 덮어써버려, 방금 fit된 넓은 화면이 후보 박스가 안 보이는 좁은 확대로 되돌아간다.
+      const totalPoints = pins.length + candidates.length + (center ? 1 : 0);
+      if (totalPoints === 1) map.setLevel(5);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, sig, view, focusIndex]);
+
+  return (
+    <>
+      <div ref={boxRef} style={{ position: "absolute", inset: 0 }} />
+      {ready && candidates.length > 0 && onCandidateClick && (
+        // 피그마: 지도 상단 중앙 안내 툴팁 (상단 컨트롤과 겹치지 않게 한 줄 아래)
+        <div
+          style={{
+            position: "absolute", top: 46, left: "50%", transform: "translateX(-50%)",
+            zIndex: 10, pointerEvents: "none", whiteSpace: "nowrap",
+            background: "var(--panel)", color: "var(--ink-soft)", borderRadius: 999,
+            padding: "5px 12px", fontSize: 11, fontWeight: 800, boxShadow: "var(--shadow)",
+          }}
+        >
+          지도에서 후보를 눌러 투표하세요
+        </div>
+      )}
+    </>
+  );
 }

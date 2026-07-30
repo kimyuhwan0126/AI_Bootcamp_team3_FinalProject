@@ -9,6 +9,10 @@ export type AiPhase = "region" | "place" | "done";
 
 export type Transport = "transit" | "car";
 
+// 도착 신호등 — 본인만 자기 항목을 수정할 수 있다(회의록). null이면 아직
+// 자가신고를 안 한 것 — 이때는 이동시간 기반 자동 계산값으로 대신 보여준다.
+export type ArrivalSelfStatus = "green" | "yellow" | "red" | null;
+
 export interface Participant {
   id: string;
   name: string;
@@ -18,6 +22,8 @@ export interface Participant {
   lat: number | null;
   lng: number | null;
   transport: Transport;
+  status: ArrivalSelfStatus;  // 자가신고 도착 상태(정상/지체 중/많이 늦음)
+  etaText: string | null;     // 자가신고 도착 예정 시간(자유 텍스트, 예: "9:55 도착 예정")
 }
 
 export interface RegionCandidate {
@@ -36,6 +42,9 @@ export interface PlaceCandidate {
   name: string;
   category: string;
   emoji: string;
+  /** 지도에 후보 핀을 찍기 위한 좌표 (카카오 검색 결과에서 채움) */
+  lat?: number;
+  lng?: number;
   distanceM: number;
   rating: number;           // 0 = 정보 없음(실 데이터엔 평점이 없어 미표시)
   reservable: boolean;
@@ -89,6 +98,10 @@ export interface Meeting {
   prefs: MeetingPrefs;
   winnerRegionId: string | null;
   winnerPlaceId: string | null;
+  /** 거점 투표: 참가자 id → 후보 id (1인 1표, 재투표는 덮어쓰기) */
+  regionVotes: Record<string, string>;
+  /** 가게 투표: 참가자 id → 후보 id */
+  placeVotes: Record<string, string>;
   reservation: Reservation | null;
   createdAt: string;
 }
@@ -109,6 +122,8 @@ export interface MeetingState {
   prefs: MeetingPrefs;           // AI가 대화에서 수집한 선호·일정
   winnerRegion: RegionCandidate | null;
   winnerPlace: PlaceCandidate | null;
+  regionVotes: Record<string, string>;
+  placeVotes: Record<string, string>;
   reservation: Reservation | null;
   originsSet: number;
   totalParticipants: number;

@@ -1,97 +1,94 @@
-# 모이머 Moimer v2 — 투표 대신 AI 대화
+# 모이머 (Moimer) — 공통 보일러플레이트
 
-> 흩어진 우리, 딱 중간에서 — 각자 위치에서 가장 공평한 중간 지점을 찾아주는 모임 장소 추천 서비스.
-> **v2: 투표 기능을 AI 챗봇(파실리테이터)으로 대체**해 사용자 부담을 낮춘 버전입니다.
+> **흩어진 우리, 딱 중간에서.** 출발지 → 공평한 중간지점 → 장소 추천.
+> 팀 전원이 이 뼈대에서 브랜치를 따 작업합니다. 완성도보다 **큰 그림(척추)** 우선.
 
-## v1 → v2 무엇이 바뀌었나
+---
 
-| | v1 (moimer-app) | v2 (moimer-app2) |
-|---|---|---|
-| 의견 수집 | 1차/2차 투표 (버튼 클릭 필수) | **채팅으로 편하게 말하기** (빠른답변 칩 = 탭 1번) |
-| 집계·확정 | 방장이 마감 → 최다득표 | **AI가 합의를 감지해 자동 확정** |
-| 무응답 처리 | 투표 타임아웃 | AI가 미발언자 호명 + 방장 **"AI에게 결정 요청"** |
-| 동점 처리 | 방장 재투표 | AI가 공평성 데이터로 중재·절충 유도 |
-| 후보 밖 지역 | 불가 | **"판교는 어때?" → AI가 이동시간 계산해 후보 추가** |
-| AI 장애 시 | — | 로컬 모델 자동 폴백 + 방장 **"직접 확정"** 안전망 |
-
-단계: `main(출발지) → chat(AI 대화: 지역→장소) → result(예약·공유)`
-
-## AI가 처리하는 경우의 수
-
-1. **시작 직후 침묵** — AI가 후보 3곳+이동시간을 들고 먼저 말을 걺 (LLM 무관 결정적 오프닝)
-2. **명확한 합의** — `confirm_region`/`confirm_place` 도구로 확정
-3. **의견 갈림·동점** — 최대 이동시간·편차 데이터로 중재
-4. **무응답자** — 이름 불러 의견 요청, 그래도 없으면 나온 의견으로 진행
-5. **후보 밖 지역 제안** — `evaluate_region` 도구로 전원 이동시간 계산 후 후보 추가
-6. **확정 번복** — 방장 "다시 논의" (지역/장소 되돌리기, 후보 재계산)
-7. **AI 서버 장애** — primary(GLM) → fallback(로컬) 자동 전환, 완전 장애 시 방장 직접 확정
-8. **1인 모임** — AI가 바로 최적안 제안
-9. **대화 중 합류** — 시스템 메시지로 AI가 새 참가자 인지
-10. **동시 발화** — 모임별 락 + 대기 큐로 판단 유실 방지
-11. **성급한 확정 방지** — 명확한 합의/방장 요청 시에만 확정, 애매하면 되묻기
-12. **수동 확정과 경합** — 도구 실행 시 단계 가드로 stale 확정 거부
-
-## 로컬 실행
+## 🚀 빠른 시작 (키 없이 바로 실행)
 
 ```bash
-npm install   # (또는 기존 moimer-app의 node_modules 재사용)
-npm run dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-→ http://localhost:3000 접속. `DATABASE_URL` 없이 **인메모리 스토어**로 바로 동작합니다.
+키가 하나도 없어도 **MOCK 모드**(기본값)로 전체 플로우가 돕니다.
+`.env.example` → `.env.local` 복사는 **실제 외부 API를 붙일 때만** 필요합니다.
 
-### AI 모델 설정 (.env.local)
+데모 시나리오:
+1. `/` 에서 **모임방 개설** (이름·비번·내 이름)
+2. 메인에서 내 출발지 등록 → **＋예시 참여자 추가(데모용)**
+3. **🧭 중간지점 계산** → 후보 3곳 확인 → **투표 시작**
+4. 1차(중간지역) 투표 → 방장 확정 → 2차(추천장소) 투표 → 방장 확정
+5. **결과** 화면에서 확정 장소 확인
 
-```
-OLLAMA_PRIMARY_URL=http://10.20.2.164:11434/v1   # 다른 기기의 Ollama (GLM)
-OLLAMA_PRIMARY_MODEL=glm-5.2:cloud
-OLLAMA_FALLBACK_URL=http://localhost:11434/v1     # 이 PC 로컬 (자동 폴백)
-OLLAMA_FALLBACK_MODEL=qwen2.5-coder:7b
-```
+---
 
-primary 접속이 6초 안에 안 되면 자동으로 fallback을 사용합니다.
-`:cloud` 모델은 대화가 Ollama 클라우드로 전송되므로, 민감정보 환경에서는 로컬 모델을 primary로 두세요.
-
-### 한 기기에서 전체 플로우 테스트하기
-1. **모임 만들기(방장)** 로 개설 → 발급된 코드 확인
-2. 상단 **`+ 참가자`** 로 참가자 추가, **현재** 드롭다운으로 전환하며 출발지 등록
-3. 방장으로 **"💬 AI와 함께 정하기"** → AI가 후보를 들고 먼저 인사
-4. 각자 채팅(또는 빠른답변 칩 탭)으로 의견 → AI가 모아서 지역·장소 확정
-5. 결과 화면에서 **예약·선입금(모의)**, **.ics 캘린더**, **링크 공유**
-- 디버그(🐞): 출발지 전원 자동, 전원 합의 발화, 전원 의견 갈림
-- 홈 화면 디버그 시드: 대화·결과·엣지 상태를 원클릭 재현
-
-## 아키텍처
+## 🧭 화면 흐름 (3-플로우)
 
 ```
-app/
-  page.tsx                진입(개설/참여)
-  m/[code]/               모임 화면(메인 · AI 대화 · 결과)
-  api/meeting/route.ts    단일 엔드포인트(GET 상태 / POST 액션)
-lib/
-  ai.ts                   ★ AI 파실리테이터 (LLM 호출·도구·락·폴백)
-  store.ts                데이터 계층 (채팅·확정·인메모리 ↔ Neon 전환 지점)
-  routing.ts / geo.ts     실 이동시간 API + mock 폴백
-  types.ts / identity.ts  도메인 타입 · 클라이언트 신원
-schema.sql                Neon 스키마 (votes → chat_messages)
+진입(개설/참여)  →  메인  →  투표  →  결과
+                  지도·출발지   1차 중간지역    확정 장소
+                  중간지점(AI)  2차 추천장소    참여자·부가기능
+                  추천장소
+```
+- **AI 위치**: 중간지점 계산 ↔ 장소 추천 **사이** (채팅 아님)
+- **채팅은 스코프 밖**: 대화는 카카오톡에서, 모이머는 "장소 정하기"만 담당
+
+---
+
+## 📁 구조
+
+```
+src/
+  app/
+    page.tsx                 진입 (모임방 개설/참여 · 이름+비번)
+    room/[id]/page.tsx       메인 (지도·출발지·중간지점 계산)
+    room/[id]/vote/page.tsx  투표 (1차 중간지역 → 2차 추천장소)
+    room/[id]/result/page.tsx 결과 (확정 장소·참여자·부가기능)
+    api/{geocode,transit,places,ai-recommend}/  외부 API seam (stub)
+  components/
+    ui/         shadcn 스타일 (button/input/card/badge)
+    common/     Stepper, MapPlaceholder(지도 seam)
+  lib/
+    env.ts              MOCK 플래그
+    geo.ts              좌표 유틸 + mock 지오코딩
+    services/           외부 API 래퍼 (전부 mock fallback)
+    algo/               fair-scoring, travel-time-display (재사용)
+    supabase/client.ts
+  stores/roomStore.ts   zustand — MOCK 시 in-memory 전체 플로우
+  types/index.ts        데이터 계약 (Room·Participant·Vote·Result)
+supabase/schema.sql     최소 스키마 (rooms·participants·votes)
 ```
 
-### AI 판단 흐름
-```
-사용자 발화 → POST /api/meeting {action:"chat"}
-  → runAiTurn(code)  (백그라운드, 모임별 락)
-     → 컨텍스트: 참가자·출발지·후보·이동시간·최근 대화 40개
-     → GLM 판단: [SILENT] | 답변 | 도구 호출
-        confirm_region / confirm_place / evaluate_region
-  → 1.8초 폴링으로 전 참가자 화면에 반영
-```
+## 🔌 담당 seam (여기에 살을 붙이세요)
 
-## Vercel 배포 시 주의
+| 자리 | 파일 | 담당 |
+|---|---|---|
+| 지도 렌더 | `components/common/MapPlaceholder.tsx` | 병현 (코어 지도) |
+| 지오코딩/장소검색 | `lib/services/*`, `app/api/{geocode,places}` | BE |
+| 이동시간(ODsay/TMAP) | `lib/services/transit.ts`, `app/api/transit` | AI/BE |
+| AI 추천(Gemini) | `lib/services/recommend.ts`, `app/api/ai-recommend` | AI |
+| 디자인 토큰/화면 | `app/globals.css`, 각 page | 동원·성은 |
 
-- `void runAiTurn()`은 서버리스에서 응답 후 중단될 수 있음 → `waitUntil()`로 감싸거나 큐 사용
-- 인메모리 스토어는 인스턴스 간 공유 안 됨 → Neon(`DATABASE_URL`) + `schema.sql` 적용
-- Ollama 주소가 사설 IP면 클라우드에서 접근 불가 → Ollama Cloud API 키 방식 권장
+## ⚠️ 스켈레톤 한계 (의도된 것)
+- 상태는 MOCK 시 **in-memory** → 새로고침하면 초기화 (실연동 시 Supabase로 대체)
+- 비밀번호 **평문** (해시 TODO), RLS 비활성
+- 지도·실시간·다중 사용자 동기화 미구현 (seam만 제공)
 
-## 참고
-- 결과 화면의 예약/선입금은 **모의 결제**입니다. 실제 카드·계좌 정보를 요구하지 않습니다.
-- 지도는 좌표 기반 스키매틱(오프라인 동작). 실제 지도로 바꾸려면 카카오맵 SDK로 교체하세요.
+## 🌿 브랜치 / 커밋
+- `main`(구 프로토타입 참조용) → `develop`(이 뼈대) → `feat/*`, `fix/*`
+- 커밋: `feat: 모임 생성 API 추가` (한글 OK)
+- AI 생성 코드는 PR 본문에 `🤖 Generated with Claude Code` 표기
+
+## ✅ 검증 (3관점)
+`npm run build` · `npx tsc --noEmit` · `npm run lint` 통과 + 눈/버튼/로그 확인
+
+## 🧪 디버깅 도구
+- **DevBar (🐞)**: 개발 모드 화면 우하단. 원클릭으로 데모 데이터를 채워 메인/투표/결과로 점프.
+- **E2E 자동 클릭 (Playwright)**: 실제 브라우저로 전체 플로우를 자동 검증.
+  ```bash
+  npm run test:e2e       # 헤드리스 실행 (dev 서버 자동 기동, MOCK)
+  npm run test:e2e:ui    # UI 모드로 스텝별 확인
+  ```
+  > Windows에서 브라우저를 처음 쓸 땐 `npx playwright install chromium` 한 번 필요할 수 있어요.

@@ -12,10 +12,12 @@ import {
   estMinutes,
   haversineKm,
   HUBS,
-  CANDIDATE_HUBS,
+  nearCentroidHubs,
   generatePlaces,
+  isOutsideHubCoverage,
+  geometricCandidates,
 } from "./geo";
-import { geocodeKakao, searchPlacesKakao, type Coord } from "./kakao";
+import { geocodeKakao, coord2AddressKakao, searchPlacesKakao, type Coord } from "./kakao";
 import { transitRouteOdsay } from "./odsay";
 import { carRouteTmap } from "./tmap";
 import type { Participant, RegionCandidate, PlaceCandidate } from "./types";
@@ -64,19 +66,19 @@ export async function travelMinutes(from: Coord, to: Coord, transport: string): 
   return estMinutes(haversineKm(from, to), transport);
 }
 
-// ── 중간지역 추천(실 이동시간 기반) ──
-export async function recommendRegions(participants: Participant[]): Promise<RegionCandidate[]> {
-  const located = participants.filter((p) => p.lat != null && p.lng != null);
-  if (located.length === 0) return [];
+type Located = Pick<Participant, "id" | "name" | "transport"> & { lat: number; lng: number };
 
+async function scoreCandidates(
+  candidates: { name: string; hub: { lat: number; lng: number } }[],
+  located: Located[]
+): Promise<RegionCandidate[]> {
   const scored = await Promise.all(
-    CANDIDATE_HUBS.map(async (name) => {
-      const hub = HUBS[name];
+    candidates.map(async ({ name, hub }) => {
       const per = await Promise.all(
         located.map(async (p) => ({
           pid: p.id,
           name: p.name,
-          min: await travelMinutes({ lat: p.lat!, lng: p.lng! }, hub, p.transport),
+          min: await travelMinutes({ lat: p.lat, lng: p.lng }, hub, p.transport),
         }))
       );
       const mins = per.map((x) => x.min);
@@ -100,6 +102,34 @@ export async function recommendRegions(participants: Participant[]): Promise<Reg
         : `최대 ${s.maxMin}분 · 편차 ${s.devMin}분`,
     perParticipant: s.per,
   }));
+}
+
+// 참가자가 수도권 밖(예: 안동·대구)이면 고정 후보 12곳(서울 지하철역)은 전부
+// 수백 km 떨어져 있다. 그런데도 "가까운 순 최소 확보" 폴백이 그중 제일 가까운
+// 곳(예: 잠실)을 그대로 추천해, 실제로는 중간이 아닌 곳이 1위로 뜨는 문제가
+// 있었다. 이럴 때는 이름 있는 서울 후보 대신 참가자 좌표로 직접 계산한 지점을
+// 쓰고, 실 좌표 → 지명은 카카오 역지오코딩으로 채운다(키 없으면 "중간지점 N").
+async function recommendDynamicRegions(located: Located[]): Promise<RegionCandidate[]> {
+  const points = geometricCandidates(located);
+  const named = await Promise.all(
+    points.map(async (hub, i) => ({ hub, name: (await coord2AddressKakao(hub)) || `중간지점 ${i + 1}` }))
+  );
+  // 후보 지점이 가까우면 같은 동/읍/면 이름으로 겹칠 수 있다 — 중복 이름 제거
+  const seen = new Set<string>();
+  const uniq = named.filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)));
+  return scoreCandidates(uniq, located);
+}
+
+// ── 중간지역 추천(실 이동시간 기반) ──
+export async function recommendRegions(participants: Participant[]): Promise<RegionCandidate[]> {
+  const located = participants.filter((p) => p.lat != null && p.lng != null) as Located[];
+  if (located.length === 0) return [];
+
+  if (isOutsideHubCoverage(located)) return recommendDynamicRegions(located);
+
+  // 거리 기반과 동일하게 후보를 참가자 중심 근처로 좁힌다
+  const pool = nearCentroidHubs(located).map((name) => ({ name, hub: HUBS[name] }));
+  return scoreCandidates(pool, located);
 }
 
 // ── 추천장소(2차 논의 후보): 카카오 로컬 실검색 → 실패 시 mock ──
@@ -138,6 +168,8 @@ export async function recommendPlaces(regionName: string, center: Coord): Promis
         name: doc.name,
         category: doc.category,
         emoji: emojiFor(doc.category, PLACE_QUERIES[qi].emoji),
+        lat: doc.lat,
+        lng: doc.lng,
         distanceM: doc.distanceM,
         rating: 0,                      // 카카오 로컬엔 평점이 없음 → UI에서 미표시
         reservable: true,               // 유료서비스(모의 예약) 대상
@@ -148,6 +180,6 @@ export async function recommendPlaces(regionName: string, center: Coord): Promis
     }
   });
 
-  if (merged.length === 0) return generatePlaces(regionName); // 키 없음/실패 → mock
+  if (merged.length === 0) return generatePlaces(regionName, center); // 키 없음/실패 → mock
   return merged.slice(0, 5).map((p, i) => ({ ...p, id: `p${i + 1}` }));
 }

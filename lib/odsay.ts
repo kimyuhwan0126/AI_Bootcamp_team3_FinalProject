@@ -109,3 +109,43 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
     return null;
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// 대중교통 실제 경로 좌표(polyline)
+//
+// ODsay 는 경로 좌표를 바로 주지 않는다. 2단계가 필요하다:
+//   1) searchPubTransPathT → path[i].info.mapObj  (경로 식별자)
+//   2) loadLane?mapObject=0:0@{mapObj} → lane[].section[].graphPos[]
+// graphPos 는 {x: 경도, y: 위도} 형식이다.
+// ─────────────────────────────────────────────────────────────
+export async function transitPathOdsay(from: Coord, to: Coord): Promise<Coord[] | null> {
+  if (!env.odsay) return null;
+  try {
+    const p = new URLSearchParams({
+      SX: String(from.lng), SY: String(from.lat),
+      EX: String(to.lng), EY: String(to.lat),
+      apiKey: env.odsay,
+    });
+    const r = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${p.toString()}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const mapObj: string | undefined = d?.result?.path?.[0]?.info?.mapObj;
+    if (!mapObj) return null;
+
+    const lp = new URLSearchParams({ mapObject: `0:0@${mapObj}`, apiKey: env.odsay });
+    const lr = await fetch(`https://api.odsay.com/v1/api/loadLane?${lp.toString()}`);
+    if (!lr.ok) return null;
+    const ld = await lr.json();
+
+    const lanes: { section?: { graphPos?: { x: number; y: number }[] }[] }[] = ld?.result?.lane ?? [];
+    const pts: Coord[] = [];
+    for (const lane of lanes) {
+      for (const sec of lane.section ?? []) {
+        for (const g of sec.graphPos ?? []) pts.push({ lat: g.y, lng: g.x });
+      }
+    }
+    return pts.length >= 2 ? pts : null;
+  } catch {
+    return null;
+  }
+}

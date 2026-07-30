@@ -30,6 +30,36 @@ async function carRouteOnce(from: Coord, to: Coord, searchOption: string): Promi
   return d?.features?.[0]?.properties ?? null;
 }
 
+/**
+ * 자차 경로의 실제 도로 좌표열(polyline).
+ * TMAP 응답의 LineString feature 들을 순서대로 이어 붙인다.
+ * (carRouteTmap 은 properties 만 쓰고 geometry 는 버리고 있었다)
+ */
+export async function carPathTmap(from: Coord, to: Coord): Promise<Coord[] | null> {
+  if (!env.tmap) return null;
+  try {
+    const r = await fetch("https://apis.openapi.sk.com/tmap/routes?version=1&format=json", {
+      method: "POST",
+      headers: { appKey: env.tmap, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startX: from.lng, startY: from.lat, endX: to.lng, endY: to.lat,
+        reqCoordType: "WGS84GEO", resCoordType: "WGS84GEO", searchOption: "0",
+      }),
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const feats: { geometry?: { type?: string; coordinates?: [number, number][] } }[] = d?.features ?? [];
+    const pts: Coord[] = [];
+    for (const f of feats) {
+      if (f.geometry?.type !== "LineString") continue;
+      for (const c of f.geometry.coordinates ?? []) pts.push({ lat: c[1], lng: c[0] });
+    }
+    return pts.length >= 2 ? pts : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function carRouteTmap(from: Coord, to: Coord): Promise<CarResult | null> {
   if (!env.tmap) return null;
   try {

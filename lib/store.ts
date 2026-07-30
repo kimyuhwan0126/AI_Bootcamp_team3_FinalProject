@@ -67,6 +67,8 @@ export function createMeeting(input: {
     lat: null,
     lng: null,
     transport: "transit",
+    status: null,
+    etaText: null,
   };
   const meeting: Meeting = {
     code,
@@ -83,6 +85,8 @@ export function createMeeting(input: {
     prefs: {},
     winnerRegionId: null,
     winnerPlaceId: null,
+    regionVotes: {},
+    placeVotes: {},
     reservation: null,
     createdAt: new Date().toISOString(),
   };
@@ -115,6 +119,8 @@ export function joinMeeting(input: {
     lat: null,
     lng: null,
     transport: "transit",
+    status: null,
+    etaText: null,
   });
   // 대화가 이미 시작됐다면 합류 사실을 채팅에도 알림 (AI가 새 참가자를 인지)
   if (m.stage === "chat") {
@@ -261,13 +267,14 @@ export function confirmRegion(
     code: string;
     regionId?: string;
     custom?: RegionCandidate;
-    by: "ai" | "leader";
+    by: "ai" | "leader" | "vote";
   },
   opts?: { places?: PlaceCandidate[] } // 카카오 실검색 결과 주입(없으면 mock)
 ): { ok: boolean; error?: string; regionName?: string } {
   const m = meetings.get(input.code.toUpperCase());
   if (!m) return { ok: false, error: "모임 없음" };
-  if (m.stage !== "chat") return { ok: false, error: "대화 단계가 아니에요." };
+  // 거점 투표는 메인 화면에서도 진행되므로 main 단계 확정도 허용한다.
+  if (m.stage === "result") return { ok: false, error: "이미 끝난 모임이에요." };
   if (m.aiPhase !== "region") return { ok: false, error: "이미 지역이 확정됐어요." };
 
   let region: RegionCandidate | undefined;
@@ -282,13 +289,15 @@ export function confirmRegion(
   if (!region) return { ok: false, error: "해당 지역 후보가 없어요." };
 
   m.winnerRegionId = region.id;
-  m.places = opts?.places?.length ? opts.places : generatePlaces(region.name);
+  m.places = opts?.places?.length ? opts.places : generatePlaces(region.name, { lat: region.lat, lng: region.lng });
   m.aiPhase = "place";
+  m.stage = "chat"; // 메인에서 확정한 경우에도 가게 단계로 넘어간다
+  m.placeVotes = {};
   pushMsg(
     m,
     "system",
     "",
-    `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${input.by === "ai" ? "AI 합의 판단" : "방장 확정"}). 이제 장소를 정해요.`
+    `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정"}). 이제 장소를 정해요.`
   );
   return { ok: true, regionName: region.name };
 }
@@ -297,7 +306,7 @@ export function confirmRegion(
 export function confirmPlace(input: {
   code: string;
   placeId: string;
-  by: "ai" | "leader";
+  by: "ai" | "leader" | "vote";
 }): { ok: boolean; error?: string; placeName?: string } {
   const m = meetings.get(input.code.toUpperCase());
   if (!m) return { ok: false, error: "모임 없음" };
@@ -313,9 +322,73 @@ export function confirmPlace(input: {
     m,
     "system",
     "",
-    `🎉 ${place.name}(으)로 최종 확정! (${input.by === "ai" ? "AI 합의 판단" : "방장 확정"})`
+    `🎉 ${place.name}(으)로 최종 확정! (${input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정"})`
   );
   return { ok: true, placeName: place.name };
+}
+
+// ── 참가자 자가신고 도착 상태(정상/지체 중/많이 늦음) + 도착 예정 시간 ──
+//  본인 항목만 수정 가능(회의록). 타인 id를 넣어도 서버에서 막지는 않으므로
+//  API 라우트에서 participantId === 요청자 확인 후에만 호출해야 한다.
+export function setParticipantStatus(input: {
+  code: string;
+  participantId: string;
+  status: "green" | "yellow" | "red" | null;
+  etaText?: string | null;
+}): { ok: boolean; error?: string } {
+  const m = meetings.get(input.code.toUpperCase());
+  if (!m) return { ok: false, error: "모임 없음" };
+  const p = m.participants.find((x) => x.id === input.participantId);
+  if (!p) return { ok: false, error: "참가자를 찾을 수 없어요." };
+  p.status = input.status;
+  if (input.etaText !== undefined) p.etaText = input.etaText?.trim().slice(0, 40) || null;
+  return { ok: true };
+}
+
+// ── 거점/가게 후보 투표 (1인 1표) ──────────────────────────────
+//  같은 후보를 다시 누르면 취소, 다른 후보를 누르면 표를 옮긴다.
+export function castVote(input: {
+  code: string;
+  participantId: string;
+  target: "region" | "place";
+  candidateId: string | null;
+}): { ok: boolean; error?: string } {
+  const m = meetings.get(input.code.toUpperCase());
+  if (!m) return { ok: false, error: "모임 없음" };
+  const p = m.participants.find((x) => x.id === input.participantId);
+  if (!p) return { ok: false, error: "참가자를 찾을 수 없어요." };
+
+  if (!m.regionVotes) m.regionVotes = {};
+  if (!m.placeVotes) m.placeVotes = {};
+  const box = input.target === "region" ? m.regionVotes : m.placeVotes;
+
+  if (!input.candidateId) {
+    delete box[p.id];
+    return { ok: true };
+  }
+  const pool: { id: string }[] = input.target === "region" ? m.regions : m.places;
+  if (!pool.some((c) => c.id === input.candidateId))
+    return { ok: false, error: "해당 후보가 없어요." };
+  // 같은 후보 재선택 = 취소
+  if (box[p.id] === input.candidateId) delete box[p.id];
+  else box[p.id] = input.candidateId;
+  return { ok: true };
+}
+
+// ── 거점 후보 갱신 (출발지가 바뀌면 재계산) ──
+//  stage 는 건드리지 않는다 — 메인 화면에서도 투표할 수 있게 하기 위함.
+export function setRegionCandidates(
+  code: string,
+  regions: RegionCandidate[]
+): { ok: boolean; error?: string } {
+  const m = meetings.get(code.toUpperCase());
+  if (!m) return { ok: false, error: "모임 없음" };
+  if (m.winnerRegionId) return { ok: true }; // 이미 확정된 뒤엔 후보를 흔들지 않는다
+  const prev = m.regions.map((r) => r.id).join(",");
+  m.regions = regions;
+  // 후보 목록이 달라지면 기존 표는 의미가 없다
+  if (prev !== regions.map((r) => r.id).join(",")) m.regionVotes = {};
+  return { ok: true };
 }
 
 // ── 다시 논의 (Leader): 장소 단계 → 지역 단계로, 결과 → 장소 단계로 ──
@@ -335,11 +408,14 @@ export function reopenDiscussion(
     m.places = [];
     m.aiPhase = "region";
     m.stage = "chat";
+    m.regionVotes = {};
+    m.placeVotes = {};
     if (opts?.regions?.length) m.regions = opts.regions;
     pushMsg(m, "system", "", "🔄 방장이 중간지역 논의를 다시 열었어요. 의견을 말해주세요!");
   } else {
     if (!m.winnerRegionId) return { ok: false, error: "확정된 지역이 없어요." };
     m.winnerPlaceId = null;
+    m.placeVotes = {};
     m.aiPhase = "place";
     m.stage = "chat";
     pushMsg(m, "system", "", "🔄 방장이 장소 논의를 다시 열었어요. 어디가 좋을까요?");
@@ -358,6 +434,8 @@ export function backToMain(input: { code: string; participantId: string }): { ok
   m.winnerRegionId = null;
   m.winnerPlaceId = null;
   m.places = [];
+  m.regionVotes = {};
+  m.placeVotes = {};
   m.reservation = null;
   return { ok: true };
 }
@@ -404,6 +482,8 @@ export function getState(code: string): MeetingState | null {
     prefs: m.prefs,
     winnerRegion: m.regions.find((r) => r.id === m.winnerRegionId) ?? null,
     winnerPlace: m.places.find((p) => p.id === m.winnerPlaceId) ?? null,
+    regionVotes: m.regionVotes ?? {},
+    placeVotes: m.placeVotes ?? {},
     reservation: m.reservation,
     originsSet: m.participants.filter((p) => p.lat != null).length,
     totalParticipants: m.participants.length,

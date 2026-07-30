@@ -1,244 +1,1091 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { addIdentity } from "@/lib/identity";
-import DebugSeed from "./components/DebugSeed";
+// ─────────────────────────────────────────────────────────────
+// v7 홈 (비회원 메인) — 피그마/목업 moimer_mockup_v7.html 기준
+//  검색(자동완성) → 출발지 칩(최대 8) → 중간지점 추천(공평 스코어)
+//  → 카카오맵 표시 → 주변 카페/음식점/술집/교통 리스트
+// ─────────────────────────────────────────────────────────────
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import KakaoMap, { MapPin, MapRoute, MapCandidate, pinColor } from "./components/KakaoMap";
+import BottomNav from "./components/v7/BottomNav";
+import V7Header from "./components/v7/V7Header";
+import Splash from "./components/v7/Splash";
+import StepIcons from "./components/v7/StepIcons";
+import { IcSearch, IcPlus } from "./components/v7/Icons";
+import { recommendRegions, arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
+import type { Participant, RegionCandidate } from "@/lib/types";
+import type { GeoSuggest } from "./api/geocode/route";
+import type { NearbyItem } from "./api/places/route";
+import type { MeetingState } from "@/lib/types";
+import { loginAsKakao } from "@/lib/session";
+import { useSession } from "./components/v7/useSession";
+import { getIdentities, setActive, type Identity } from "@/lib/identity";
+
+// localStorage 에 저장된 내 모임 코드들
+function myCodes(): string[] {
+  const codes: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i) || "";
+    const m = k.match(/^moimer:([A-Z0-9]{4,8})$/);
+    if (m) codes.push(m[1]);
+  }
+  return codes;
+}
+
+type Transport = "transit" | "car";
+
+interface Origin {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  /** 이 출발지의 이동수단 — 칩을 눌러 언제든 바꿀 수 있다 */
+  transport: Transport;
+}
+
+const TRANSPORTS: { key: Transport; label: string }[] = [
+  { key: "transit", label: "대중교통" },
+  { key: "car", label: "자차" },
+];
+// 칩 위에 얹는 작은 이동수단 표식
+const TRANSPORT_ICON: Record<Transport, string> = { transit: "🚇", car: "🚗" };
+
+// 주변 리스트 썸네일 — 카카오 분류 전체 경로로 판단
+// (마지막 칸은 브랜드명이라 "파스쿠찌" 같은 값이 들어와 매칭되지 않는다)
+function thumbFor(path: string): string {
+  if (path.includes("주차")) return "🅿️";
+  if (path.includes("버스")) return "🚌";
+  if (path.includes("지하철") || path.includes("전철")) return "🚇";
+  if (path.includes("카페") || path.includes("커피")) return "☕";
+  if (path.includes("술") || path.includes("주점") || path.includes("호프") || path.includes("바(BAR)")) return "🍶";
+  return "🍽️";
+}
+
+const ORIGINS_KEY = "moimer:v7:origins";
+const CATS: { key: string; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "cafe", label: "카페" },
+  { key: "food", label: "음식점" },
+  { key: "pub", label: "술집" },
+  { key: "parking", label: "주차장" },
+  { key: "station", label: "정류장·역" },
+];
 
 export default function Home() {
-  const router = useRouter();
-  const [tab, setTab] = useState<"create" | "join">("create");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [kakaoName, setKakaoName] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { session } = useSession();
+  const [origins, setOrigins] = useState<Origin[]>([]);
+  const [query, setQuery] = useState("");
+  const [suggests, setSuggests] = useState<GeoSuggest[] | null>(null);
+  const [midpoint, setMidpoint] = useState<RegionCandidate | null>(null);
+  const [criteria, setCriteria] = useState<"dist" | "time">("dist");
+  const [cat, setCat] = useState("all");
+  const [nearby, setNearby] = useState<NearbyItem[]>([]);
+  const [mapFail, setMapFail] = useState(false);
+  /** 칩을 눌러 편집 중인 출발지 id */
+  const [editing, setEditing] = useState<string | null>(null);
+  const [defaultTransport, setDefaultTransport] = useState<Transport>("transit");
+  const [loginErr, setLoginErr] = useState<string | null>(null);
+  const [midLoading, setMidLoading] = useState(false);
+  /** 주변 리스트가 실제 카카오 응답인지, 키 실패로 인한 샘플인지 */
+  const [nearbyMock, setNearbyMock] = useState(false);
+  /** 지도 보기 범위 — me: 내 출발지 중심 / all: 전체가 보이게 */
+  const [mapView, setMapView] = useState<"me" | "all">("all");
+  // 출발지가 여러 개면 경로선이 다 겹쳐 스파게티처럼 보인다 — 칩을 눌러 특정
+  // 출발지 하나만 진하게 보고, 나머지는 옅게 뺀다. null이면 아무도 포커스 안 한 상태.
+  const [focusOriginId, setFocusOriginId] = useState<string | null>(null);
+  /** 시간순 결과가 실 API로 계산됐는지 (null = 거리순) */
+  const [midLive, setMidLive] = useState<boolean | null>(null);
+  /** 내가 속한 모임들 (로그인 시) */
+  const [myMeetings, setMyMeetings] = useState<MeetingState[]>([]);
+  /** 선택된 모임 코드 — null 이면 "직접 입력"(비회원 탐색) 모드 */
+  const [meetCode, setMeetCode] = useState<string | null>(null);
+  const [meetOpen, setMeetOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 카카오 로그인 콜백 결과(?name=/?err=) 처리
+  // 저장된 출발지 복원 + 카카오 로그인 콜백(?name=) → 정식회원 세션 승격
   useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ORIGINS_KEY) || "[]") as Origin[];
+      // 이동수단 도입 이전에 저장된 출발지 보정
+      setOrigins(saved.map((o) => ({ ...o, transport: o.transport ?? "transit" })));
+    } catch {
+      /* 무시 */
+    }
+    try {
+      const p = JSON.parse(localStorage.getItem("moimer:v7:profile") || "null");
+      if (p?.transport) setDefaultTransport(p.transport as Transport);
+    } catch {
+      /* 무시 */
+    }
     const q = new URLSearchParams(window.location.search);
     const name = q.get("name");
-    const e = q.get("err");
     if (name) {
-      setKakaoName(name);
-      setCLeader(name);
-      setJName(name);
+      loginAsKakao(name);
+      window.history.replaceState({}, "", "/");
+      return;
     }
-    if (e === "nokey") setNotice("카카오 키가 아직 설정되지 않았어요. .env.local 에 KAKAO_REST_API_KEY 를 넣고 서버를 재시작하세요.");
-    else if (e === "login" || e === "nocode") setNotice("카카오 로그인에 실패했어요. 다시 시도해 주세요.");
-    if (name || e) window.history.replaceState({}, "", "/");
+    // 카카오 로그인 실패 사유를 화면에 그대로 노출 (원인 파악용)
+    const err = q.get("err");
+    if (err) {
+      const step = q.get("step") || "";
+      const detail = q.get("detail") || "";
+      setLoginErr(
+        err === "nokey"
+          ? "KAKAO_REST_API_KEY가 설정되지 않았어요. .env.local에 넣고 서버를 재시작해주세요."
+          : `카카오 로그인 실패 (${step || err})${detail ? ` — ${detail}` : ""}`
+      );
+      window.history.replaceState({}, "", "/");
+    }
   }, []);
 
-  // 외부 API 연결 상태
-  const [status, setStatus] = useState<{
-    kakao: boolean; odsay: boolean; tmap: boolean;
-    ai?: { ok: boolean; active: string; model: string; url: string };
-  } | null>(null);
+  // 로그인 상태면 내 모임을 불러온다 (모임 선택 → 그 모임 참여자를 지도에 표시)
   useEffect(() => {
-    fetch("/api/status").then((r) => r.json()).then(setStatus).catch(() => {});
-  }, [kakaoName]);
-  const mapKey = !!process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
+    if (!session) {
+      setMyMeetings([]);
+      setMeetCode(null);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      const states = await Promise.all(
+        myCodes().map(async (c) => {
+          try {
+            const r = await fetch(`/api/meeting?code=${c}`);
+            return r.ok ? ((await r.json()) as MeetingState) : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (!alive) return;
+      const list = states.filter((s): s is MeetingState => s !== null);
+      setMyMeetings(list);
+      // 모임이 있으면 첫 모임을 기본 선택 (개인 출발지가 그대로 남지 않도록)
+      setMeetCode((cur) => cur ?? (list[0]?.code ?? null));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [session]);
 
-  // create (Leader)
-  const [cName, setCName] = useState("8월 팀 회식");
-  const [cPw, setCPw] = useState("1234");
-  const [cHead, setCHead] = useState(4);
-  const [cLeader, setCLeader] = useState("지훈");
+  const selectedMeeting = meetCode ? myMeetings.find((m) => m.code === meetCode) ?? null : null;
 
-  // join (User)
-  const [jCode, setJCode] = useState("");
-  const [jPw, setJPw] = useState("");
-  const [jName, setJName] = useState("");
+  // ── 모임 투표 (피그마: 투표는 홈 셸 안에서 진행) ──────────────
+  // 선택된 모임은 폴링으로 최신화 — 다른 참여자의 표가 실시간 반영된다
+  const refreshMeeting = useCallback(async (code: string) => {
+    try {
+      const r = await fetch(`/api/meeting?code=${code}`, { cache: "no-store" });
+      if (!r.ok) return;
+      const d = (await r.json()) as MeetingState;
+      setMyMeetings((ms) => ms.map((m) => (m.code === d.code ? d : m)));
+    } catch {
+      /* transient */
+    }
+  }, []);
+  useEffect(() => {
+    if (!meetCode) return;
+    const t = setInterval(() => refreshMeeting(meetCode), 2500);
+    return () => clearInterval(t);
+  }, [meetCode, refreshMeeting]);
 
-  async function post(body: any) {
-    const r = await fetch("/api/meeting", {
+  // 이 기기의 참가자 신원 — "누구로 투표할까요?" 드롭다운
+  const [voterId, setVoterId] = useState<string | null>(null);
+  const [voterIds, setVoterIds] = useState<Identity[]>([]);
+  useEffect(() => {
+    if (!meetCode) {
+      setVoterId(null);
+      setVoterIds([]);
+      return;
+    }
+    const list = getIdentities(meetCode);
+    setVoterIds(list);
+    setVoterId((cur) => (cur && list.some((i) => i.id === cur) ? cur : list[0]?.id ?? null));
+  }, [meetCode]);
+
+  // 출발지 구성이 바뀌면 거점 후보 재계산 (단계 전환 없음 — 홈에서 바로 투표)
+  const meetingOriginSig = selectedMeeting
+    ? selectedMeeting.code +
+      "|" +
+      selectedMeeting.participants
+        .filter((p) => p.lat != null)
+        .map((p) => `${p.id}:${p.lat},${p.lng},${p.transport}`)
+        .join("|")
+    : "";
+  const regionsReqRef = useRef("");
+  useEffect(() => {
+    if (!selectedMeeting || selectedMeeting.participants.every((p) => p.lat == null)) return;
+    if (regionsReqRef.current === meetingOriginSig) return;
+    regionsReqRef.current = meetingOriginSig;
+    fetch("/api/meeting", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || "요청 실패");
-    return data;
+      body: JSON.stringify({ code: selectedMeeting.code, action: "regions" }),
+    })
+      .then(() => refreshMeeting(selectedMeeting.code))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingOriginSig]);
+
+  const [voteBusy, setVoteBusy] = useState(false);
+  const meetAct = useCallback(
+    async (body: Record<string, unknown>) => {
+      if (!selectedMeeting) return;
+      setVoteBusy(true);
+      try {
+        await fetch("/api/meeting", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: selectedMeeting.code, ...body }),
+        });
+        await refreshMeeting(selectedMeeting.code);
+      } finally {
+        setVoteBusy(false);
+      }
+    },
+    [selectedMeeting, refreshMeeting]
+  );
+
+  // 진행 단계: 0 거점 투표 / 1 가게 투표 / 2 최종 확정
+  const votePhase: 0 | 1 | 2 = !selectedMeeting
+    ? 0
+    : selectedMeeting.stage === "result"
+    ? 2
+    : selectedMeeting.aiPhase === "place"
+    ? 1
+    : 0;
+  const regionVotes = selectedMeeting?.regionVotes ?? {};
+  const placeVotes = selectedMeeting?.placeVotes ?? {};
+  const voteBox = votePhase === 0 ? regionVotes : placeVotes;
+  const votePool: { id: string; name: string }[] =
+    votePhase === 0 ? selectedMeeting?.regions ?? [] : selectedMeeting?.places ?? [];
+  const tallyOf = useCallback(
+    (id: string) => Object.values(voteBox).filter((v) => v === id).length,
+    [voteBox]
+  );
+  const myVote = voterId ? voteBox[voterId] : undefined;
+  const topCandidate =
+    votePool.length === 0
+      ? null
+      : votePool.reduce((best, c) => (tallyOf(c.id) > tallyOf(best.id) ? c : best));
+  const voterIsLeader = !!selectedMeeting?.participants.find((p) => p.id === voterId)?.isLeader;
+
+  // 모임 시간(확정용) — 피그마: 최종 확정 전에 방장이 입력
+  const [meetTime, setMeetTime] = useState("");
+  useEffect(() => {
+    setMeetTime(selectedMeeting?.prefs?.timeText ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetCode]);
+  const saveMeetTime = useCallback(() => {
+    if (!selectedMeeting || !voterIsLeader) return;
+    const t = meetTime.trim();
+    if (t === (selectedMeeting.prefs?.timeText ?? "")) return;
+    void meetAct({ action: "meetTime", participantId: voterId, time: t });
+  }, [selectedMeeting, voterIsLeader, meetTime, voterId, meetAct]);
+
+  // 화면/계산에 쓸 출발지 — 모임 선택 시 그 모임 참여자, 아니면 내가 직접 넣은 것
+  // useMemo 필수: 매 렌더마다 새 배열이면 아래 useEffect 들이 무한 재실행된다.
+  const activeOrigins: Origin[] = useMemo(
+    () =>
+      selectedMeeting
+        ? selectedMeeting.participants
+            .filter((p) => p.lat != null && p.lng != null)
+            .map((p) => ({
+              id: p.id,
+              name: p.origin || p.name,
+              lat: p.lat as number,
+              lng: p.lng as number,
+              transport: (p.transport as Transport) ?? "transit",
+            }))
+        : origins,
+    [selectedMeeting, origins]
+  );
+
+  function saveOrigins(next: Origin[]) {
+    setOrigins(next);
+    localStorage.setItem(ORIGINS_KEY, JSON.stringify(next));
   }
 
-  async function handleCreate() {
-    setErr(null);
-    setBusy(true);
-    try {
-      const d = await post({
-        action: "create",
-        name: cName,
-        password: cPw,
-        headcount: cHead,
-        leaderName: cLeader,
-      });
-      addIdentity(d.code, { id: d.participantId, name: cLeader, isLeader: true });
-      router.push(`/m/${d.code}`);
-    } catch (e: any) {
-      setErr(e.message);
-      setBusy(false);
+  // 검색 자동완성 (300ms 디바운스)
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = query.trim();
+    if (!q) {
+      setSuggests(null);
+      return;
     }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        setSuggests(d.items || []);
+      } catch {
+        setSuggests([]);
+      }
+    }, 300);
+  }, [query]);
+
+  // 검색 결과를 누르면 곧바로 출발지로 추가하고, 이동수단 선택 시트를 이어서 연다.
+  function addOrigin(s: GeoSuggest) {
+    if (origins.length >= 8) return;
+    // 새 출발지는 내정보의 기본 이동수단을 따라가고, 칩을 눌러 개별 변경 가능
+    const next = [...origins, { id: `o${Date.now()}`, name: s.name, lat: s.lat, lng: s.lng, transport: defaultTransport }];
+    saveOrigins(next);
+    setQuery("");
+    setSuggests(null);
+    setEditing(next[next.length - 1].id); // 추가 직후 이동수단을 고르도록 시트를 연다
   }
 
-  async function handleJoin() {
-    setErr(null);
-    setBusy(true);
-    try {
-      const d = await post({
-        action: "join",
-        code: jCode.toUpperCase(),
-        password: jPw,
-        name: jName,
+  function removeOrigin(id: string) {
+    saveOrigins(origins.filter((o) => o.id !== id));
+    setEditing(null);
+  }
+
+  function updateOrigin(id: string, patch: Partial<Origin>) {
+    saveOrigins(origins.map((o) => (o.id === id ? { ...o, ...patch } : o)));
+  }
+
+  // 중간지점 재계산 — 거리순은 즉시(로컬), 시간순은 ODsay/TMAP 실 이동시간(API)
+  useEffect(() => {
+    if (activeOrigins.length < 2) {
+      setMidpoint(null);
+      setNearby([]);
+      setMidLive(null);
+      return;
+    }
+    const pseudo: Participant[] = activeOrigins.map((o, i) => ({
+      id: o.id,
+      name: o.name || `출발지 ${i + 1}`,
+      isLeader: i === 0,
+      headcount: 1,
+      origin: o.name,
+      lat: o.lat,
+      lng: o.lng,
+      transport: o.transport,
+      status: null,
+      etaText: null,
+    }));
+
+    if (criteria === "dist") {
+      setMidpoint(recommendRegions(pseudo)[0] || null);
+      setMidLive(null);
+      return;
+    }
+
+    // 시간순 — 응답이 늦게 와도 마지막 요청만 반영
+    let alive = true;
+    setMidLoading(true);
+    fetch("/api/midpoint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ participants: pseudo, mode: "time" }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!alive) return;
+        setMidpoint(d.items?.[0] || null);
+        setMidLive(!!d.live);
+      })
+      .catch(() => {
+        if (!alive) return;
+        // 실패하면 거리 기준으로라도 보여준다
+        setMidpoint(recommendRegions(pseudo)[0] || null);
+        setMidLive(false);
+      })
+      .finally(() => {
+        if (alive) setMidLoading(false);
       });
-      addIdentity(d.code, { id: d.participantId, name: jName, isLeader: false });
-      router.push(`/m/${d.code}`);
-    } catch (e: any) {
-      setErr(e.message);
-      setBusy(false);
+    return () => {
+      alive = false;
+    };
+  }, [activeOrigins, criteria]);
+
+  // 주변 정보 로드 — 응답의 mock 플래그를 그대로 보관해 화면에 표시
+  const loadNearby = useCallback(async () => {
+    if (!midpoint) return;
+    try {
+      const r = await fetch(`/api/places?lat=${midpoint.lat}&lng=${midpoint.lng}&cat=${cat}`);
+      const d = await r.json();
+      setNearby(d.items || []);
+      setNearbyMock(!!d.mock);
+    } catch {
+      setNearby([]);
+      setNearbyMock(false);
+    }
+  }, [midpoint, cat]);
+  useEffect(() => {
+    loadNearby();
+  }, [loadNearby]);
+
+  // 도착 신호등 — 참가자가 모임원 탭에서 직접 남긴 상태를 우선한다.
+  // 없으면(그리고 거점이 확정된 뒤라면) 이동시간 기반 공평성 추정으로 대신한다.
+  // 확정 전(투표 중)에는 아직 "늦음"을 매길 destination이 없으므로 표시하지 않는다.
+  const winPer = selectedMeeting?.winnerRegion?.perParticipant;
+  const winMins = winPer?.map((x) => x.min);
+  const statusColorFor = (pid: string): string | undefined => {
+    const self = selectedMeeting?.participants.find((x) => x.id === pid)?.status;
+    if (self) return ARRIVAL_COLOR[self];
+    if (!winPer || !winMins || winMins.length === 0) return undefined;
+    const m = winPer.find((x) => x.pid === pid)?.min;
+    return m == null ? undefined : ARRIVAL_COLOR[arrivalStatus(m, winMins)];
+  };
+
+  // 지도 핀 = 출발지 칩과 동일한 색/번호로 통일
+  const pins: MapPin[] = activeOrigins.map((o, i) => ({
+    lat: o.lat,
+    lng: o.lng,
+    label: o.name,
+    color: pinColor(i),
+    index: i + 1,
+    statusColor: statusColorFor(o.id),
+    focused: focusOriginId === o.id,
+  }));
+  const focusIndex = Math.max(0, activeOrigins.findIndex((o) => o.id === focusOriginId));
+
+  // 칩(지도 핀)을 눌러 그 출발지의 경로만 강조 — 다시 누르면 전체 보기로 복귀
+  function toggleFocus(id: string) {
+    if (focusOriginId === id) {
+      setFocusOriginId(null);
+      setMapView("all");
+    } else {
+      setFocusOriginId(id);
+      setMapView("me");
     }
   }
+  // 중간지점 핀 — 모임 모드에선 확정된 거점만 표시(거점 투표 중에는 후보 박스가 그 자리를 대신한다)
+  const center = selectedMeeting
+    ? selectedMeeting.winnerRegion
+      ? {
+          lat: selectedMeeting.winnerRegion.lat,
+          lng: selectedMeeting.winnerRegion.lng,
+          label: `중간 추천 지역 · ${selectedMeeting.winnerRegion.name}`,
+        }
+      : null
+    : midpoint
+    ? { lat: midpoint.lat, lng: midpoint.lng, label: `중간 추천 지역 · ${midpoint.name}` }
+    : null;
+
+  // 지도 위 투표 후보 박스 — 피그마: "지도에서 후보를 눌러 투표하세요"
+  const mapCandidates: MapCandidate[] = useMemo(() => {
+    if (!selectedMeeting || votePhase === 2) return [];
+    if (votePhase === 0)
+      return selectedMeeting.regions.map((r) => ({
+        id: r.id, lat: r.lat, lng: r.lng, name: r.name,
+        votes: Object.values(regionVotes).filter((v) => v === r.id).length,
+        mine: myVote === r.id,
+      }));
+    return selectedMeeting.places
+      .filter((p) => p.lat != null && p.lng != null)
+      .map((p) => ({
+        id: p.id, lat: p.lat as number, lng: p.lng as number, name: p.name,
+        votes: Object.values(placeVotes).filter((v) => v === p.id).length,
+        mine: myVote === p.id,
+      }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMeeting, votePhase, myVote, JSON.stringify(regionVotes), JSON.stringify(placeVotes)]);
+
+  // 각 출발지 → 중간지점 경로 (자차는 TMAP 실 도로, 그 외는 직선 근사)
+  // 모임 모드에선 확정된 거점이 목적지 — 거점 투표 중에는 경로를 그리지 않는다.
+  const routeDest = selectedMeeting
+    ? selectedMeeting.winnerRegion
+      ? { lat: selectedMeeting.winnerRegion.lat, lng: selectedMeeting.winnerRegion.lng }
+      : null
+    : midpoint
+    ? { lat: midpoint.lat, lng: midpoint.lng }
+    : null;
+  const routeDestKey = routeDest ? `${routeDest.lat},${routeDest.lng}` : "";
+  const [routes, setRoutes] = useState<MapRoute[]>([]);
+  useEffect(() => {
+    if (!routeDest || activeOrigins.length === 0) {
+      setRoutes([]);
+      return;
+    }
+    let alive = true;
+    fetch("/api/route-path", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dest: routeDest,
+        origins: activeOrigins.map((o) => ({ id: o.id, lat: o.lat, lng: o.lng, transport: o.transport })),
+      }),
+    })
+      .then((r) => r.json())
+      .then((d: { paths?: { id: string; points: { lat: number; lng: number }[]; real: boolean }[] }) => {
+        if (!alive) return;
+        const idx = new Map(activeOrigins.map((o, i) => [o.id, i]));
+        setRoutes(
+          (d.paths ?? []).map((p) => ({
+            id: p.id,
+            points: p.points,
+            real: p.real,
+            color: pinColor(idx.get(p.id) ?? 0),
+          }))
+        );
+      })
+      .catch(() => {
+        if (alive) setRoutes([]);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeDestKey, activeOrigins]);
+
+  // 경로 강조 — 출발지가 여러 개일 때 전부 진하게 그리면 스파게티처럼 겹쳐 보인다.
+  //  · 특정 출발지를 포커스했으면: 그 경로만 진하게, 나머지는 아주 옅게.
+  //  · "전체 위치 보기"(포커스 없음): 다 보이되 겹쳐도 구분되도록 옅고 살짝 얇게.
+  const displayRoutes: MapRoute[] = useMemo(() => {
+    if (focusOriginId) {
+      return routes.map((r) => {
+        if (r.id === focusOriginId) return r; // 기본(real 기반) 두께·불투명도 그대로
+        return { ...r, opacity: 0.1, weight: 2 };
+      });
+    }
+    return routes.map((r) => ({ ...r, opacity: r.real ? 0.6 : 0.35, weight: r.real ? 4 : 2.5 }));
+  }, [routes, focusOriginId]);
+
+  const editingOrigin = editing ? origins.find((o) => o.id === editing) ?? null : null;
 
   return (
-    <main className="device">
-      <div style={{ padding: "40px 20px 24px", textAlign: "center" }}>
-        <div className="brand" style={{ justifyContent: "center", fontSize: 22 }}>
-          <span className="dot" />
-          모이머
-        </div>
-        <p className="muted" style={{ margin: "10px 0 0", fontSize: 14 }}>
-          흩어진 우리, 딱 중간에서
-        </p>
-        <p className="faint" style={{ margin: "3px 0 0", fontSize: 12 }}>
-          각자 위치에서 가장 공평한 중간 지점을 찾아드려요
-        </p>
-      </div>
+    <main className="device v7-page">
+      <Splash />
+      <V7Header />
 
-      <div className="pad stack" style={{ gap: 16 }}>
-        {/* 카카오 로그인 */}
-        {kakaoName ? (
-          <div className="chip ok" style={{ alignSelf: "center", padding: "7px 14px" }}>✅ 카카오 로그인됨 · {kakaoName}</div>
-        ) : (
-          <a href="/api/auth/kakao" className="btn kakao" style={{ textDecoration: "none" }}>● 카카오로 시작하기</a>
-        )}
-        {notice && (
-          <div className="chip warn" style={{ alignSelf: "stretch", justifyContent: "flex-start", padding: "8px 12px", whiteSpace: "normal", lineHeight: 1.5 }}>⚠ {notice}</div>
-        )}
-
-        <div className="tabbar">
-          <button className={tab === "create" ? "on" : ""} onClick={() => setTab("create")}>
-            👑 모임 만들기 (방장)
-          </button>
-          <button className={tab === "join" ? "on" : ""} onClick={() => setTab("join")}>
-            🙋 모임 참여 (참가자)
+      {loginErr && (
+        <div
+          style={{
+            margin: "0 16px 8px", padding: "10px 12px", borderRadius: 12,
+            background: "var(--warn-soft)", color: "var(--warn)",
+            fontSize: 11.5, fontWeight: 700, lineHeight: 1.5,
+            display: "flex", alignItems: "flex-start", gap: 8,
+          }}
+        >
+          <span style={{ flex: 1, wordBreak: "break-all" }}>{loginErr}</span>
+          <button
+            onClick={() => setLoginErr(null)}
+            style={{ border: 0, background: "none", color: "inherit", cursor: "pointer", fontWeight: 900, font: "inherit" }}
+            aria-label="닫기"
+          >
+            ✕
           </button>
         </div>
+      )}
 
-        {tab === "create" ? (
-          <div className="card stack" style={{ gap: 14 }}>
-            <div>
-              <span className="eyebrow">Leader · 모임방 개설</span>
-              <h2 className="sec" style={{ marginTop: 4 }}>새 모임 만들기</h2>
-            </div>
-            <div>
-              <label className="label">모임 이름</label>
-              <input className="input" value={cName} onChange={(e) => setCName(e.target.value)} placeholder="예: 8월 팀 회식" />
-            </div>
-            <div className="row" style={{ gap: 10 }}>
-              <div className="grow">
-                <label className="label">비밀번호</label>
-                <input className="input" value={cPw} onChange={(e) => setCPw(e.target.value)} placeholder="참여 시 필요" />
-              </div>
-              <div style={{ width: 110 }}>
-                <label className="label">인원수 <span className="badge-pay">유료</span></label>
-                <input
-                  className="input tnum"
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={cHead}
-                  onChange={(e) => setCHead(Number(e.target.value))}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="label">내 이름 (방장)</label>
-              <input className="input" value={cLeader} onChange={(e) => setCLeader(e.target.value)} placeholder="예: 지훈" />
-            </div>
-            {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
-            <button className="btn" onClick={handleCreate} disabled={busy}>
-              {busy ? <span className="spinner" /> : "모임 개설하기"}
-            </button>
-            <p className="hint">개설 후 참여 코드가 발급돼요. 참가자에게 코드와 비밀번호를 공유하세요.</p>
-          </div>
-        ) : (
-          <div className="card stack" style={{ gap: 14 }}>
-            <div>
-              <span className="eyebrow">User · 모임 참여</span>
-              <h2 className="sec" style={{ marginTop: 4 }}>초대받은 모임에 참여</h2>
-            </div>
-            <div>
-              <label className="label">참여 코드</label>
-              <input
-                className="input"
-                style={{ letterSpacing: 3, fontWeight: 800, textTransform: "uppercase" }}
-                value={jCode}
-                onChange={(e) => setJCode(e.target.value.toUpperCase())}
-                placeholder="예: ABC123"
-                maxLength={6}
-              />
-            </div>
-            <div>
-              <label className="label">비밀번호</label>
-              <input className="input" value={jPw} onChange={(e) => setJPw(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">내 이름</label>
-              <input className="input" value={jName} onChange={(e) => setJName(e.target.value)} placeholder="예: 유나" />
-            </div>
-            {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
-            <button className="btn" onClick={handleJoin} disabled={busy || !jCode || !jPw || !jName}>
-              {busy ? <span className="spinner" /> : "참여하기"}
-            </button>
-          </div>
-        )}
+      {/* 모임 선택 — 목업의 "협성대 브레인스파크 모임 ▾" 바 */}
+      {myMeetings.length > 0 && (
+        <div className="v7-searchwrap" style={{ marginBottom: 6, position: "relative" }}>
+          <button className="v7-meetbar" onClick={() => setMeetOpen((v) => !v)} aria-expanded={meetOpen}>
+            {selectedMeeting ? (
+              <>
+                <b>{selectedMeeting.name.replace(/\s*모임$/, "")}</b>
+                <span className="suffix">모임</span>
+              </>
+            ) : (
+              <b>직접 출발지 넣어보기</b>
+            )}
+            <span className="caret" aria-hidden>▾</span>
+          </button>
 
-        {/* 외부 API 연결 상태 */}
-        {status && (
-          <div className="card tight" style={{ padding: 12 }}>
-            <div className="label" style={{ marginBottom: 8 }}>외부 API 연결 상태</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {[
-                ["카카오 로그인·지오코딩", status.kakao],
-                ["카카오맵 SDK", mapKey],
-                ["ODsay 대중교통", status.odsay],
-                ["TMAP 자차", status.tmap],
-              ].map(([label, on]) => (
-                <span key={label as string} className={"chip " + (on ? "ok" : "line")}>
-                  {on ? "● 연결됨" : "○ mock"} · {label}
-                </span>
-              ))}
-              {status.ai && (
-                <span
-                  className={"chip " + (status.ai.ok ? "ok" : "warn")}
-                  title={status.ai.url}
+          {meetOpen && (
+            <div className="v7-meetmenu">
+              {myMeetings.map((m) => (
+                <button
+                  key={m.code}
+                  className={m.code === meetCode ? "on" : ""}
+                  onClick={() => { setMeetCode(m.code); setMeetOpen(false); }}
                 >
-                  {status.ai.ok
-                    ? `● AI 챗봇 · Ollama ${status.ai.active === "primary" ? "원격" : "로컬"} · ${status.ai.model}`
-                    : "✕ AI 챗봇 · Ollama 연결 안 됨 (방장 직접 확정만 가능)"}
-                </span>
-              )}
+                  <b>{m.name}</b>
+                  <span>참여자 {m.participants.length}명 · 코드 {m.code}</span>
+                </button>
+              ))}
+              <button
+                className={meetCode === null ? "on" : ""}
+                onClick={() => { setMeetCode(null); setMeetOpen(false); }}
+              >
+                <b>직접 출발지 넣어보기</b>
+                <span>모임과 무관하게 중간지점만 찾아볼 때</span>
+              </button>
             </div>
-            <p className="hint" style={{ marginTop: 8, textAlign: "left" }}>
-              키 미설정 항목은 자동으로 mock 데이터로 동작해요. 키 입력 후 서버 재시작 시 연결됩니다.
-            </p>
+          )}
+        </div>
+      )}
+
+      {/* 검색 + 자동완성 — 모임 모드에서는 참여자 출발지를 쓰므로 숨긴다.
+          검색 결과를 누르면 곧바로 출발지로 추가되고(+선택→확인 이중 클릭 없이),
+          이어서 이동수단 선택 시트가 열린다. */}
+      {!selectedMeeting && (
+      <div className="v7-searchwrap">
+        <div className="v7-search">
+          <IcSearch />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="어디에서 출발하시나요?"
+            disabled={origins.length >= 8}
+          />
+        </div>
+        {suggests !== null && (
+          <div className="v7-ac">
+            {suggests.length === 0 ? (
+              <div className="empty">검색 결과가 없어요.</div>
+            ) : (
+              suggests.map((s) => (
+                <button key={`${s.name}${s.lat}`} onClick={() => addOrigin(s)}>
+                  <b>{s.name}</b>
+                  <span className="addr">{s.address}</span>
+                </button>
+              ))
+            )}
           </div>
         )}
-
-        <DebugSeed />
-
-        <p className="hint" style={{ marginTop: 4 }}>
-          Next.js · Neon(Postgres) 확장 구조 · Vercel 배포 준비 프로토타입
-        </p>
       </div>
+      )}
+
+      {/* 출발지 칩 — 모임 모드면 참여자(읽기 전용), 아니면 내가 넣은 출발지(편집 가능) */}
+      <div className="v7-chips">
+        {selectedMeeting
+          ? activeOrigins.map((o, i) => {
+              const p = selectedMeeting.participants.find((x) => x.id === o.id);
+              const sc = statusColorFor(o.id);
+              const focused = focusOriginId === o.id;
+              // 목업과 동일: 원 안에는 출발지, 아래에는 참여자 이름.
+              // 도착 신호등이 있으면 원 채우기를 그 색으로 하고, 참가자 구분색은
+              // 테두리로 돌린다(지도 경로선과 매칭을 잃지 않도록).
+              // 누르면 이 출발지의 경로만 지도에서 진하게 강조된다(다시 누르면 해제).
+              return (
+                <button key={o.id} className="v7-chip" onClick={() => toggleFocus(o.id)} aria-pressed={focused} title="눌러서 이 경로만 강조해서 보기">
+                  <div
+                    className="c-dot"
+                    style={{
+                      background: sc ?? pinColor(i),
+                      boxShadow: sc ? `0 0 0 2px ${pinColor(i)}, var(--shadow)` : undefined,
+                      outline: focused ? `3px solid color-mix(in srgb, ${pinColor(i)} 55%, transparent)` : undefined,
+                      outlineOffset: focused ? 2 : undefined,
+                    }}
+                  >
+                    {o.name.replace(/역$/, "").slice(0, 3)}
+                    <span className="c-mode">{TRANSPORT_ICON[o.transport]}</span>
+                  </div>
+                  <div className="c-name">{p?.name || o.name}</div>
+                </button>
+              );
+            })
+          : origins.map((o, i) => {
+              const focused = focusOriginId === o.id;
+              return (
+                <div key={o.id} className="v7-chip">
+                  <button
+                    className="c-dot"
+                    style={{
+                      background: pinColor(i),
+                      outline: focused ? `3px solid color-mix(in srgb, ${pinColor(i)} 55%, transparent)` : undefined,
+                      outlineOffset: focused ? 2 : undefined,
+                    }}
+                    aria-label={`${o.name} 경로 강조`}
+                    aria-pressed={focused}
+                    title="눌러서 이 경로만 강조해서 보기 (이동수단은 오른쪽 아래 아이콘)"
+                    onClick={() => toggleFocus(o.id)}
+                  >
+                    {i + 1}
+                    <span
+                      className="c-mode"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${o.name} 이동수단 변경`}
+                      title="눌러서 이동수단 변경"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditing(o.id);
+                      }}
+                    >
+                      {TRANSPORT_ICON[o.transport]}
+                    </span>
+                  </button>
+                  <span className="c-x" role="button" aria-label={`${o.name} 삭제`} onClick={() => removeOrigin(o.id)}>✕</span>
+                  <div className="c-name">{o.name}</div>
+                </div>
+              );
+            })}
+        {!selectedMeeting && origins.length < 8 && (
+          <button
+            className="v7-chip-add"
+            title="검색해서 출발지를 추가하세요"
+            onClick={() => (document.querySelector(".v7-search input") as HTMLInputElement | null)?.focus()}
+          >
+            <IcPlus />
+          </button>
+        )}
+      </div>
+      <div className="v7-maxhint">
+        {selectedMeeting
+          ? `${selectedMeeting.name} · 참여자 ${activeOrigins.length}명의 출발지예요.`
+          : origins.length >= 8
+          ? "출발지는 최대 8개까지예요."
+          : "최대 8개까지 추가할 수 있어요."}
+      </div>
+
+      {/* 지도 */}
+      <div className="v7-mapwrap">
+        <div className="v7-maplayer">
+          {/* 기준 선택은 비회원 탐색 전용 — 모임 후보는 서버가 계산한다 */}
+          {!selectedMeeting && (
+            <div className="seg2">
+              <button className={criteria === "dist" ? "on" : ""} onClick={() => setCriteria("dist")}>기준: 거리순</button>
+              <button className={criteria === "time" ? "on" : ""} onClick={() => setCriteria("time")}>시간순</button>
+            </div>
+          )}
+          {activeOrigins.length > 0 && (
+            <div className="seg2">
+              <button
+                className={mapView === "me" ? "on" : ""}
+                onClick={() => {
+                  // 포커스해둔 출발지가 있으면 그대로 유지, 없으면 내 자리(모임 모드) 또는
+                  // 첫 출발지를 기본으로 확대한다.
+                  if (!focusOriginId) {
+                    const mine = selectedMeeting ? activeOrigins.find((o) => o.id === voterId)?.id : activeOrigins[0]?.id;
+                    setFocusOriginId(mine ?? activeOrigins[0]?.id ?? null);
+                  }
+                  setMapView("me");
+                }}
+              >
+                내 위치 보기
+              </button>
+              <button
+                className={mapView === "all" ? "on" : ""}
+                onClick={() => {
+                  setFocusOriginId(null);
+                  setMapView("all");
+                }}
+              >
+                전체 위치 보기
+              </button>
+            </div>
+          )}
+        </div>
+        {activeOrigins.length === 0 ? (
+          <div className="v7-mapempty">
+            {selectedMeeting ? "아직 출발지를 입력한 참여자가 없어요" : "아직 출발지가 없어요"}
+            <small>
+              {selectedMeeting
+                ? `참여자 ${selectedMeeting.participants.length}명이 각자 출발지를 넣으면 여기에 표시돼요`
+                : "위 검색창에서 출발지를 추가해보세요"}
+            </small>
+          </div>
+        ) : mapFail ? (
+          <div className="v7-mapempty">
+            지도를 불러오지 못했어요
+            <small>
+              카카오 JS 키(NEXT_PUBLIC_KAKAO_JS_KEY) 설정 후 표시됩니다
+              {midpoint ? ` · 중간 추천: ${midpoint.name}` : ""}
+            </small>
+          </div>
+        ) : (
+          <KakaoMap
+            pins={pins}
+            center={center}
+            onFail={() => setMapFail(true)}
+            view={mapView}
+            focusIndex={focusIndex}
+            routes={displayRoutes}
+            candidates={mapCandidates}
+            onCandidateClick={
+              voterId && !voteBusy
+                ? (id) => meetAct({ action: "vote", participantId: voterId, target: votePhase === 0 ? "region" : "place", candidateId: id })
+                : undefined
+            }
+          />
+        )}
+        {selectedMeeting ? (
+          selectedMeeting.winnerRegion ? (
+            <div className="v7-mapnote">
+              📍 중간 추천 지역: <b>{selectedMeeting.winnerRegion.name}</b> · {selectedMeeting.winnerRegion.reason}
+            </div>
+          ) : null
+        ) : midLoading ? (
+          <div className="v7-mapnote">실 이동시간(ODsay/TMAP)으로 계산 중…</div>
+        ) : midpoint ? (
+          <div className="v7-mapnote">
+            📍 중간 추천 지역: <b>{midpoint.name}</b> · {midpoint.reason}
+            {criteria === "time" && (
+              <span className="faint">
+                {" · "}
+                {midLive ? "실 이동시간 기준" : "경로 API 키 없음 — 거리 추정으로 계산"}
+              </span>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      {/* ── 모임 모드: 투표 섹션 (피그마 — 홈 셸 안에서 투표 진행) ── */}
+      {selectedMeeting && (
+        <div className="pad stack" style={{ gap: 12, paddingTop: 12 }}>
+          <StepIcons step={votePhase} />
+
+          {votePhase < 2 && (
+            <>
+              {/* 누구로 투표할까요? — 이 기기의 참가자 신원 (옵션에 현재 선택 표기) */}
+              <div>
+                <label className="label">누구로 투표할까요?</label>
+                <select
+                  className="input"
+                  value={voterId ?? ""}
+                  onChange={(e) => {
+                    setVoterId(e.target.value);
+                    if (selectedMeeting) setActive(selectedMeeting.code, e.target.value);
+                  }}
+                >
+                  {voterIds.length === 0 && <option value="">이 기기로 참여한 신원이 없어요</option>}
+                  {voterIds.map((i) => {
+                    const picked = votePool.find((c) => c.id === voteBox[i.id])?.name;
+                    return (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                        {i.isLeader ? " (방장)" : ""}
+                        {picked ? ` (${picked})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* 후보 리스트 */}
+              <div className="stack" style={{ gap: 8 }}>
+                {votePool.length === 0 ? (
+                  <div className="v7-empty">
+                    {votePhase === 0
+                      ? selectedMeeting.participants.every((p) => p.lat == null)
+                        ? "참여자들이 출발지를 등록하면 거점 후보가 만들어져요."
+                        : "거점 후보를 계산하고 있어요…"
+                      : "거점이 확정되면 주변 가게 후보가 올라와요."}
+                  </div>
+                ) : votePhase === 0 ? (
+                  selectedMeeting.regions.map((r) => {
+                    const n = tallyOf(r.id);
+                    const mine = myVote === r.id;
+                    return (
+                      <div key={r.id} className="v7-voterow">
+                        <div className="i-thumb" style={{ width: 38, height: 38, borderRadius: 999, background: "var(--ac-soft)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>🚉</div>
+                        <div className="grow">
+                          <div className="i-title">{r.name}</div>
+                          <div className="i-sub">
+                            <span className="chip ac tnum">{n}표</span>
+                            <span className="faint"> 최대 {r.maxMin}분 · 편차 {r.devMin}분</span>
+                          </div>
+                        </div>
+                        <button
+                          className={"v7-votepill" + (mine ? " voted" : "")}
+                          disabled={voteBusy || !voterId}
+                          onClick={() => meetAct({ action: "vote", participantId: voterId, target: "region", candidateId: r.id })}
+                        >
+                          {mine ? "투표함 ✓" : "투표"}
+                        </button>
+                      </div>
+                    );
+                  })
+                ) : (
+                  selectedMeeting.places.map((p) => {
+                    const n = tallyOf(p.id);
+                    const mine = myVote === p.id;
+                    return (
+                      <div key={p.id} className="v7-voterow">
+                        <div className="i-thumb" style={{ width: 38, height: 38, borderRadius: 10, background: "var(--ac-soft)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{p.emoji || "🍽️"}</div>
+                        <div className="grow">
+                          <div className="i-title">
+                            {p.name}
+                            {p.category ? <span className="chip line" style={{ marginLeft: 4 }}>{p.category}</span> : null}
+                          </div>
+                          <div className="i-sub">
+                            <span className="chip ac tnum">{n}표</span>
+                            <span className="faint"> 인근: {selectedMeeting.winnerRegion?.name}</span>
+                          </div>
+                        </div>
+                        <button
+                          className={"v7-votepill" + (mine ? " voted" : "")}
+                          disabled={voteBusy || !voterId}
+                          onClick={() => meetAct({ action: "vote", participantId: voterId, target: "place", candidateId: p.id })}
+                        >
+                          {mine ? "투표함 ✓" : "투표"}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {votePool.length > 0 && (
+                <p className="v7-hint" style={{ padding: "0 4px", textAlign: "left" }}>
+                  방장은 투표가 다 안 끝나도 확정할 수 있어요.
+                  {topCandidate && Object.keys(voteBox).length > 0 ? ` 현재 최다득표: ${topCandidate.name}` : ""}
+                </p>
+              )}
+
+              {/* 모임 시간(확정용) — 가게 확정 전에 방장이 입력 (피그마) */}
+              {voterIsLeader && votePhase === 1 && (
+                <div>
+                  <label className="label">모임 시간(확정용)</label>
+                  <input
+                    className="input"
+                    value={meetTime}
+                    onChange={(e) => setMeetTime(e.target.value)}
+                    onBlur={saveMeetTime}
+                    placeholder="예: 오후 7시"
+                  />
+                </div>
+              )}
+
+              {/* 강제 확정(방장 권한) — 피그마: 회색 라벨 + 파란 확정 버튼 */}
+              {voterIsLeader && votePool.length > 0 && (
+                <div className="stack" style={{ gap: 5 }}>
+                  <span className="faint center" style={{ fontSize: 10.5, fontWeight: 800 }}>강제 확정(방장 권한)</span>
+                  <button
+                    className="btn"
+                    // 주의: voteBusy 로 막으면 시간 입력의 onBlur 저장이 클릭 직전에
+                    // 버튼을 disabled 로 만들어 확정 클릭이 씹힌다.
+                    disabled={!topCandidate}
+                    onClick={() => {
+                      if (!topCandidate) return;
+                      void meetAct({
+                        action: "confirmManual",
+                        participantId: voterId,
+                        target: votePhase === 0 ? "region" : "place",
+                        id: topCandidate.id,
+                      });
+                    }}
+                  >
+                    ‘{topCandidate?.name}’으로 확정
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* 투표 완료 — 위 스텝 탭이 이미 3단계 전부 체크로 보여주므로 "확정됐어요"를
+              다시 크게 말하지 않는다. 대신 지금 여기서 더 궁금할 정보 — 참여자별
+              도착 예정 시간·상태 — 를 보여준다. */}
+          {votePhase === 2 && (
+            <div className="card stack" style={{ gap: 10 }}>
+              <div className="between">
+                <div>
+                  <span className="eyebrow">확정 장소</span>
+                  <div style={{ fontSize: 14, fontWeight: 850, marginTop: 2 }}>
+                    {selectedMeeting.winnerRegion?.name} · {selectedMeeting.winnerPlace?.emoji}{" "}
+                    {selectedMeeting.winnerPlace?.name}
+                  </div>
+                  {selectedMeeting.prefs?.timeText && (
+                    <span className="faint" style={{ fontSize: 11 }}>🕖 {selectedMeeting.prefs.timeText}</span>
+                  )}
+                </div>
+                <a className="btn sm" style={{ textDecoration: "none", flexShrink: 0 }} href={`/m/${selectedMeeting.code}`}>
+                  상세 보기
+                </a>
+              </div>
+              <div className="stack" style={{ gap: 6 }}>
+                {selectedMeeting.participants.map((p, i) => {
+                  const sc = statusColorFor(p.id);
+                  const per = selectedMeeting.winnerRegion?.perParticipant.find((x) => x.pid === p.id);
+                  return (
+                    <div key={p.id} className="row" style={{ gap: 8 }}>
+                      <div
+                        style={{
+                          width: 26, height: 26, borderRadius: "50%", background: pinColor(i), color: "#fff",
+                          fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
+                          flexShrink: 0, boxShadow: sc ? `0 0 0 2px ${sc}` : undefined,
+                        }}
+                      >
+                        {p.name.slice(0, 1)}
+                      </div>
+                      <span className="grow" style={{ fontSize: 12, fontWeight: 700 }}>{p.name}</span>
+                      {p.status ? (
+                        <span className="chip" style={{ background: `${ARRIVAL_COLOR[p.status]}22`, color: ARRIVAL_COLOR[p.status], fontSize: 10 }}>
+                          ● {ARRIVAL_LABEL[p.status]}{p.etaText ? ` · ${p.etaText}` : ""}
+                        </span>
+                      ) : per ? (
+                        <span className="chip line" style={{ fontSize: 10 }}>예상 {per.min}분</span>
+                      ) : (
+                        <span className="chip line" style={{ fontSize: 10 }}>상태 미입력</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 카테고리 탭 + 주변 리스트 — 비회원(직접 입력) 탐색 모드 전용 */}
+      {!selectedMeeting && (
+      <>
+      <div className="v7-cats">
+        {CATS.map((c) => (
+          <button key={c.key} className={"v7-cat" + (cat === c.key ? " on" : "")} onClick={() => setCat(c.key)}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <div className="v7-list">
+        {activeOrigins.length < 2 ? (
+          <div className="v7-empty">출발지를 2개 이상 추가하면 중간지점 주변 정보를 보여드려요.</div>
+        ) : nearby.length === 0 ? (
+          <div className="v7-empty">주변에서 결과를 찾지 못했어요.</div>
+        ) : (
+          nearby.map((p) => {
+            const inner = (
+              <>
+                <div className="i-thumb">{thumbFor(p.path || p.category)}</div>
+                <div className="grow">
+                  <div className="i-title">{p.name}</div>
+                  <div className="i-sub">
+                    {p.detail ? `${p.detail} · ` : `${p.category} · `}도보 {p.walkMin}분
+                    <span className="faint"> · {p.distanceM}m</span>
+                  </div>
+                </div>
+              </>
+            );
+            const key = `${p.name}${p.distanceM}`;
+            return p.url ? (
+              <a key={key} className="v7-item" href={p.url} target="_blank" rel="noreferrer">{inner}</a>
+            ) : (
+              <div key={key} className="v7-item">{inner}</div>
+            );
+          })
+        )}
+      </div>
+      </>
+      )}
+
+      {/* 출발지 편집 시트 — 칩 아이콘 클릭 시 */}
+      {editingOrigin && (
+        <div className="v7-overlay" onClick={() => setEditing(null)}>
+          <div className="v7-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h2>{editingOrigin.name}</h2>
+            <p className="m-sub">이 출발지의 이동수단을 골라주세요. 중간지점 계산에 반영돼요.</p>
+            <div className="v7-trans">
+              {TRANSPORTS.map((t) => (
+                <button
+                  key={t.key}
+                  className={editingOrigin.transport === t.key ? "on" : ""}
+                  onClick={() => updateOrigin(editingOrigin.id, { transport: t.key })}
+                >
+                  <span style={{ fontSize: 16 }}>{TRANSPORT_ICON[t.key]}</span>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <button className="btn primary" style={{ marginTop: 14 }} onClick={() => setEditing(null)}>
+              완료
+            </button>
+            <button
+              className="btn ghost"
+              style={{ marginTop: 8, color: "var(--danger)" }}
+              onClick={() => removeOrigin(editingOrigin.id)}
+            >
+              이 출발지 삭제
+            </button>
+          </div>
+        </div>
+      )}
+
+      <BottomNav active="home" />
     </main>
   );
 }

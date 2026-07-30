@@ -21,6 +21,11 @@
   }
 }
 *{box-sizing:border-box}
+/* 화면 하단에 고정 네비(v7-bottomnav, 방장 leaderbar)가 항상 떠 있어서,
+   포커스/스크롤로 요소를 화면에 맞추는 브라우저 기본 동작(scrollIntoView,
+   모바일에서 입력창 포커스 시 자동 스크롤 등)이 그 요소를 고정 바 뒤로
+   붙여버리는 문제가 있었다 — 바 높이만큼 여유를 항상 남겨둔다. */
+html{scroll-padding-bottom:150px}
 html,body{margin:0;padding:0}
 body{
   background:
@@ -100,8 +105,11 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 .stepper .s.on .bar,.stepper .s.done .bar{background:var(--ac)}
 .stepper .s.done{color:var(--ink-soft)}
 
-/* map */
-.map{position:relative;height:210px;background:var(--map);border-radius:16px;overflow:hidden;border:1px solid var(--hair)}
+/* map — 모임 상세 화면. 홈(.v7-mapwrap)과 같은 340px로 맞춘다.
+   420px였을 때는 하단 고정 네비(v7-bottomnav, 64px)가 없던 시절 값이 그대로 남아있던 것 —
+   지금은 지도 다음에 오는 "어디서 출발하세요" 입력 폼이 첫 화면(스크롤 전)에서
+   네비바에 가려지는 문제가 있었다. */
+.map{position:relative;height:340px;background:var(--map);border-radius:16px;overflow:hidden;border:1px solid var(--hair)}
 .blob{position:absolute;border-radius:10px;opacity:.9}
 .pin{position:absolute;z-index:5;width:30px;height:30px;border-radius:50%;background:var(--panel);border:2px solid var(--ac);
   display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:var(--shadow);transform:translate(-50%,-50%)}
@@ -131,8 +139,14 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 .opt.win{border-color:var(--ok);background:var(--ok-soft)}
 
 /* leader control bar */
-.leaderbar{position:sticky;bottom:0;z-index:25;background:color-mix(in srgb,var(--panel) 92%,transparent);
+/* bottom:64px — 이 화면 아래에는 항상 .v7-bottomnav(하단 5탭)가 고정돼 있다.
+   bottom:0으로 두면 방장 버튼이 바텀내비 밑에 깔려 눌리지 않는다. */
+.leaderbar{position:sticky;bottom:64px;z-index:25;background:color-mix(in srgb,var(--panel) 92%,transparent);
   backdrop-filter:saturate(160%) blur(10px);border-top:1px solid var(--hair);padding:11px 16px;display:flex;gap:8px}
+/* .btn 은 width:100% 를 쓰는데, 그걸 flex-basis로 그대로 물려받으면(기본 flex:0 1 auto)
+   한 버튼만 거의 전체 폭을 차지하고 옆 버튼은 몇 px로 짜부러진다(글자가 한 자씩
+   세로로 줄바꿈되는 원인). 직계 자식은 항상 폭을 균등하게 나눠 갖게 한다. */
+.leaderbar>*{flex:1;min-width:0}
 
 /* toast */
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:60;background:var(--ink);color:var(--panel);
@@ -184,8 +198,171 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
   padding:6px 4px;border-radius:10px;cursor:pointer;text-align:left;font-family:inherit;color:var(--ink)}
 .travelrow:hover{background:var(--panel2)}
 
-.candmini{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.candmini{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;
+  /* 가로 스크롤은 유지하되 스크롤바는 안 보이게 — 터치/드래그 스와이프는 그대로 동작 */
+  scrollbar-width:none;-ms-overflow-style:none}
+.candmini::-webkit-scrollbar{display:none;width:0;height:0}
 .candmini .cc{flex:0 0 auto;min-width:120px;border:1px solid var(--hair);background:var(--panel2);border-radius:12px;padding:8px 10px;cursor:pointer;text-align:left}
 .candmini .cc.win{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 8%,var(--panel2))}
 .candmini .cc b{font-size:12.5px;display:block}
 .candmini .cc span{font-size:10px;color:var(--ink-faint)}
+
+/* ═══════════════ v7 — 피그마/목업 기준 IA ═══════════════ */
+.v7-page{padding-bottom:84px;min-height:100vh;display:flex;flex-direction:column}
+
+/* 상단 헤더: 로고 + 모임생성/모임참여/알림 */
+.v7-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;position:sticky;top:0;z-index:30;
+  background:color-mix(in srgb,var(--panel2) 90%,transparent);backdrop-filter:blur(8px)}
+.v7-logo{font-size:19px;font-weight:900;letter-spacing:.02em}
+.v7-hbtns{display:flex;gap:8px;position:relative}
+.v7-iconbtn{width:34px;height:34px;border-radius:50%;background:var(--panel);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink-soft);box-shadow:var(--shadow);position:relative}
+.v7-iconbtn svg{width:16px;height:16px}
+.v7-iconbtn .s-badge{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--ac);color:#fff;font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid var(--panel2)}
+
+/* 알림 드롭다운 */
+.v7-notif{position:absolute;top:42px;right:0;width:280px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow);padding:12px;z-index:50}
+.v7-notif h3{margin:0 0 8px;font-size:12px;font-weight:900;color:var(--ink-soft)}
+.v7-notif .n-row{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--hair);font-size:12px}
+.v7-notif .n-row:first-of-type{border-top:none}
+.v7-notif .n-dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.v7-notif .n-time{margin-left:auto;font-size:10px;color:var(--ink-faint);white-space:nowrap}
+
+/* 검색 + 자동완성 */
+.v7-searchwrap{position:relative;margin:4px 16px 8px}
+.v7-search{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow)}
+.v7-search svg{width:15px;height:15px;color:var(--ink-faint);flex-shrink:0}
+.v7-search input{border:0;outline:0;background:none;font:inherit;font-size:13.5px;color:var(--ink);flex:1;min-width:0}
+.v7-ac{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--panel);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;z-index:40;max-height:240px;overflow-y:auto}
+.v7-ac button{display:block;width:100%;text-align:left;border:0;background:none;padding:10px 14px;font:inherit;font-size:13px;color:var(--ink);border-top:1px solid var(--hair)}
+.v7-ac button:first-child{border-top:none}
+.v7-ac button:hover{background:var(--ac-soft)}
+.v7-ac .addr{display:block;font-size:11px;color:var(--ink-faint);margin-top:1px}
+.v7-ac .empty{padding:12px 14px;font-size:12.5px;color:var(--ink-faint)}
+
+/* 출발지 칩 (최대 8, 가로 스크롤) */
+.v7-chips{display:flex;gap:14px;padding:8px 16px 6px;overflow-x:auto;overflow-y:visible;
+  /* 가로 스크롤은 유지하되 스크롤바는 안 보이게 — 터치/드래그 스와이프는 그대로 동작 */
+  scrollbar-width:none;-ms-overflow-style:none}
+.v7-chips::-webkit-scrollbar{display:none;width:0;height:0}
+.v7-chip{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;position:relative;border:0;background:none;padding:0;font:inherit}
+.v7-chip .c-dot{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:12px;box-shadow:var(--shadow);border:0;font-family:inherit;cursor:pointer;position:relative;padding:0}
+.v7-chip .c-dot:hover{filter:brightness(1.07)}
+/* 칩 위 이동수단 표식 — 눌러서 변경 */
+.v7-chip .c-mode{position:absolute;bottom:-3px;right:-5px;width:19px;height:19px;border-radius:50%;background:var(--panel);
+  display:flex;align-items:center;justify-content:center;font-size:10px;box-shadow:0 1px 4px rgba(0,0,0,.25);border:1.5px solid var(--panel)}
+.v7-chip .c-name{font-size:10px;font-weight:800;color:var(--ink-soft);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v7-chip .c-x{position:absolute;top:-3px;right:-1px;width:17px;height:17px;border-radius:50%;background:var(--ink);color:var(--panel);font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid var(--panel2);cursor:pointer}
+.v7-chip-add{width:44px;height:44px;border-radius:50%;border:1.8px dashed var(--hair2);background:none;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);flex-shrink:0;cursor:pointer}
+.v7-chip-add svg{width:15px;height:15px}
+.v7-maxhint{padding:0 16px 6px;font-size:10px;color:var(--ink-faint)}
+/* 홈 상단 모임 선택 — 목업의 "협성대 브레인스파크 모임 ▾" 바 */
+.v7-meetbar{width:100%;display:flex;align-items:center;gap:5px;border:1px solid var(--hair2);
+  border-radius:13px;padding:12px 14px;font:inherit;font-size:14px;background:var(--panel);
+  box-shadow:var(--shadow);cursor:pointer;text-align:left}
+.v7-meetbar b{color:var(--ac);font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v7-meetbar .suffix{color:var(--ink-soft);font-weight:700}
+.v7-meetbar .caret{margin-left:auto;color:var(--ink-faint);font-size:12px;flex-shrink:0}
+.v7-meetbar:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.v7-meetmenu{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:40;background:var(--panel);
+  border:1px solid var(--hair);border-radius:13px;box-shadow:0 14px 34px -12px rgba(0,0,0,.32);overflow:hidden}
+.v7-meetmenu button{display:block;width:100%;text-align:left;border:0;background:none;font:inherit;
+  padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--hair)}
+.v7-meetmenu button:last-child{border-bottom:0}
+.v7-meetmenu button:hover{background:var(--ac-soft)}
+.v7-meetmenu button.on{background:var(--ac-soft)}
+.v7-meetmenu button b{display:block;font-size:13px;font-weight:900;color:var(--ink)}
+.v7-meetmenu button span{display:block;font-size:10.5px;color:var(--ink-faint);margin-top:2px}
+
+/* 지도 — 이 앱의 메인 화면이므로 카테고리 리스트 첫 줄 근처까지 크게 잡는다 */
+.v7-mapwrap{position:relative;margin:0 16px;height:420px;border-radius:16px;overflow:hidden;border:1px solid var(--hair);background:var(--map)}
+.v7-maplayer{position:absolute;top:9px;left:9px;right:9px;display:flex;gap:6px;z-index:10}
+.v7-maplayer .seg2{display:flex;background:var(--panel);border-radius:999px;padding:2px;box-shadow:var(--shadow)}
+.v7-maplayer .seg2 button{border:0;background:none;padding:5px 10px;border-radius:999px;font:inherit;font-size:10.5px;font-weight:800;color:var(--ink-soft);cursor:pointer}
+.v7-maplayer .seg2 button.on{background:var(--ac);color:#fff}
+.v7-mapnote{position:absolute;left:9px;right:9px;bottom:9px;z-index:10;background:var(--panel);border-radius:10px;padding:7px 10px;font-size:10.5px;color:var(--ink-soft);box-shadow:var(--shadow)}
+.v7-mapempty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--ink-soft);font-size:12.5px;font-weight:700;text-align:center;padding:0 24px}
+.v7-mapempty small{font-weight:600;color:var(--ink-faint)}
+
+/* 카테고리 탭 + 주변 리스트 */
+.v7-cats{display:flex;gap:7px;padding:12px 16px 8px}
+.v7-cat{border:0;background:var(--panel);color:var(--ink-soft);border-radius:999px;padding:7px 14px;font:inherit;font-size:12px;font-weight:800;box-shadow:var(--shadow);cursor:pointer}
+.v7-cat.on{background:var(--ac);color:#fff}
+.v7-list{display:flex;flex-direction:column;gap:8px;padding:2px 16px 12px}
+.v7-item{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:11px 13px;box-shadow:var(--shadow);text-decoration:none;color:inherit}
+.v7-item .i-thumb{width:38px;height:38px;border-radius:10px;background:var(--ac-soft);color:var(--ac-deep);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.v7-item .i-title{font-size:13px;font-weight:850}
+.v7-item .i-sub{font-size:11px;color:var(--ink-faint);margin-top:1px}
+.v7-empty{padding:16px;font-size:12.5px;color:var(--ink-faint);text-align:center}
+
+/* 하단 5탭 */
+.v7-bottomnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:440px;z-index:40;
+  display:flex;justify-content:space-around;padding:10px 0 16px;background:color-mix(in srgb,var(--panel) 96%,transparent);
+  border-top:1px solid var(--hair);backdrop-filter:blur(10px)}
+.v7-nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-faint);font-size:10px;font-weight:800;text-decoration:none;border:0;background:none;font-family:inherit;cursor:pointer}
+.v7-nav-item svg{width:20px;height:20px}
+.v7-nav-item.on{color:var(--ac)}
+
+/* 스플래시 */
+.v7-splash{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  background:linear-gradient(180deg,var(--ac) 0%,var(--ac-deep) 100%);color:#fff;padding:0 36px;transition:opacity .4s}
+.v7-splash.fade{opacity:0;pointer-events:none}
+.v7-splash .s-logo{font-size:28px;font-weight:900;letter-spacing:.02em;margin-bottom:20px}
+.v7-splash .s-head{font-size:17px;font-weight:850;line-height:1.5;margin-bottom:10px;min-height:52px}
+.v7-splash .s-sub{font-size:12.5px;opacity:.85;line-height:1.6;min-height:40px}
+.v7-splash .s-dots{display:flex;gap:6px;margin-top:28px}
+.v7-splash .s-dots span{width:6px;height:6px;border-radius:999px;background:rgba(255,255,255,.35);transition:all .3s}
+.v7-splash .s-dots span.on{background:#fff;width:18px}
+.v7-splash .s-skip{position:absolute;top:52px;right:20px;border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:999px;padding:6px 14px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+
+/* 투표 화면 */
+.v7-votetabs{display:flex;gap:18px;padding:10px 16px 0;font-size:14px;font-weight:800;color:var(--ink-faint)}
+.v7-votetabs button{border:0;background:none;font:inherit;font-weight:800;color:var(--ink-faint);padding:0 0 8px;cursor:pointer}
+.v7-votetabs button.on{color:var(--ink);border-bottom:2.5px solid var(--ac)}
+.v7-voterow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow)}
+.v7-votepill{margin-left:auto;border:0;background:var(--ac-soft);color:var(--ac-deep);font:inherit;font-size:12px;font-weight:900;padding:8px 16px;border-radius:11px;cursor:pointer;flex-shrink:0}
+.v7-votepill.voted{background:var(--ac);color:#fff}
+.v7-hint{text-align:center;font-size:11px;color:var(--ink-faint);padding:6px 24px;line-height:1.5}
+
+/* 모달 */
+.v7-overlay{position:fixed;inset:0;z-index:80;background:rgba(10,16,28,.5);display:flex;align-items:center;justify-content:center;padding:20px;
+  animation:v7-fade .18s ease}
+.v7-modal{width:100%;max-width:380px;background:var(--panel);border-radius:18px;padding:20px;box-shadow:var(--shadow);
+  animation:v7-pop .22s cubic-bezier(.2,.9,.3,1.3)}
+@keyframes v7-fade{from{opacity:0}to{opacity:1}}
+@keyframes v7-pop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media (prefers-reduced-motion:reduce){.v7-overlay,.v7-modal{animation:none}}
+.v7-modal h2{margin:0 0 4px;font-size:16px;font-weight:900}
+.v7-modal .m-sub{font-size:12px;color:var(--ink-soft);margin:0 0 14px;line-height:1.55}
+
+/* 참가자 자가신고 도착 상태 — 정상/지체 중/많이 늦음 (모임원 탭) */
+.statusseg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.statusseg button{display:flex;flex-direction:column;align-items:center;gap:4px;border:2px solid var(--hair);
+  background:var(--panel2);border-radius:12px;padding:10px 6px;font-weight:800;font-size:12px;color:var(--ink-soft)}
+.statusseg button .dot{width:10px;height:10px;border-radius:50%}
+.statusseg button.on{border-color:transparent;color:#fff}
+
+/* 내정보 */
+.v7-mycard{margin:0 16px 10px;background:var(--panel);border:1px solid var(--hair);border-radius:15px;padding:14px 15px;box-shadow:var(--shadow)}
+.v7-mycard .t{font-size:13px;font-weight:900;display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.v7-mycard .t svg{width:14px;height:14px;color:var(--ac)}
+.v7-mycard .d{font-size:11px;color:var(--ink-faint);line-height:1.55;margin-bottom:10px}
+.v7-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+.v7-tag{display:inline-flex;align-items:center;gap:6px;background:var(--ac-soft);color:var(--ac-deep);font-size:12px;font-weight:800;padding:6px 11px;border-radius:999px;border:0;font-family:inherit;cursor:pointer}
+.v7-trans{display:flex;gap:7px}
+.v7-trans button{flex:1;border:0;background:var(--panel2);color:var(--ink-faint);border-radius:12px;padding:11px 4px;font:inherit;font-size:12px;font-weight:800;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+.v7-trans button svg{width:17px;height:17px}
+.v7-trans button.on{background:var(--ac);color:#fff}
+
+/* ── 피그마형 원형 아이콘 스텝퍼 (거점 투표 ─ 가게 투표 ─ 최종 확정) ── */
+.stepicons{display:flex;align-items:flex-start;padding:2px 6px}
+.stepicons .si{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:5px}
+.stepicons .dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--panel);border:2px solid var(--hair2);color:var(--ink-faint);z-index:1}
+.stepicons .lb{font-size:11px;font-weight:800;color:var(--ink-faint);white-space:nowrap}
+.stepicons .si.on .dot{background:var(--ac);border-color:var(--ac);box-shadow:0 4px 12px color-mix(in srgb,var(--ac) 35%,transparent)}
+.stepicons .si.on .lb{color:var(--ac)}
+.stepicons .si.done .dot{background:var(--ac);border-color:var(--ac)}
+.stepicons .si.done .lb{color:var(--ink-soft)}
+/* 연결선 — 원 중심 높이에서 다음 원까지 */
+.stepicons .ln{position:absolute;top:16px;left:calc(50% + 21px);width:calc(100% - 42px);height:2.5px;border-radius:2px;background:var(--hair)}
+.stepicons .si.done .ln{background:var(--ac)}

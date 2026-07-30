@@ -10,6 +10,10 @@ import {
   reopenDiscussion,
   backToMain,
   reserve,
+  castVote,
+  setRegionCandidates,
+  setParticipantStatus,
+  updatePrefs,
   getState,
 } from "@/lib/store";
 import { resolveGeocode, recommendRegions, recommendPlaces } from "@/lib/routing";
@@ -62,7 +66,11 @@ export async function POST(req: NextRequest) {
     case "origin": {
       const origin = String(body.origin || "").trim();
       const transport = body.transport === "car" ? "car" : "transit";
-      const coord = await resolveGeocode(origin);
+      // 자동완성에서 정확히 고른 좌표가 있으면 그대로 쓴다 — 텍스트만 보내
+      // resolveGeocode 가 다시 검색하면 사용자가 본 것과 다른 동명이인 결과를
+      // 고를 수 있다(예: "성수역"이 실제로는 아파트 상가를 집는 경우).
+      const hasCoord = typeof body.lat === "number" && typeof body.lng === "number";
+      const coord = hasCoord ? { lat: body.lat, lng: body.lng } : await resolveGeocode(origin);
       const r = setOriginCoords({
         code: body.code,
         participantId: body.participantId,
@@ -70,6 +78,58 @@ export async function POST(req: NextRequest) {
         transport,
         lat: coord.lat,
         lng: coord.lng,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── 거점 후보 계산 (단계 전환 없음) ──
+    //  메인 화면에서 바로 거점 투표를 하기 위해, 출발지가 등록될 때마다
+    //  클라이언트가 이 액션으로 후보를 갱신한다.
+    case "regions": {
+      const st = getState(body.code);
+      if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      if (st.participants.filter((p: any) => p.lat != null).length === 0)
+        return NextResponse.json({ ok: true, regions: [] });
+      const regions = await recommendRegions(st.participants as any);
+      const r = setRegionCandidates(body.code, regions);
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, regions });
+    }
+
+    // ── 투표 (모든 참가자, 1인 1표) ──
+    //  집계만 한다. 마감은 피그마 설계대로 방장 확정(confirmManual)으로만 —
+    //  전원 투표해도 자동으로 넘어가지 않는다.
+    case "vote": {
+      const r = castVote({
+        code: String(body.code || ""),
+        participantId: String(body.participantId || ""),
+        target: body.target === "place" ? "place" : "region",
+        candidateId: body.candidateId ? String(body.candidateId) : null,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── 모임 시간(확정용) 저장 — 피그마: 최종 확정 화면의 입력 ──
+    case "meetTime": {
+      const st = getState(body.code);
+      if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const me = st.participants.find((p: any) => p.id === body.participantId);
+      if (!me?.isLeader) return NextResponse.json({ error: "방장만 시간을 정할 수 있어요." }, { status: 400 });
+      const r = updatePrefs(String(body.code).toUpperCase(), { timeText: String(body.time || "").trim().slice(0, 40) });
+      if (!r.ok) return NextResponse.json({ error: "저장 실패" }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── 참가자 자가신고 도착 상태 — 본인 항목만 수정 가능(회의록) ──
+    case "status": {
+      const status = body.status === "green" || body.status === "yellow" || body.status === "red" ? body.status : null;
+      const r = setParticipantStatus({
+        code: String(body.code || ""),
+        participantId: String(body.participantId || ""),
+        status,
+        etaText: body.etaText !== undefined ? String(body.etaText ?? "") : undefined,
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true });
