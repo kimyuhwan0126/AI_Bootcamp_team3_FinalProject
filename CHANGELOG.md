@@ -25,6 +25,8 @@
 | 2026-07-30 | Claude(AI) | `schema.sql` (루트) | 삭제 | v7 시절 **Neon용** 잔재. 아무 코드도 참조하지 않는데 팀원이 `supabase/schema.sql` 대신 잘못 실행할 위험이 있었다 |
 | 2026-07-30 | Claude(AI) | `docs/legacy-algo/` (신규 8파일 + README) | 유실됐던 추천 알고리즘 8종 복원 | `memory/status.md` 가 `git show 5ff50ee:...` 로 꺼내라고 안내했는데, 그 커밋이 `main` 의 조상이 아닌 **별도 갈래**라 히스토리를 옮겨도 따라오지 않는다 |
 | 2026-07-30 | Claude(AI) | `tsconfig.json` | `exclude` 에 `docs` 추가 | 위 참고용 파일들이 지금 코드와 타입이 맞지 않아 타입검사를 깨뜨린다 |
+| 2026-07-30 | Claude(AI) | `package-lock.json` | `package.json` 과 동기화 (버전 `8.0.0`→`0.1.0`, `@playwright/test` 루트 devDependency 등록) | lock 이 어긋나면 CI 의 `npm ci` 가 죽는다. 팀원이 받자마자 빨간 CI 를 보게 될 자리였다 |
+| 2026-07-30 | Claude(AI) | `package.json` | `next` `14.2.15` → **`^14.2.35`** | `npm audit` 에서 **critical** 취약점. 공개 저장소 + Vercel 배포 예정이라 방치할 수 없다. 14.2 안의 패치 업그레이드만 했다(16 으로 올리면 breaking change) |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.
