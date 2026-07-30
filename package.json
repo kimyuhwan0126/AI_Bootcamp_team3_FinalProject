@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "next lint",
+    "pretest:smoke": "playwright install chromium",
     "test:smoke": "playwright test",
     "verify": "npx tsc --noEmit && npm run build && npm run test:smoke"
   },
@@ -21,6 +22,8 @@
     "@types/node": "^20.16.11",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
     "typescript": "^5.6.3"
   }
 }
