@@ -38,6 +38,7 @@
 | 2026-07-30 | Claude(AI) | `package.json`, `.eslintrc.json` | `eslint` + `eslint-config-next` 설치, extends 를 `next/core-web-vitals` 로 (에러 2건 수정) | `npm run lint` 스크립트가 있는데 eslint 가 없어 실행하면 죽었다. `next/typescript` 는 기존 `any` 46곳을 전부 에러로 띄워 제외 — **React 훅 규칙이 목적**이다(조건부 return 뒤 훅 배치 사고를 lint 가 잡는다) |
 | 2026-07-30 | Claude(AI) | `팀원_실행안내.md` | "Node.js 18 이상" → **Node 22** (`.nvmrc` 기준) | `.nvmrc`·README·CI 는 22 인데 이 문서만 18 이라 팀원이 18 로 맞출 수 있었다 |
 | 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md`, `.github/CODEOWNERS` | 존재하지 않는 `sections/ChatSection.tsx` → 실제 파일 `ChatPanel.tsx` | @TODO 자리에 아이디를 채워 주석을 풀면 **없는 경로라 GitHub 이 그 줄을 조용히 무시**해 채팅 담당 소유권이 안 걸렸을 것이다 |
+| 2026-07-30 | Claude(AI) | `.github/CODEOWNERS`, `docs/팀_개발환경.md` | 경로의 `[code]` → `*` (`/app/m/*/sections/ChatPanel.tsx`) + 함정 경고 | **CODEOWNERS 는 gitignore 문법이라 대괄호가 문자 클래스로 해석된다.** `[code]` 는 `c`·`o`·`d`·`e` 중 한 글자에 매칭되고 실제 폴더 `app/m/[code]/` 에는 절대 매칭되지 않는다 — 파일명을 고쳐도 그 줄은 여전히 무효였다. `git check-ignore` 로 재현 확인 |
 | 2026-07-30 | Claude(AI) | `app/m/[code]/CLAUDE.md` | "팀원이 만질 파일은 모두 400줄 미만" 주장 정정 — 실제로 `app/page.tsx` 1,118줄 · `lib/ai.ts` 590줄이 팀원 소유다 | 인계 문서의 거짓 주장은 다음 세션이 잘못된 전제로 작업하게 만든다(v8 에서 실제로 겪은 실패) |
 | 2026-07-30 | Claude(AI) | `docs/노션_통합개발환경.md` | 줄 수 `1,352` → `905` 최신화 · 아직 없는 스코어러 3종에 "앞으로 만들 파일" 표시 · Code Owners 설정이 `docs/팀_개발환경.md` 와 정반대이던 모순 제거 | 멘토님께 공유하는 문서라 사실관계가 어긋나면 안 된다 |
 
