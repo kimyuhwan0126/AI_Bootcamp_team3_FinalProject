@@ -13,6 +13,7 @@ import Splash from "./components/v8/Splash";
 import StepIcons from "./components/v8/StepIcons";
 import { IcSearch, IcPlus } from "./components/v8/Icons";
 import { recommendRegions, arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
+import { formatMinutes, formatGap } from "@/lib/format";
 import type { Participant, RegionCandidate } from "@/lib/types";
 import type { GeoSuggest } from "./api/geocode/route";
 import type { NearbyItem } from "./api/places/route";
@@ -894,7 +895,7 @@ export default function Home() {
                           <div className="i-title">{r.name}</div>
                           <div className="i-sub">
                             <span className="chip ac tnum">{n}표</span>
-                            <span className="faint"> 최대 {r.maxMin}분 · 편차 {r.devMin}분</span>
+                            <span className="faint"> 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}</span>
                           </div>
                         </div>
                         <button
@@ -1025,7 +1026,7 @@ export default function Home() {
                           ● {ARRIVAL_LABEL[p.status]}{p.etaText ? ` · ${p.etaText}` : ""}
                         </span>
                       ) : per ? (
-                        <span className="chip line" style={{ fontSize: 10 }}>예상 {per.min}분</span>
+                        <span className="chip line" style={{ fontSize: 10 }}>예상 {formatMinutes(per.min)}</span>
                       ) : (
                         <span className="chip line" style={{ fontSize: 10 }}>상태 미입력</span>
                       )}

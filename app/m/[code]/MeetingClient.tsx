@@ -10,6 +10,7 @@ import StepIcons from "@/app/components/v8/StepIcons";
 import BottomNav from "@/app/components/v8/BottomNav";
 import type { GeoSuggest } from "@/app/api/geocode/route";
 import { arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
+import { formatMinutes, formatGap } from "@/lib/format";
 
 const DEV = process.env.NODE_ENV !== "production";
 
@@ -835,7 +836,7 @@ export default function MeetingClient({ code }: { code: string }) {
                               )}
                             </div>
                             <div className="i-sub">
-                              <b>{n}표</b> · 최대 {r.maxMin}분 · 편차 {r.devMin}분
+                              <b>{n}표</b> · 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}
                             </div>
                           </div>
                           <button
@@ -904,7 +905,7 @@ export default function MeetingClient({ code }: { code: string }) {
                         title="탭하면 지지 의견을 보내요"
                       >
                         <b>{r.name}</b>
-                        <span>최대 {r.maxMin}분 · 편차 {r.devMin}분</span>
+                        <span>최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}</span>
                       </button>
                     ))}
                   </div>
@@ -942,7 +943,7 @@ export default function MeetingClient({ code }: { code: string }) {
                                   <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>최다</span>
                                 )}
                               </div>
-                              <div className="i-sub"><b>{n}표</b> · 최대 {r.maxMin}분 · 편차 {r.devMin}분</div>
+                              <div className="i-sub"><b>{n}표</b> · 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}</div>
                             </div>
                             <button
                               className={"v8-votepill" + (mine ? " voted" : "")}
@@ -1272,7 +1273,7 @@ export default function MeetingClient({ code }: { code: string }) {
                       <div className="grow">
                         <b style={{ fontSize: 13 }}>{r.name}</b>
                         <div className="faint" style={{ fontSize: 11 }}>
-                          최대 {r.maxMin}분 · 편차 {r.devMin}분
+                          최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}
                         </div>
                       </div>
                     </label>
@@ -1431,7 +1432,7 @@ function PastStepView({ step, state }: { step: 0 | 1 | 2; state: MeetingState })
                     {state.winnerRegion?.id === r.id && <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>확정됨</span>}
                   </div>
                   <div className="i-sub">
-                    <b>{tally(r.id)}표</b> · 최대 {r.maxMin}분 · 편차 {r.devMin}분
+                    <b>{tally(r.id)}표</b> · 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}
                   </div>
                 </div>
               </div>
@@ -1516,7 +1517,7 @@ function TravelTimes({
                     </span>
                   )}
                   <span className="chip ok" style={{ fontSize: 8.5, padding: "2px 7px" }}>실시간</span>
-                  <b className="tnum" style={{ fontSize: 11.5, color: statusColor }}>{m != null ? `${m}분` : "—"}</b>
+                  <b className="tnum" style={{ fontSize: 11.5, color: statusColor }}>{formatMinutes(m)}</b>
                 </span>
               </div>
               <div className="bar sm">

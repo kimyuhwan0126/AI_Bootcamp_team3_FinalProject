@@ -6,6 +6,7 @@
 //   자차:     TMAP 옵션 비교 + 택시요금 + 카풀 정산 미리보기
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
+import { formatMinutes, formatDistance, formatWon } from "@/lib/format";
 
 interface Props {
   code: string;
@@ -94,6 +95,26 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                 <p className="faint" style={{ fontSize: 11, margin: "-4px 0 0" }}>
                   {data.live ? `경로 후보 ${data.transit.length}개 · 시간표 기준` : "실시간 경로를 가져오지 못해 추정값으로 표시해요"}
                 </p>
+                {/* 실 경로를 못 가져온 경우엔 왜 그런지와 무엇을 보고 있는지 밝힌다.
+                    시외 장거리는 대중교통 API 커버리지 밖이라 KTX·고속버스가 반영되지
+                    않는다 — 값이 실제보다 크게 어긋날 수 있음을 숨기지 않는다. */}
+                {!data.live && (
+                  <div
+                    style={{
+                      background: "var(--warn-soft)",
+                      border: "1px solid color-mix(in srgb,var(--warn) 30%,transparent)",
+                      borderRadius: 12,
+                      padding: "9px 11px",
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                      color: "var(--warn)",
+                    }}
+                  >
+                    <b>직선거리로 추정한 값이에요.</b> 대중교통 경로 API는 수도권·광역시
+                    중심이라, 시외 장거리(KTX·고속버스)는 실제 소요시간과 크게 다를 수 있어요.
+                    정확한 시간은 카카오맵·네이버지도에서 확인해주세요.
+                  </div>
+                )}
                 {data.live &&
                   data.transit.map((t: any, i: number) => (
                     <div key={i} className={"ropt" + (i === 0 ? " sel" : "")}>
@@ -102,7 +123,7 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                           {i === 0 && <span className="chip" style={{ background: "var(--ac)", color: "#fff" }}>추천</span>}
                           <b style={{ fontSize: 13 }}>{t.label}</b>
                         </span>
-                        <b className="tnum" style={{ color: i === 0 ? "var(--ac)" : "var(--ink-soft)", fontSize: 14 }}>{t.min}분</b>
+                        <b className="tnum" style={{ color: i === 0 ? "var(--ac)" : "var(--ink-soft)", fontSize: 14 }}>{formatMinutes(t.min)}</b>
                       </div>
                       {/* 구간 막대 */}
                       <div className="row" style={{ gap: 2, margin: "8px 0 6px", alignItems: "center" }}>
@@ -123,11 +144,11 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                       <div className="faint" style={{ fontSize: 10.5, lineHeight: 1.5 }}>
                         {t.legs
                           .filter((l: any) => l.kind !== "walk")
-                          .map((l: any) => `${l.name} ${l.from}→${l.to} (${l.stations}정거장 ${l.min}분)`)
+                          .map((l: any) => `${l.name} ${l.from}→${l.to} (${l.stations}정거장 ${formatMinutes(l.min)})`)
                           .join(" · ")}
                         {" · "}
-                        <b style={{ color: "var(--ink-soft)" }}>{t.fare.toLocaleString()}원</b>
-                        {" · 도보 "}{t.walkM}m · 환승 {t.transfers}회
+                        <b style={{ color: "var(--ink-soft)" }}>{formatWon(t.fare)}</b>
+                        {" · 도보 "}{formatDistance(t.walkM)} · 환승 {t.transfers}회
                       </div>
                     </div>
                   ))}
@@ -145,10 +166,10 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                       <span className="chip" style={{ background: "var(--ac)", color: "#fff" }}>추천</span>
                       <b style={{ fontSize: 13 }}>{data.car[0].label}</b>
                     </span>
-                    <b className="tnum" style={{ color: "var(--ac)", fontSize: 14 }}>{data.car[0].min}분</b>
+                    <b className="tnum" style={{ color: "var(--ac)", fontSize: 14 }}>{formatMinutes(data.car[0].min)}</b>
                   </div>
                   <div className="faint" style={{ fontSize: 10.5, marginTop: 5 }}>
-                    {(data.car[0].distanceM / 1000).toFixed(1)}km · 통행료 <b style={{ color: "var(--ink-soft)" }}>{data.car[0].tollFare.toLocaleString()}원</b>
+                    {formatDistance(data.car[0].distanceM)} · 통행료 <b style={{ color: "var(--ink-soft)" }}>{formatWon(data.car[0].tollFare)}</b>
                   </div>
                 </div>
                 {/* 옵션 비교 3분할 */}
@@ -156,8 +177,8 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                   {data.car.slice(1).map((c: any) => (
                     <div key={c.key} className="ropt" style={{ flex: 1, marginTop: 0 }}>
                       <div className="faint" style={{ fontSize: 10 }}>{c.label}</div>
-                      <b className="tnum" style={{ fontSize: 13 }}>{c.min}분</b>
-                      <div className="faint" style={{ fontSize: 9.5 }}>{(c.distanceM / 1000).toFixed(1)}km</div>
+                      <b className="tnum" style={{ fontSize: 13 }}>{formatMinutes(c.min)}</b>
+                      <div className="faint" style={{ fontSize: 9.5 }}>{formatDistance(c.distanceM)}</div>
                     </div>
                   ))}
                   <div className="ropt" style={{ flex: 1, marginTop: 0 }}>

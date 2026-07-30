@@ -49,7 +49,7 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
     const paths = d?.result?.path;
     if (!Array.isArray(paths) || paths.length === 0) return null;
 
-    return paths.slice(0, limit).map((path: any): TransitPathDetail => {
+    const parsed = paths.slice(0, limit).map((path: any): TransitPathDetail => {
       const info = path.info ?? {};
       const legs: TransitLeg[] = (path.subPath ?? [])
         .filter((s: any) => !(s.trafficType === 3 && !(s.sectionTime > 0))) // 0분 도보 제거
@@ -64,10 +64,13 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
         }));
       const rides = legs.filter((l) => l.kind !== "walk");
       const transfers = Math.max(0, rides.length - 1);
-      const label =
-        path.pathType === 1 ? (transfers === 0 ? "지하철 직통" : `지하철 환승 ${transfers}회`)
-        : path.pathType === 2 ? (transfers === 0 ? "버스 직통" : `버스 환승 ${transfers}회`)
-        : "버스+지하철";
+      // 라벨은 pathType(ODsay 분류)이 아니라 "실제로 파싱된 구간"으로 만든다.
+      // pathType 3 을 그대로 믿고 "버스+지하철"이라 썼더니, 구간이 하나도
+      // 안 잡힌 응답에도 그 문구가 붙어 사실과 달랐다(CEO 보고: 시외 경로).
+      const hasBus = rides.some((l) => l.kind === "bus");
+      const hasSub = rides.some((l) => l.kind === "subway");
+      const modeName = hasBus && hasSub ? "버스+지하철" : hasSub ? "지하철" : hasBus ? "버스" : "대중교통";
+      const label = transfers === 0 ? `${modeName} 직통` : `${modeName} 환승 ${transfers}회`;
       return {
         label,
         pathType: path.pathType,
@@ -78,6 +81,15 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
         legs,
       };
     });
+
+    // ⚠️ 쓸 수 없는 응답 걸러내기.
+    //  ODsay 는 수도권·광역 도시 대중교통 중심이라, 시외 장거리(예: 서울→김천)에는
+    //  탑승 구간이 하나도 없고 시간·요금·도보가 전부 0인 껍데기 경로를 돌려주기도 한다.
+    //  그걸 그대로 그리면 "ODsay 실시간 82분 · 0원 · 환승 0회" 처럼 실제와 전혀
+    //  다른 값이 사실처럼 보인다. 탑승 구간이 있고 시간이 잡힌 것만 남기고,
+    //  하나도 못 건지면 null 을 돌려 상위에서 추정값으로 폴백하게 한다.
+    const usable = parsed.filter((p) => p.min > 0 && p.legs.some((l) => l.kind !== "walk"));
+    return usable.length ? usable : null;
   } catch {
     return null;
   }
@@ -99,9 +111,15 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
     const path = d?.result?.path?.[0];
     const info = path?.info;
     if (!info) return null;
+    const min = Math.round(info.totalTime ?? 0);
+    // 시외 장거리에서 ODsay 가 시간 0(또는 탑승 구간 없음)인 껍데기를 주는 경우가
+    // 있다 — 이동시간 계산에 그 값이 들어가면 "서울→김천 82분" 같은 결과가 된다.
+    // 쓸 수 없는 응답은 null 로 돌려 거리 기반 추정으로 폴백시킨다.
+    const rides = (path.subPath ?? []).filter((s: { trafficType?: number }) => s.trafficType !== 3);
+    if (min <= 0 || rides.length === 0) return null;
     return {
-      min: Math.round(info.totalTime),
-      transfers: Math.max(0, (path.subPathCount ?? 1) - 1),
+      min,
+      transfers: Math.max(0, rides.length - 1),
       fare: info.payment ?? 0,
       walkM: info.totalWalk ?? 0,
     };
