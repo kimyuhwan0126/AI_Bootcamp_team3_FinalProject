@@ -101,11 +101,18 @@ export async function loadMeeting(code: string): Promise<Meeting | null> {
 
   // 참가자는 참여 순서대로 — 방장이 항상 맨 앞에 오도록
   const [{ data: pRows }, { data: vRows }] = await Promise.all([
+    // 참가자 순서는 화면에 그대로 쓰인다 — 칩·지도 핀 색이 PIN_COLORS[순번] 이라
+    // 폴링(1.8초)마다 순서가 흔들리면 사람마다 색이 계속 바뀐다.
+    // joined_at 만으로는 동순위가 생길 수 있으므로(Postgres now()는 트랜잭션
+    // 시작 시각이라 같은 문장에서 넣은 행끼리 값이 같다), PK(id)까지 걸어
+    // 순서를 완전히 결정적으로 만든다. 방장은 항상 맨 앞.
     supabase
       .from("participants")
       .select("*")
       .eq("code", key)
+      .order("is_leader", { ascending: false })
       .order("joined_at", { ascending: true })
+      .order("id", { ascending: true })
       .returns<ParticipantRow[]>(),
     supabase.from("votes").select("target, participant_id, candidate_id").eq("code", key).returns<VoteRow[]>(),
   ]);
