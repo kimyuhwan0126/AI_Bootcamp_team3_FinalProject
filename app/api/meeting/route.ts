@@ -12,11 +12,17 @@ import {
   reserve,
   castVote,
   setRegionCandidates,
+  addRegionCandidate,
   setParticipantStatus,
   updatePrefs,
   getState,
 } from "@/lib/store";
-import { resolveGeocode, recommendRegions, recommendPlaces } from "@/lib/routing";
+import {
+  resolveGeocode,
+  recommendRegions,
+  recommendPlaces,
+  scoreRegionForParticipants,
+} from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
 
 // 인메모리 스토어를 쓰므로 항상 동적 처리 (캐시 금지)
@@ -95,6 +101,42 @@ export async function POST(req: NextRequest) {
       const r = await setRegionCandidates(body.code, regions);
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, regions });
+    }
+
+    // ── 후보 직접 등록 (방장 포함 누구나) ──
+    //  자동 추천 3곳이 마음에 안 들 때의 탈출구. 지도 검색으로 고른 좌표를
+    //  받아, 참가자 전원 기준 이동시간·편차를 계산해 후보에 올린다.
+    case "addRegion": {
+      const st = await getState(body.code);
+      if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const me = st.participants.find((p) => p.id === body.participantId);
+      if (!me) return NextResponse.json({ error: "참가자를 찾을 수 없어요." }, { status: 400 });
+
+      const name = String(body.name || "").trim();
+      if (!name) return NextResponse.json({ error: "지역 이름이 비었어요." }, { status: 400 });
+
+      // 좌표는 지도 검색 결과에서 그대로 받는다(없으면 이름으로 지오코딩)
+      const hasCoord = typeof body.lat === "number" && typeof body.lng === "number";
+      const hub = hasCoord ? { lat: body.lat as number, lng: body.lng as number } : await resolveGeocode(name);
+
+      // 출발지를 등록한 사람이 아무도 없으면 이동시간을 계산할 수 없다 —
+      // 그래도 후보로는 올릴 수 있게 0으로 두고, 출발지가 모이면 재계산된다.
+      const { maxMin, devMin, perParticipant } = await scoreRegionForParticipants(
+        hub,
+        st.participants as never
+      );
+      const r = await addRegionCandidate({
+        code: String(body.code || ""),
+        name,
+        lat: hub.lat,
+        lng: hub.lng,
+        maxMin,
+        devMin,
+        perParticipant,
+        proposedBy: me.name,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, candidate: r.candidate, existing: r.existing ?? false });
     }
 
     // ── 투표 (모든 참가자, 1인 1표) ──

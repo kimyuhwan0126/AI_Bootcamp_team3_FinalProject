@@ -41,6 +41,12 @@ export default function MeetingClient({ code }: { code: string }) {
   // 거점 단계(stage=main)와 가게 단계(stage=chat) 양쪽에서 열 수 있어야 하므로
   // 단순 boolean이 아니라 대상 단계를 기억한다.
   const [showManual, setShowManual] = useState<"region" | "place" | null>(null);
+  // ＋ 다른 후보 등록 — 지도(카카오 로컬) 검색으로 원하는 지역을 후보에 올린다
+  const [showAddRegion, setShowAddRegion] = useState(false);
+  const [regionQuery, setRegionQuery] = useState("");
+  const [regionHits, setRegionHits] = useState<GeoSuggest[] | null>(null);
+  const [regionSearching, setRegionSearching] = useState(false);
+  const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [manualPick, setManualPick] = useState<string | null>(null);
   const [dbg, setDbg] = useState(false);
   const [mapFallback, setMapFallback] = useState(false); // 카카오맵 로드 실패 시 스키매틱으로
@@ -344,6 +350,32 @@ export default function MeetingClient({ code }: { code: string }) {
     };
   }, [routeKey]);
 
+  // 출발지 검색과 같은 /api/geocode (카카오 로컬) 를 쓴다 — 300ms 디바운스
+  useEffect(() => {
+    if (!showAddRegion) return;
+    if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+    const q = regionQuery.trim();
+    if (!q) {
+      setRegionHits(null);
+      return;
+    }
+    setRegionSearching(true);
+    regionDebounceRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        setRegionHits(d.items || []);
+      } catch {
+        setRegionHits([]);
+      } finally {
+        setRegionSearching(false);
+      }
+    }, 300);
+    return () => {
+      if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+    };
+  }, [regionQuery, showAddRegion]);
+
   if (notFound) {
     return (
       <main className="device pad" style={{ paddingTop: 60, textAlign: "center" }}>
@@ -426,6 +458,30 @@ export default function MeetingClient({ code }: { code: string }) {
     const n = String(name ?? "");
     return n.length > 9 ? n.slice(0, 8) + "…" : n;
   };
+  // ── ＋ 다른 후보 등록 (누구나) ────────────────────────────────
+  const openAddRegion = () => {
+    setRegionQuery("");
+    setRegionHits(null);
+    setShowAddRegion(true);
+  };
+  async function addRegionFrom(s: GeoSuggest) {
+    if (!s.name) return;
+    // 좌표가 없으면(직접 입력) 보내지 않는다 — 서버가 이름으로 지오코딩한다
+    const hasCoord = Number.isFinite(s.lat) && Number.isFinite(s.lng);
+    const d = await act(
+      {
+        action: "addRegion",
+        participantId: me?.id,
+        name: s.name,
+        ...(hasCoord ? { lat: s.lat, lng: s.lng } : {}),
+      },
+      undefined
+    ).catch(() => null);
+    if (!d) return;
+    setShowAddRegion(false);
+    flash(d.existing ? `${s.name}은(는) 이미 후보에 있어요` : `${s.name}을(를) 후보에 추가했어요`);
+  }
+
   const openManualConfirm = (target: "region" | "place") => {
     const pool: { id: string }[] = target === "region" ? state.regions : state.places;
     setManualPick(pool[0]?.id ?? null);
@@ -472,18 +528,24 @@ export default function MeetingClient({ code }: { code: string }) {
       </button>
     );
   };
-  // 최다득표가 아닌 후보로도 정할 수 있는 예외 수단 — 투표 카드 안에 둔다.
-  const manualConfirmLink = (target: "region" | "place") =>
-    isLeader ? (
-      <button
-        className="btn ghost sm"
-        style={{ alignSelf: "flex-start" }}
-        disabled={busy}
-        onClick={() => openManualConfirm(target)}
-      >
-        ✍ 다른 후보로 정하기
-      </button>
-    ) : null;
+  // 투표 카드 하단 액션 두 개.
+  //  · ＋ 다른 후보 등록 — 방장 포함 "누구나". 자동 추천 3곳이 마음에 안 들 때의 탈출구.
+  //  · ✍ 다른 후보로 확정 — 방장 전용. 최다득표가 아닌 후보로 마감하는 예외 수단.
+  //  둘은 성격이 완전히 다르다(후보를 늘리는 것 vs 마감하는 것) — 이름으로 구분한다.
+  const voteCardActions = (target: "region" | "place") => (
+    <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+      {target === "region" && (
+        <button className="btn ghost sm" disabled={busy} onClick={openAddRegion}>
+          ＋ 다른 후보 등록
+        </button>
+      )}
+      {isLeader && (
+        <button className="btn ghost sm" disabled={busy} onClick={() => openManualConfirm(target)}>
+          ✍ 다른 후보로 확정
+        </button>
+      )}
+    </div>
+  );
 
   // 지도 위 투표 후보 박스 — 누르면 그 후보에 투표 (피그마)
   const phaseIsRegion = state.aiPhase === "region";
@@ -834,6 +896,11 @@ export default function MeetingClient({ code }: { code: string }) {
                               {topRegionId === r.id && n > 0 && (
                                 <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>최다</span>
                               )}
+                              {r.proposedBy && (
+                                <span className="chip line" style={{ marginLeft: 6, fontSize: 9 }}>
+                                  {r.proposedBy} 제안
+                                </span>
+                              )}
                             </div>
                             <div className="i-sub">
                               <b>{n}표</b> · 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}
@@ -863,7 +930,7 @@ export default function MeetingClient({ code }: { code: string }) {
                       ? ` 현재 최다득표: ${state.regions.find((r) => r.id === topRegionId)?.name}`
                       : ""}
                   </p>
-                  {manualConfirmLink("region")}
+                  {voteCardActions("region")}
                 </>
               )}
             </div>
@@ -942,6 +1009,11 @@ export default function MeetingClient({ code }: { code: string }) {
                                 {topRegionId === r.id && n > 0 && (
                                   <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>최다</span>
                                 )}
+                                {r.proposedBy && (
+                                  <span className="chip line" style={{ marginLeft: 6, fontSize: 9 }}>
+                                    {r.proposedBy} 제안
+                                  </span>
+                                )}
                               </div>
                               <div className="i-sub"><b>{n}표</b> · 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}</div>
                             </div>
@@ -1002,7 +1074,7 @@ export default function MeetingClient({ code }: { code: string }) {
                   ? `참여자 ${state.totalParticipants}명이 모두 투표했어요. 방장이 마무리해주세요.`
                   : `참여자 ${state.totalParticipants}명이 모두 투표하면 방장이 확정할 수 있어요.`}
               </p>
-              {!AI_CHAT_ENABLED && manualConfirmLink(state.aiPhase === "region" ? "region" : "place")}
+              {!AI_CHAT_ENABLED && voteCardActions(state.aiPhase === "region" ? "region" : "place")}
             </div>
 
             {/* 참가자별 이동시간 + 경로 상세 (시안1·2) */}
@@ -1244,6 +1316,71 @@ export default function MeetingClient({ code }: { code: string }) {
       {/* ✍ 다른 후보로 정하기 — 최다득표가 아닌 후보로도 정할 수 있는 예외 수단.
           거점 단계는 stage="main", 가게 단계는 stage="chat" 이므로 끝난 모임만 제외한다.
           (예전에는 stage==="chat" 으로 잠겨 있어 거점 단계에서 아예 열리지 않았다) */}
+      {/* ＋ 다른 후보 등록 — 지도(카카오 로컬) 검색으로 원하는 지역을 후보에 올린다.
+          방장 전용이 아니다: 자동 추천이 엉뚱할 때 누구든 "여기로 하자"를 낼 수 있어야
+          투표가 의미를 갖는다(특히 수도권 밖에서 기하 중간점이 시골로 잡히는 경우). */}
+      {showAddRegion && (
+        <div className="backdrop" onClick={() => setShowAddRegion(false)}>
+          <div className="modal stack" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
+            <div>
+              <b style={{ fontSize: 16 }}>＋ 다른 후보 등록</b>
+              <p className="muted" style={{ fontSize: 12, margin: "4px 0 0", lineHeight: 1.55 }}>
+                만나고 싶은 지역을 검색해 후보에 추가해요. 추가하면 모두의 이동시간이
+                계산되고, 다른 후보들과 함께 투표 대상이 됩니다.
+              </p>
+            </div>
+            <input
+              className="input"
+              value={regionQuery}
+              onChange={(e) => setRegionQuery(e.target.value)}
+              placeholder="예: 대전역, 동대구역, 천안아산역…"
+              autoComplete="off"
+              autoFocus
+            />
+            <div className="stack" style={{ gap: 8, minHeight: 44 }}>
+              {regionSearching && <p className="faint" style={{ fontSize: 12, margin: 0 }}>검색 중…</p>}
+              {/* 검색이 못 찾아도 막다른 길이 되지 않게 — 입력한 이름 그대로 등록할 수
+                  있게 한다(좌표는 서버가 지오코딩으로 찾는다). 프로토타입의 안전망과 같다. */}
+              {!regionSearching && regionHits?.length === 0 && (
+                <>
+                  <p className="faint" style={{ fontSize: 12, margin: 0 }}>
+                    검색 결과가 없어요. 이름 그대로 등록할 수도 있어요.
+                  </p>
+                  <button
+                    className="v8-voterow"
+                    style={{ margin: 0, textAlign: "left", cursor: "pointer" }}
+                    disabled={busy}
+                    onClick={() => addRegionFrom({ name: regionQuery.trim(), address: "직접 입력", lat: NaN, lng: NaN })}
+                  >
+                    <div className="grow">
+                      <div className="i-title">‘{regionQuery.trim()}’(으)로 등록</div>
+                      <div className="i-sub">위치는 서버가 찾아요</div>
+                    </div>
+                    <span className="v8-votepill">추가</span>
+                  </button>
+                </>
+              )}
+              {(regionHits ?? []).map((s) => (
+                <button
+                  key={`${s.name}${s.lat}`}
+                  className="v8-voterow"
+                  style={{ margin: 0, textAlign: "left", cursor: "pointer" }}
+                  disabled={busy}
+                  onClick={() => addRegionFrom(s)}
+                >
+                  <div className="grow">
+                    <div className="i-title">{s.name}</div>
+                    <div className="i-sub">{s.address}</div>
+                  </div>
+                  <span className="v8-votepill">추가</span>
+                </button>
+              ))}
+            </div>
+            <button className="btn ghost" onClick={() => setShowAddRegion(false)}>닫기</button>
+          </div>
+        </div>
+      )}
+
       {showManual && stage !== "result" && (
         <div className="backdrop" onClick={() => setShowManual(null)}>
           <div className="modal stack" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
