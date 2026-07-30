@@ -91,5 +91,5 @@ npx tsc --noEmit && npm run build
 - 등록된 스코어러: `fairness` 하나 (v8 까지의 유일한 점수식)
 - `geo.ts` 는 브라우저에서도 도는 즉시 추정 경로라 **공평성만** 본다
   (`fairnessRaw()` 를 직접 가져다 씀). 전체 스코어러는 서버의 `routing.ts` 에서만 돈다.
-- 되살릴 자산: `git show 5ff50ee:src/lib/algo/enhanced-scoring.ts` 등 8종
-  (자세한 목록은 `memory/status.md`)
+- 되살릴 자산: **`docs/legacy-algo/`** 에 알고리즘 8종이 들어 있다 (빌드 대상 아님).
+  그대로 복사하지 말고 읽고 위 규격에 맞춰 옮겨 쓴다 — `docs/legacy-algo/README.md`
