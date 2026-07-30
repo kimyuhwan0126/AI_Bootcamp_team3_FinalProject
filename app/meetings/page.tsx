@@ -36,7 +36,16 @@ function MeetingsInner() {
   const [modal, setModal] = useState<"create" | "join" | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  // 생성 완료 요약 — 방장이 무엇을 만들었는지 한 화면에서 확인하고 링크를 공유한다.
+  // (URL만 던져주면 정원·방장·모임 시간이 제대로 들어갔는지 확인할 데가 없었다)
+  const [created, setCreated] = useState<{
+    code: string;
+    name: string;
+    leaderName: string;
+    headcount: number;
+    timeText: string;
+    url: string;
+  } | null>(null);
 
   // 생성 폼
   const [cName, setCName] = useState("");
@@ -85,18 +94,22 @@ function MeetingsInner() {
     setErr(null);
     setBusy(true);
     try {
-      const d = await post({ action: "create", name: cName, password: cPw, headcount: 8, leaderName: cLeader || "방장" });
-      addIdentity(d.code, { id: d.participantId, name: cLeader || "방장", isLeader: true });
+      const leaderName = cLeader || "방장";
+      const headcount = 8;
+      const d = await post({ action: "create", name: cName, password: cPw, headcount, leaderName });
+      addIdentity(d.code, { id: d.participantId, name: leaderName, isLeader: true });
       // 모임 시간은 선택 입력 — 비워두면 나중에 홈/결과 화면에서도 정할 수 있다
+      let timeText = "";
       if (cTime.trim()) {
         try {
           await post({ action: "meetTime", code: d.code, participantId: d.participantId, time: cTime.trim() });
+          timeText = cTime.trim();
         } catch {
           /* 시간 저장 실패해도 모임 생성 자체는 이미 완료됐으니 무시 */
         }
       }
       const url = `${window.location.origin}/m/${d.code}`;
-      setInviteUrl(url);
+      setCreated({ code: d.code, name: cName, leaderName, headcount, timeText, url });
       try {
         await navigator.clipboard.writeText(url);
       } catch {
@@ -128,7 +141,7 @@ function MeetingsInner() {
   function closeModal() {
     setModal(null);
     setErr(null);
-    setInviteUrl(null);
+    setCreated(null);
     setBusy(false);
     router.replace("/meetings");
   }
@@ -191,46 +204,82 @@ function MeetingsInner() {
         )}
       </div>
 
-      {/* 생성 모달 */}
+      {/* 생성 모달 — 만들기 전엔 입력 폼, 만든 뒤엔 요약 + 초대 링크로 바뀐다 */}
       {modal === "create" && (
         <div className="v8-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
-          <div className="v8-modal stack" style={{ gap: 12 }}>
-            <div>
-              <h2>새 모임 만들기</h2>
-              <p className="m-sub">생성하면 초대 URL이 만들어지고 클립보드에 복사돼요.</p>
-            </div>
-            <div>
-              <label className="label">모임 이름</label>
-              <input className="input" value={cName} onChange={(e) => setCName(e.target.value)} placeholder="예: 협성대 브레인파크 모임" />
-            </div>
-            <div>
-              <label className="label">패스워드</label>
-              <input className="input" value={cPw} onChange={(e) => setCPw(e.target.value)} placeholder="참여자에게 공유할 비밀번호" />
-            </div>
-            <div>
-              <label className="label">내 이름 (방장)</label>
-              <input className="input" value={cLeader} onChange={(e) => setCLeader(e.target.value)} placeholder="예: 유환" />
-            </div>
-            <div>
-              <label className="label">몇 시에 만나요? (선택)</label>
-              <input className="input" value={cTime} onChange={(e) => setCTime(e.target.value)} placeholder="예: 이번 주 토요일 저녁 7시" />
-            </div>
-            {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
-            {inviteUrl ? (
-              <>
-                <div className="row" style={{ gap: 8 }}>
-                  <div className="input grow" style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inviteUrl}</div>
-                  <button className="btn sm" onClick={() => navigator.clipboard.writeText(inviteUrl).catch(() => {})}>복사</button>
+          {created ? (
+            <div className="v8-modal stack" style={{ gap: 12 }}>
+              <div className="center stack" style={{ gap: 2 }}>
+                <span style={{ fontSize: 30 }}>🎉</span>
+                <h2 style={{ margin: 0 }}>모임이 만들어졌어요</h2>
+                <p className="m-sub" style={{ margin: "2px 0 0" }}>
+                  아래 링크를 공유하면 참여자가 바로 들어올 수 있어요.
+                </p>
+              </div>
+              <div
+                style={{
+                  background: "var(--panel2)",
+                  border: "1px solid var(--hair)",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                }}
+              >
+                <div className="kv"><span className="k">모임 이름</span><span className="v grow">{created.name}</span></div>
+                <div className="kv"><span className="k">모임 코드</span><span className="v grow"><b className="tnum">{created.code}</b></span></div>
+                <div className="kv"><span className="k">정원</span><span className="v grow">{created.headcount}명</span></div>
+                <div className="kv"><span className="k">방장</span><span className="v grow">{created.leaderName}</span></div>
+                <div className="kv">
+                  <span className="k">모임 시간</span>
+                  <span className="v grow">
+                    {created.timeText || <span className="faint">미정 — 나중에 정해도 돼요</span>}
+                  </span>
                 </div>
-                <button className="btn" onClick={() => router.push(inviteUrl.replace(window.location.origin, ""))}>모임으로 이동</button>
-              </>
-            ) : (
+              </div>
+              <div>
+                <label className="label">초대 링크</label>
+                <div className="row" style={{ gap: 6 }}>
+                  <input className="input" value={created.url} readOnly />
+                  <button
+                    className="btn sm"
+                    style={{ flexShrink: 0 }}
+                    onClick={() => navigator.clipboard.writeText(created.url).catch(() => {})}
+                  >
+                    복사
+                  </button>
+                </div>
+              </div>
+              <button className="btn" onClick={() => router.push(`/m/${created.code}`)}>모임으로 이동</button>
+              <button className="btn ghost" onClick={closeModal}>닫기</button>
+            </div>
+          ) : (
+            <div className="v8-modal stack" style={{ gap: 12 }}>
+              <div>
+                <h2>새 모임 만들기</h2>
+                <p className="m-sub">생성하면 초대 URL이 만들어지고 클립보드에 복사돼요.</p>
+              </div>
+              <div>
+                <label className="label">모임 이름</label>
+                <input className="input" value={cName} onChange={(e) => setCName(e.target.value)} placeholder="예: 협성대 브레인파크 모임" />
+              </div>
+              <div>
+                <label className="label">패스워드</label>
+                <input className="input" value={cPw} onChange={(e) => setCPw(e.target.value)} placeholder="참여자에게 공유할 비밀번호" />
+              </div>
+              <div>
+                <label className="label">내 이름 (방장)</label>
+                <input className="input" value={cLeader} onChange={(e) => setCLeader(e.target.value)} placeholder="예: 유환" />
+              </div>
+              <div>
+                <label className="label">몇 시에 만나요? (선택)</label>
+                <input className="input" value={cTime} onChange={(e) => setCTime(e.target.value)} placeholder="예: 이번 주 토요일 저녁 7시" />
+              </div>
+              {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
               <button className="btn" onClick={handleCreate} disabled={busy || !cName || !cPw}>
                 {busy ? <span className="spinner" /> : "만들기"}
               </button>
-            )}
-            <button className="btn ghost" onClick={closeModal}>닫기</button>
-          </div>
+              <button className="btn ghost" onClick={closeModal}>닫기</button>
+            </div>
+          )}
         </div>
       )}
 

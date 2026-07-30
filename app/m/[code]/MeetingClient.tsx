@@ -36,7 +36,11 @@ export default function MeetingClient({ code }: { code: string }) {
   const [busy, setBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showReserve, setShowReserve] = useState(false);
-  const [showManual, setShowManual] = useState(false);
+  // ✍ 다른 후보로 정하기 — 어느 단계를 대상으로 열렸는지 담는다(null이면 닫힘).
+  // 거점 단계(stage=main)와 가게 단계(stage=chat) 양쪽에서 열 수 있어야 하므로
+  // 단순 boolean이 아니라 대상 단계를 기억한다.
+  const [showManual, setShowManual] = useState<"region" | "place" | null>(null);
+  const [manualPick, setManualPick] = useState<string | null>(null);
   const [dbg, setDbg] = useState(false);
   const [mapFallback, setMapFallback] = useState(false); // 카카오맵 로드 실패 시 스키매틱으로
   const [routeFor, setRouteFor] = useState<string | null>(null); // 경로 상세 시트 대상 참가자
@@ -379,6 +383,72 @@ export default function MeetingClient({ code }: { code: string }) {
       : state.places.reduce((best, p) =>
           (placeTally[p.id] ?? 0) > (placeTally[best.id] ?? 0) ? p : best
         ).id;
+
+  // ── 방장 확정 UI 조각 ─────────────────────────────────────
+  // 방장 바 버튼은 둘이 나란히 놓여 폭이 좁다 — 후보 이름이 길면 바가 뚱뚱해지므로
+  // 줄여 보여주고, 전체 이름은 title 로 남긴다.
+  const shortName = (name: string | undefined) => {
+    const n = String(name ?? "");
+    return n.length > 9 ? n.slice(0, 8) + "…" : n;
+  };
+  const openManualConfirm = (target: "region" | "place") => {
+    const pool: { id: string }[] = target === "region" ? state.regions : state.places;
+    setManualPick(pool[0]?.id ?? null);
+    setShowManual(target);
+  };
+  // 전원이 투표를 마쳤으면 그건 "강제"가 아니라 정상적인 마무리다 —
+  // 진행률과 문구를 상태에 따라 바꿔, 다 모였을 때만 기본 액션처럼 강조한다.
+  // (예전 문구 "강제 확정(방장 권한)"은 정상 마감도 월권처럼 읽혔다)
+  const leaderConfirmBtn = (target: "region" | "place") => {
+    const pool: { id: string; name: string }[] =
+      target === "region" ? state.regions : state.places;
+    const topId = target === "region" ? topRegionId : topPlaceId;
+    const voteCount = target === "region" ? regionVoteCount : placeVoteCount;
+    const total = state.totalParticipants;
+    const name = pool.find((c) => c.id === topId)?.name;
+    const allVoted = total > 0 && voteCount >= total;
+    const noOrigins = target === "region" && state.originsSet === 0;
+    return (
+      <button
+        className={"btn" + (allVoted && topId ? "" : " ghost")}
+        disabled={busy || !topId}
+        title={name}
+        onClick={() =>
+          act(
+            { action: "confirmManual", participantId: me?.id, target, id: topId },
+            `${name}(으)로 확정했어요`
+          )
+        }
+      >
+        <span className="lb-sub">
+          {!topId
+            ? "후보 준비 중"
+            : allVoted
+            ? `${voteCount}/${total}명 투표 완료`
+            : `${voteCount}/${total}명 투표 중`}
+        </span>
+        <b>
+          {noOrigins
+            ? "출발지를 등록하면 확정할 수 있어요"
+            : !topId
+            ? "후보를 계산하는 중…"
+            : `${allVoted ? "투표 종료 및 확정" : "지금 확정"} · ‘${shortName(name)}’`}
+        </b>
+      </button>
+    );
+  };
+  // 최다득표가 아닌 후보로도 정할 수 있는 예외 수단 — 투표 카드 안에 둔다.
+  const manualConfirmLink = (target: "region" | "place") =>
+    isLeader ? (
+      <button
+        className="btn ghost sm"
+        style={{ alignSelf: "flex-start" }}
+        disabled={busy}
+        onClick={() => openManualConfirm(target)}
+      >
+        ✍ 다른 후보로 정하기
+      </button>
+    ) : null;
 
   // 지도 위 투표 후보 박스 — 누르면 그 후보에 투표 (피그마)
   const phaseIsRegion = state.aiPhase === "region";
@@ -737,13 +807,14 @@ export default function MeetingClient({ code }: { code: string }) {
                     })}
                   </div>
                   <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
-                    {isLeader
-                      ? "방장은 투표가 다 안 끝나도 확정할 수 있어요."
-                      : "방장이 확정하면 가게 투표로 넘어가요."}
+                    {regionVoteCount >= state.totalParticipants && state.totalParticipants > 0
+                      ? `참여자 ${state.totalParticipants}명이 모두 투표했어요. 방장이 마무리해주세요.`
+                      : `참여자 ${state.totalParticipants}명이 모두 투표하면 방장이 확정할 수 있어요.`}
                     {topRegionId && regionVoteCount > 0
                       ? ` 현재 최다득표: ${state.regions.find((r) => r.id === topRegionId)?.name}`
                       : ""}
                   </p>
+                  {manualConfirmLink("region")}
                 </>
               )}
             </div>
@@ -877,8 +948,12 @@ export default function MeetingClient({ code }: { code: string }) {
               <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
                 {AI_CHAT_ENABLED
                   ? "후보를 탭하거나 채팅으로 편하게 말하면 AI가 의견을 모아 확정해요. 다른 동네를 제안해도 돼요!"
-                  : "방장은 투표가 다 안 끝나도 확정할 수 있어요."}
+                  : (state.aiPhase === "region" ? regionVoteCount : placeVoteCount) >=
+                      state.totalParticipants && state.totalParticipants > 0
+                  ? `참여자 ${state.totalParticipants}명이 모두 투표했어요. 방장이 마무리해주세요.`
+                  : `참여자 ${state.totalParticipants}명이 모두 투표하면 방장이 확정할 수 있어요.`}
               </p>
+              {!AI_CHAT_ENABLED && manualConfirmLink(state.aiPhase === "region" ? "region" : "place")}
             </div>
 
             {/* 참가자별 이동시간 + 경로 상세 (시안1·2) */}
@@ -1061,28 +1136,8 @@ export default function MeetingClient({ code }: { code: string }) {
                 💬 AI와 함께 정하기 · 대화 시작
               </button>
             ) : (
-              // 피그마: 마감은 방장 확정 — 회색 라벨 "강제 확정(방장 권한)" + 파란 확정 버튼
-              <div className="stack" style={{ gap: 5, width: "100%" }}>
-                <span className="faint center" style={{ fontSize: 10.5, fontWeight: 800 }}>
-                  강제 확정(방장 권한)
-                </span>
-                <button
-                  className="btn"
-                  disabled={busy || !topRegionId}
-                  onClick={() =>
-                    act(
-                      { action: "confirmManual", participantId: me?.id, target: "region", id: topRegionId },
-                      `${state.regions.find((r) => r.id === topRegionId)?.name}(으)로 확정했어요`
-                    )
-                  }
-                >
-                  {state.originsSet === 0
-                    ? "출발지를 등록하면 거점 후보가 나와요"
-                    : !topRegionId
-                    ? "거점 후보를 계산하는 중…"
-                    : `‘${state.regions.find((r) => r.id === topRegionId)?.name}’으로 확정`}
-                </button>
-              </div>
+              // 마감은 방장 확정 — 투표 진행률을 함께 보여준다(전원 투표 시 강조)
+              leaderConfirmBtn("region")
             ))}
           {stage === "chat" && (
             <>
@@ -1101,37 +1156,13 @@ export default function MeetingClient({ code }: { code: string }) {
               >
                 ← 거점 다시
               </button>
-              {!AI_CHAT_ENABLED && (state.aiPhase === "region" ? topRegionId : topPlaceId) ? (
-                // 피그마: 회색 라벨 "강제 확정(방장 권한)" + 파란 확정 버튼
-                <div className="stack grow" style={{ gap: 5 }}>
-                  <span className="faint center" style={{ fontSize: 10.5, fontWeight: 800 }}>
-                    강제 확정(방장 권한)
-                  </span>
-                  <button
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => {
-                      const isRegion = state.aiPhase === "region";
-                      const id = isRegion ? topRegionId : topPlaceId;
-                      const nm = isRegion
-                        ? state.regions.find((r) => r.id === id)?.name
-                        : state.places.find((p) => p.id === id)?.name;
-                      act(
-                        { action: "confirmManual", participantId: me?.id, target: isRegion ? "region" : "place", id },
-                        `${nm}(으)로 확정했어요`
-                      );
-                    }}
-                  >
-                    ‘{state.aiPhase === "region"
-                      ? state.regions.find((r) => r.id === topRegionId)?.name
-                      : state.places.find((p) => p.id === topPlaceId)?.name}’으로 확정
-                  </button>
-                </div>
+              {!AI_CHAT_ENABLED ? (
+                leaderConfirmBtn(state.aiPhase === "region" ? "region" : "place")
               ) : (
                 <button
                   className="btn"
                   disabled={busy}
-                  onClick={() => setShowManual(true)}
+                  onClick={() => openManualConfirm(state.aiPhase === "region" ? "region" : "place")}
                   title="방장이 장소를 확정합니다"
                 >
                   ✍ 직접 확정
@@ -1161,37 +1192,86 @@ export default function MeetingClient({ code }: { code: string }) {
         </div>
       )}
 
-      {/* 직접 확정 모달 (방장 수동 오버라이드 — AI 장애 시 안전망) */}
-      {showManual && stage === "chat" && (
-        <div className="backdrop" onClick={() => setShowManual(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <b style={{ fontSize: 16 }}>✍ 방장 직접 확정</b>
-            <p className="muted" style={{ fontSize: 12, margin: "4px 0 12px" }}>
-              {AI_CHAT_ENABLED ? "AI 진행이 어렵거나 논의가 길어질 때, " : "투표가 다 끝나지 않아도 "}
-              방장이 직접 {state.aiPhase === "region" ? "거점" : "가게"}을(를) 확정할 수 있어요.
-            </p>
-            <div className="stack" style={{ gap: 8 }}>
-              {(state.aiPhase === "region" ? state.regions : state.places).map((c: any) => (
-                <button
-                  key={c.id}
-                  className="btn ghost"
-                  style={{ justifyContent: "flex-start", textAlign: "left" }}
-                  disabled={busy}
-                  onClick={async () => {
-                    await act(
-                      { action: "confirmManual", participantId: me?.id, target: state.aiPhase, id: c.id },
-                      `${c.name} 확정!`
-                    );
-                    setShowManual(false);
-                  }}
-                >
-                  {state.aiPhase === "region"
-                    ? `${c.name} — 최대 ${c.maxMin}분 · 편차 ${c.devMin}분`
-                    : `${c.emoji} ${c.name} (${c.category}${c.rating > 0 ? ` · ⭐${c.rating}` : ""})`}
-                </button>
-              ))}
-              <button className="btn ghost" onClick={() => setShowManual(false)}>취소</button>
+      {/* ✍ 다른 후보로 정하기 — 최다득표가 아닌 후보로도 정할 수 있는 예외 수단.
+          거점 단계는 stage="main", 가게 단계는 stage="chat" 이므로 끝난 모임만 제외한다.
+          (예전에는 stage==="chat" 으로 잠겨 있어 거점 단계에서 아예 열리지 않았다) */}
+      {showManual && stage !== "result" && (
+        <div className="backdrop" onClick={() => setShowManual(null)}>
+          <div className="modal stack" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
+            <div>
+              <b style={{ fontSize: 16 }}>✍ 다른 후보로 정하기</b>
+              <p className="muted" style={{ fontSize: 12, margin: "4px 0 0", lineHeight: 1.55 }}>
+                최다득표가 아닌 곳으로도 정할 수 있어요. 예약이 안 되거나 사정이 있을 때 쓰세요.
+              </p>
             </div>
+            <div className="stack" style={{ gap: 8 }}>
+              {(showManual === "region" ? state.regions : state.places).length === 0 && (
+                <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>아직 후보가 없어요.</p>
+              )}
+              {showManual === "region"
+                ? state.regions.map((r) => (
+                    <label
+                      key={r.id}
+                      className={"opt" + (manualPick === r.id ? " sel" : "")}
+                      style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+                    >
+                      <input
+                        type="radio"
+                        name="manualPick"
+                        checked={manualPick === r.id}
+                        onChange={() => setManualPick(r.id)}
+                      />
+                      <div className="grow">
+                        <b style={{ fontSize: 13 }}>{r.name}</b>
+                        <div className="faint" style={{ fontSize: 11 }}>
+                          최대 {r.maxMin}분 · 편차 {r.devMin}분
+                        </div>
+                      </div>
+                    </label>
+                  ))
+                : state.places.map((p) => (
+                    <label
+                      key={p.id}
+                      className={"opt" + (manualPick === p.id ? " sel" : "")}
+                      style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+                    >
+                      <input
+                        type="radio"
+                        name="manualPick"
+                        checked={manualPick === p.id}
+                        onChange={() => setManualPick(p.id)}
+                      />
+                      <div className="grow">
+                        <b style={{ fontSize: 13 }}>
+                          {p.emoji} {p.name}
+                        </b>
+                        <div className="faint" style={{ fontSize: 11 }}>
+                          {p.category} · {p.distanceM}m
+                          {p.rating > 0 ? ` · ⭐${p.rating}` : ""}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+            </div>
+            <button
+              className="btn"
+              disabled={busy || !manualPick}
+              onClick={async () => {
+                const target = showManual;
+                const pool: { id: string; name: string }[] =
+                  target === "region" ? state.regions : state.places;
+                const picked = pool.find((c) => c.id === manualPick);
+                if (!picked) return;
+                setShowManual(null);
+                await act(
+                  { action: "confirmManual", participantId: me?.id, target, id: picked.id },
+                  `${picked.name}(으)로 확정했어요`
+                );
+              }}
+            >
+              이 후보로 확정
+            </button>
+            <button className="btn ghost" onClick={() => setShowManual(null)}>취소</button>
           </div>
         </div>
       )}

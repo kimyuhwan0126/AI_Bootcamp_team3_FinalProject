@@ -147,6 +147,11 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
    한 버튼만 거의 전체 폭을 차지하고 옆 버튼은 몇 px로 짜부러진다(글자가 한 자씩
    세로로 줄바꿈되는 원인). 직계 자식은 항상 폭을 균등하게 나눠 갖게 한다. */
 .leaderbar>*{flex:1;min-width:0}
+/* 방장 바 버튼 — 보조 문구(투표 진행률)를 위, 액션을 아래 한 줄로 고정한다.
+   후보 이름이 길어도 줄바꿈으로 바 높이가 들쭉날쭉해지지 않게 잘라낸다. */
+.leaderbar .btn{flex-direction:column;gap:1px;padding:9px 8px;line-height:1.25;min-height:46px}
+.leaderbar .btn b{font-size:12.5px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.leaderbar .lb-sub{font-size:9.5px;font-weight:800;opacity:.62;letter-spacing:.02em}
 
 /* toast */
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:60;background:var(--ink);color:var(--panel);
@@ -307,12 +312,13 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
   background:linear-gradient(180deg,var(--ac) 0%,var(--ac-deep) 100%);color:#fff;padding:0 36px;transition:opacity .4s}
 .v8-splash.fade{opacity:0;pointer-events:none}
 .v8-splash .s-logo{font-size:28px;font-weight:900;letter-spacing:.02em;margin-bottom:20px}
-.v8-splash .s-head{font-size:17px;font-weight:850;line-height:1.5;margin-bottom:10px;min-height:52px}
-.v8-splash .s-sub{font-size:12.5px;opacity:.85;line-height:1.6;min-height:40px}
-.v8-splash .s-dots{display:flex;gap:6px;margin-top:28px}
-.v8-splash .s-dots span{width:6px;height:6px;border-radius:999px;background:rgba(255,255,255,.35);transition:all .3s}
-.v8-splash .s-dots span.on{background:#fff;width:18px}
-.v8-splash .s-skip{position:absolute;top:52px;right:20px;border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:999px;padding:6px 14px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.v8-splash .s-head{font-size:17px;font-weight:850;line-height:1.5;margin-bottom:10px}
+.v8-splash .s-sub{font-size:12.5px;opacity:.85;line-height:1.6}
+.v8-splash .s-sub b{font-weight:900;opacity:1}
+/* 차별점 키워드 — "공평한 장소"만으로는 기존 서비스와 구분이 안 된다는 지적 반영 */
+.v8-splash .s-keys{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:18px}
+.v8-splash .s-keys span{background:rgba(255,255,255,.18);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:800}
+.v8-splash .s-skip{position:absolute;bottom:60px;border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:9px 22px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
 
 /* 투표 화면 */
 .v8-votetabs{display:flex;gap:18px;padding:10px 16px 0;font-size:14px;font-weight:800;color:var(--ink-faint)}
