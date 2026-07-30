@@ -252,6 +252,15 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 .v8-ac button:hover{background:var(--ac-soft)}
 .v8-ac .addr{display:block;font-size:11px;color:var(--ink-faint);margin-top:1px}
 .v8-ac .empty{padding:12px 14px;font-size:12.5px;color:var(--ink-faint)}
+/* 검색 결과 줄 — 오른쪽 (+)는 "누르면 출발지로 추가된다"는 표시.
+   줄 전체가 버튼이므로 (+)는 시각 표시일 뿐 별도 클릭 대상이 아니다.
+   (프로토타입에서 확정한 안인데 실앱 이식 때 빠져 있었다) */
+.v8-ac button.ac-row{display:flex;align-items:center;gap:10px}
+.v8-ac .ac-txt{flex:1;min-width:0}
+.v8-ac .ac-add{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:var(--ac-soft);color:var(--ac-deep);transition:.15s}
+.v8-ac .ac-add svg{width:14px;height:14px}
+.v8-ac button.ac-row:hover .ac-add{background:var(--ac);color:#fff}
 
 /* 출발지 칩 (최대 8, 가로 스크롤) */
 .v8-chips{display:flex;gap:14px;padding:8px 16px 6px;overflow-x:auto;overflow-y:visible;

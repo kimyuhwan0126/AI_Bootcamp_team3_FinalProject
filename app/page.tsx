@@ -101,6 +101,8 @@ export default function Home() {
   const [meetCode, setMeetCode] = useState<string | null>(null);
   const [meetOpen, setMeetOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // + 칩이 검색창으로 데려다줄 때 쓰는 ref
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // 저장된 출발지 복원 + 카카오 로그인 콜백(?name=) → 정식회원 세션 승격
   useEffect(() => {
@@ -617,6 +619,7 @@ export default function Home() {
         <div className="v8-search">
           <IcSearch />
           <input
+            ref={searchInputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="어디에서 출발하시나요?"
@@ -628,10 +631,16 @@ export default function Home() {
             {suggests.length === 0 ? (
               <div className="empty">검색 결과가 없어요.</div>
             ) : (
+              // (+)는 "이 줄을 누르면 출발지로 추가된다"는 표시 — 줄 전체가 버튼이다
               suggests.map((s) => (
-                <button key={`${s.name}${s.lat}`} onClick={() => addOrigin(s)}>
-                  <b>{s.name}</b>
-                  <span className="addr">{s.address}</span>
+                <button key={`${s.name}${s.lat}`} className="ac-row" onClick={() => addOrigin(s)}>
+                  <span className="ac-txt">
+                    <b>{s.name}</b>
+                    <span className="addr">{s.address}</span>
+                  </span>
+                  <span className="ac-add" aria-hidden="true">
+                    <IcPlus />
+                  </span>
                 </button>
               ))
             )}
@@ -709,7 +718,24 @@ export default function Home() {
           <button
             className="v8-chip-add"
             title="검색해서 출발지를 추가하세요"
-            onClick={() => (document.querySelector(".v8-search input") as HTMLInputElement | null)?.focus()}
+            onClick={() => {
+              // 출발지 입력은 검색으로만 한다 — 이 칩은 검색창으로 데려다주는 버튼.
+              // 포커스만 주면 "아무 일도 안 일어난 것"처럼 보였어서, 검색창이 화면에
+              // 들어오게 스크롤하고 잠깐 강조해 어디를 봐야 하는지 알려준다.
+              const el = searchInputRef.current;
+              if (!el) return;
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+              el.focus({ preventScroll: true });
+              const box = el.closest(".v8-search") as HTMLElement | null;
+              if (box) {
+                box.style.outline = "2px solid var(--ac)";
+                box.style.outlineOffset = "1px";
+                setTimeout(() => {
+                  box.style.outline = "";
+                  box.style.outlineOffset = "";
+                }, 1200);
+              }
+            }}
           >
             <IcPlus />
           </button>

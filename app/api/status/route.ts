@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { has } from "@/lib/env";
+import { env, has } from "@/lib/env";
 import { probeAi } from "@/lib/ai";
 import { hasSupabase, supabaseKeyKind, supabase } from "@/lib/supabase";
 
@@ -25,6 +25,10 @@ export async function GET() {
   return NextResponse.json({
     kakao: has.kakaoGeocode, // 로그인 + 지오코딩/장소검색 (REST 키)
     kakaoJs: has.kakaoJs, // 브라우저 지도 SDK
+    // 카카오 로그인이 실제로 보내는 Redirect URI — KOE006(등록되지 않은 URI)이
+    // 뜨면 이 값을 developers.kakao.com 의 Redirect URI 목록과 글자 단위로
+    // 대조하면 된다. URL이라 비밀이 아니며, 키 값은 여기 노출되지 않는다.
+    kakaoRedirect: env.kakaoRedirect,
     odsay: has.odsay,
     tmap: has.tmap,
     db, // { configured, keyKind, ready, error? }
