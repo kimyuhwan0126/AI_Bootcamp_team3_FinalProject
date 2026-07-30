@@ -33,12 +33,26 @@ CEO 결정: 새 저장소에서 팀원들과 각자 브랜치로 동시에 개�
 **버전**: 새 저장소는 `0.1.0` 에서 시작해 **최종 발표일 `1.0.0`**. 옛 `v8`(=8번째 시제품)과
 다른 체계다 — `0.y.z` 는 SemVer 에서 "정식 출시 전"이라는 뜻이다.
 
-**⚠️ 팀원 합류 전에 끝내야 하는 것** (합류 후엔 모든 브랜치가 충돌한다):
-- [x] ~~`MeetingClient.tsx` 화면 분할~~ → **완료** (1,802 → 906줄, `sections/` 15파일).
-      팀원이 만질 파일은 전부 400줄 미만. 남은 906줄은 로직 572 + 조립 334이고
-      어차피 통합 세션 소유라 더 쪼개도 충돌 방지 효과는 없다
-- [ ] `.github/CODEOWNERS` 의 `@TODO-...` 에 팀원 GitHub 아이디 채우기
-- [ ] GitHub 저장소 보호 설정 (`docs/팀_개발환경.md` §2)
+**팀원 합류 전 준비 — 상태**
+
+- [x] `MeetingClient.tsx` 화면 분할 (1,802 → 906줄, `sections/` 15파일).
+      팀원이 만질 파일은 전부 400줄 미만
+- [x] 새 저장소 이관 + `0.1.0` (히스토리 33커밋 보존)
+- [x] **CI 가 GitHub Actions 에서 실제로 도는 것 확인** — PR #1 에서
+      `verify (flags-off)` · `verify (flags-on)` 양쪽 성공 (각 ~1분 20초).
+      이 두 개가 브랜치 보호에서 고를 status check 이름이다
+- [x] `npm ci` 실패 요인 제거 (lock 이 package.json 과 어긋나 있었다)
+- [x] `next` critical 취약점 패치 (14.2.15 → 14.2.35)
+- [x] Node 버전 `.nvmrc` 로 고정 (22) — CI 도 같은 파일을 읽는다
+- [x] README·팀원_실행안내 를 팀원 진입점으로 정비
+
+**사람이 해야 남는 것** (권한·계정이 필요해 AI 가 못 함):
+- [ ] **`v0.1.0` 태그/릴리스** — 컨테이너 git 프록시가 태그 푸시를 못 한다.
+      웹 UI: Releases → Create a new release → tag `v0.1.0` → Publish
+- [ ] **브랜치 보호** — `Settings → Rules → Rulesets → New branch ruleset`
+      (`main`, `develop`). **Enforcement 를 `Active`** 로. status check 이름은 위 두 개
+- [ ] `.github/CODEOWNERS` 의 `@TODO-...` 에 팀원 GitHub 아이디
+- [ ] 팀원 초대 (Settings → Collaborators)
 - [ ] Vercel 연결 + Preview 배포 확인
 - [ ] APK 한 번 뽑아보기 (발표 당일에 처음 하면 안 된다)
 
