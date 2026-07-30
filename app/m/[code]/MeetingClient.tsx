@@ -237,6 +237,10 @@ export default function MeetingClient({ code }: { code: string }) {
         setTransport(meRow.transport === "car" ? "car" : "transit");
       }
     }
+    // ⚠️ deps 에 meRow 전체를 넣지 말 것. meRow 는 1.8초 폴링마다 새 객체로 만들어져서,
+    //  넣으면 이 effect 가 매 폴링마다 돌아 **사용자가 입력 중인 출발지를 덮어쓴다.**
+    //  신원이 바뀔 때만 돌아야 하므로 id 만 본다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meRow?.id]);
 
   // 출발지 자동완성 — 홈 화면(app/page.tsx)과 동일한 /api/geocode, 300ms 디바운스.

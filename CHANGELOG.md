@@ -31,6 +31,15 @@
 | 2026-07-30 | Claude(AI) | `README.md`, `팀원_실행안내.md`, `docs/팀_개발환경.md` | 팀원 진입점 정비 — 무엇부터 읽고 무엇을 만지는지. v8 시절 서술 정정(채팅 위상·버튼 이름·구조도) | 저장소를 처음 여는 사람이 5분 안에 시작할 수 있어야 한다 |
 | 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md`, `docs/노션_통합개발환경.md` | 머지 방식 정정 — "Squash 만 허용" ❌ → `feat/*→develop` 은 Squash, `develop→main` 은 merge commit. 실제로 만든 룰셋 내용으로 설정표 갱신 | Squash 로만 잠그면 `develop→main` 에서 develop 커밋이 한 덩어리로 뭉개지고 두 브랜치 히스토리가 갈라져 이후 머지마다 충돌한다 |
 | 2026-07-30 | Claude(AI) | `lib/supabase.ts`, `app/api/status/route.ts` | DB 접속 실패 시 **앱이 실제로 접속한 Supabase URL 과 원인 힌트**를 함께 노출 (끝 슬래시·스킴 누락·앞뒤 공백 자동 판정) | `TypeError: fetch failed` 는 원인을 전혀 말해주지 않아 `.env.local` 을 열어봐야만 오타를 찾을 수 있었다(CEO 가 실제로 겪음). 팀원 4명이 각자 키를 넣으므로 똑같이 겪을 자리다. URL 은 `NEXT_PUBLIC_` 값이라 비밀이 아니며, 키는 노출하지 않는다 |
+| 2026-07-30 | Claude(AI) | `package.json` | `pretest:smoke` 추가 (`playwright install chromium`) | **`npm run verify` 가 방금 clone 한 환경에서 스모크 3/4 실패**했다(`Executable doesn't exist`). 문서가 "PR 전에 npm run verify"라고 시키는데 팀원 전원이 첫 PR 에서 이걸 만났을 것이다 |
+| 2026-07-30 | Claude(AI) | `.gitignore` | `.env*.local` → `.env` · `.env.*` (+ `!.env.example`) | **공개 저장소인데 `.env` 와 `.env.production` 이 열려 있었다.** Next.js 는 그 둘도 읽으므로 키를 그 이름으로 만들면 그대로 커밋된다 |
+| 2026-07-30 | Claude(AI) | `.env.example`, `lib/ai.ts` | Ollama 1순위 기본값에서 **팀 내부망 사설 IP 제거** (빈 값 → 2순위 localhost 로 폴백) | 공개 저장소에 내부망 주소가 남고, `/api/status` 의 `ai.url` 로 응답에 실려 나갔다 |
+| 2026-07-30 | Claude(AI) | `app/api/diag/route.ts` | ODSAY 키의 앞 2자·뒤 2자 노출 제거 | 바로 위 주석이 "값 노출 X"라고 적어놓고 실제로는 키 조각 4자를 응답에 실었다 |
+| 2026-07-30 | Claude(AI) | `package.json`, `.eslintrc.json` | `eslint` + `eslint-config-next` 설치, extends 를 `next/core-web-vitals` 로 (에러 2건 수정) | `npm run lint` 스크립트가 있는데 eslint 가 없어 실행하면 죽었다. `next/typescript` 는 기존 `any` 46곳을 전부 에러로 띄워 제외 — **React 훅 규칙이 목적**이다(조건부 return 뒤 훅 배치 사고를 lint 가 잡는다) |
+| 2026-07-30 | Claude(AI) | `팀원_실행안내.md` | "Node.js 18 이상" → **Node 22** (`.nvmrc` 기준) | `.nvmrc`·README·CI 는 22 인데 이 문서만 18 이라 팀원이 18 로 맞출 수 있었다 |
+| 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md`, `.github/CODEOWNERS` | 존재하지 않는 `sections/ChatSection.tsx` → 실제 파일 `ChatPanel.tsx` | @TODO 자리에 아이디를 채워 주석을 풀면 **없는 경로라 GitHub 이 그 줄을 조용히 무시**해 채팅 담당 소유권이 안 걸렸을 것이다 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/CLAUDE.md` | "팀원이 만질 파일은 모두 400줄 미만" 주장 정정 — 실제로 `app/page.tsx` 1,118줄 · `lib/ai.ts` 590줄이 팀원 소유다 | 인계 문서의 거짓 주장은 다음 세션이 잘못된 전제로 작업하게 만든다(v8 에서 실제로 겪은 실패) |
+| 2026-07-30 | Claude(AI) | `docs/노션_통합개발환경.md` | 줄 수 `1,352` → `905` 최신화 · 아직 없는 스코어러 3종에 "앞으로 만들 파일" 표시 · Code Owners 설정이 `docs/팀_개발환경.md` 와 정반대이던 모순 제거 | 멘토님께 공유하는 문서라 사실관계가 어긋나면 안 된다 |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.

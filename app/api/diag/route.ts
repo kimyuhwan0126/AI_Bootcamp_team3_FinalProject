@@ -75,13 +75,13 @@ export async function GET(req: Request) {
     };
   }
 
-  // 키 위생 점검(값 노출 X): 공백/개행/길이만
+  // 키 위생 점검 — 길이와 공백 유무만. 키 조각도 내보내지 않는다
+  //  (예전엔 앞 2자·뒤 2자를 실었는데, 주석의 '값 노출 X' 와 어긋났다)
   out.odsayKeyInfo = {
     len: env.odsay.length,
     trimmedLen: env.odsay.trim().length,
     hasWhitespace: /\s/.test(env.odsay),
-    firstChar: env.odsay.slice(0, 2),
-    lastChar: env.odsay.slice(-2),
+
   };
 
   out.kakao = has.kakaoGeocode

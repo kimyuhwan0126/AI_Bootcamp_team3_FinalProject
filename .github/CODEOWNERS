@@ -41,4 +41,4 @@
 # 채팅 · AI 파싱
 # /lib/ai.ts                   @TODO-채팅담당
 # /lib/parse.ts                @TODO-채팅담당
-# /app/m/[code]/sections/ChatSection.tsx  @TODO-채팅담당
+# /app/m/[code]/sections/ChatPanel.tsx  @TODO-채팅담당

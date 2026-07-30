@@ -26,7 +26,11 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
+#  ⚠️ `.env*.local` 만으로는 부족하다 — Next.js 는 `.env` 와 `.env.production` 도 읽는다.
+#     공개 저장소라 이 둘이 열려 있으면 키가 그대로 커밋될 수 있다.
+.env
+.env.*
+!.env.example
 
 # vercel
 .vercel
