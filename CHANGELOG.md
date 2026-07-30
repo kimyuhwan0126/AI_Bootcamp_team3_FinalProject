@@ -45,6 +45,8 @@ CEO 결정: v8 클릭 프로토타입의 방향을 채택. 프로토타입의 �
 | 2026-07-30 | Claude(AI) | `app/globals.css` | `.v8-modal`·`.modal` 에 `max-height:calc(100dvh - 여백)` + `overflow-y:auto` 추가 | 프로토타입 html 에서 이미 고쳐뒀던 수정인데(`.proto-screen .v7-modal{max-height:100%;overflow-y:auto}`), 그게 "프로토타입 전용(실제 앱엔 없음)" 블록 안에 있어 실앱으로 이식되지 않았다. 창이 짧으면 모달이 잘리고 스크롤도 안 됐다 |
 | 2026-07-30 | Claude(AI) | `app/page.tsx`, `app/globals.css` | 검색 결과 줄에 (+) 표시 이식 + `+` 칩을 "검색창으로 데려다주기"(스크롤·포커스·1.2초 강조)로 개선 | 프로토타입에서 확정한 (+) 표시("누르면 출발지로 추가된다")가 실앱 이식 때 빠졌고, `+` 칩은 포커스만 줘서 아무 일도 안 일어난 것처럼 보였다 (CEO 보고) |
 | 2026-07-30 | Claude(AI) | `app/api/status/route.ts` | `kakaoRedirect`(앱이 실제로 보내는 Redirect URI) 노출 | KOE006 진단용 — 콘솔 등록값과 글자 단위 대조가 가능해진다. URL이라 비밀 아님 |
+| 2026-07-30 | Claude(AI) | `app/components/v8/Icons.tsx` | 모임 참여 아이콘 화살표를 문 "안으로" 향하게 교체 | 밖으로 나가는 방향이면 탈퇴/로그아웃처럼 읽힌다 — 프로토타입·회의록에서 확정했던 방향인데 실앱만 반대로 남아 있었다 (CEO 지적) |
+| 2026-07-30 | Claude(AI) | `app/api/auth/kakao/route.ts` | `?debug=1` 진단 모드 추가 (dev 전용) — 카카오에 보내는 REST키 마스킹·redirectUri·인가 URL을 JSON으로 반환 | KOE006은 카카오 페이지에서 막혀 앱이 사유를 못 보여준다. "보낸 값"을 보여주면 콘솔 등록값과 대조해 원인을 찾을 수 있다 |
 | 2026-07-30 | Claude(AI) | `app/api-live/page.tsx` | 진단 차단 시 안내를 실행 가능하게 보강 (`npm run dev` / `ENABLE_DEBUG=1` / `/api/status` 대안 제시) | 운영 빌드에서 `/api/diag` 가 403 인데 "개발 모드 전용"만 떠 다음 행동을 알 수 없었다 |
 
 검증: `npx tsc --noEmit` 통과 · `next build` 통과 · **실제 브라우저(Chromium)로 화면 구동 확인**

@@ -17,8 +17,10 @@ export function IcPerson() {
 export function IcPlus() {
   return <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
 }
+// 모임 "참여" — 화살표가 문 안으로 들어가는 방향이어야 한다.
+// (밖으로 나가는 방향이면 탈퇴/로그아웃 아이콘처럼 읽힌다 — 회의록 지적사항)
 export function IcLogin() {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 4h7a2 2 0 012 2v12a2 2 0 01-2 2h-7" /><path d="M14 12H3m0 0l4-4m-4 4l4 4" /></svg>;
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 4h5a2 2 0 012 2v12a2 2 0 01-2 2h-5" /><path d="M3 12h11m0 0l-4-4m4 4l-4 4" /></svg>;
 }
 export function IcBell() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="M6 10a6 6 0 0112 0v4l2 3H4l2-3v-4z" /><path d="M10 20a2 2 0 004 0" strokeLinecap="round" /></svg>;
