@@ -139,9 +139,14 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 .opt.win{border-color:var(--ok);background:var(--ok-soft)}
 
 /* leader control bar */
-/* bottom:64px — 이 화면 아래에는 항상 .v8-bottomnav(하단 5탭)가 고정돼 있다.
-   bottom:0으로 두면 방장 버튼이 바텀내비 밑에 깔려 눌리지 않는다. */
-.leaderbar{position:sticky;bottom:64px;z-index:25;background:color-mix(in srgb,var(--panel) 92%,transparent);
+/* position:fixed — .v8-bottomnav 와 같은 방식으로 화면에 고정한다.
+   sticky + bottom:64px 로 두면, 문서 끝까지 스크롤했을 때 바가 흐름 위치보다
+   64px "위로" 올라앉아 마지막 카드를 덮는다(✍ 다른 후보로 정하기 버튼이
+   가려져 눌리지 않았다). fixed 는 흐름에서 빠지므로 .device 의 padding-bottom
+   으로만 자리를 비워 주면 되고, 어느 화면에서든 위치가 흔들리지 않는다.
+   bottom:64px — 이 아래에는 항상 하단 5탭이 고정돼 있다. */
+.leaderbar{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);width:100%;max-width:440px;
+  z-index:25;background:color-mix(in srgb,var(--panel) 92%,transparent);
   backdrop-filter:saturate(160%) blur(10px);border-top:1px solid var(--hair);padding:11px 16px;display:flex;gap:8px}
 /* .btn 은 width:100% 를 쓰는데, 그걸 flex-basis로 그대로 물려받으면(기본 flex:0 1 auto)
    한 버튼만 거의 전체 폭을 차지하고 옆 버튼은 몇 px로 짜부러진다(글자가 한 자씩

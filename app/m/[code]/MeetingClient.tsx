@@ -499,12 +499,13 @@ export default function MeetingClient({ code }: { code: string }) {
         : [...state.places.slice(0, 3).map((p) => `${p.name} 좋아요!`), "아무데나 좋아요 👍", "다른 종류는 없어요?"]
       : [];
 
-  // 하단 5탭 내비게이션(v8-bottomnav, 64px)이 이 화면에도 항상 떠 있어야
-  // 확정 후 홈으로 곧장 돌아갈 수 있다. 방장 컨트롤 바(leaderbar)가 있으면
-  // 그 위에 쌓이므로 여백을 그만큼 더 확보한다.
+  // 하단 5탭 내비게이션(.v8-bottomnav)이 이 화면에도 항상 떠 있어야 확정 후
+  // 홈으로 곧장 돌아갈 수 있다. 방장 컨트롤 바(.leaderbar)는 그 위에 쌓인다.
+  // 둘 다 position:fixed 라 흐름에서 빠져 있으므로, 가려지는 콘텐츠가 없도록
+  // 그 높이(방장 바 72 + 탭바 65)만큼 여백을 여기서 확보한다.
   const showLeaderbar = isLeader && !viewingPast;
   return (
-    <main className="device" style={{ paddingBottom: (showLeaderbar ? 72 : 24) + 64 }}>
+    <main className="device" style={{ paddingBottom: (showLeaderbar ? 80 : 24) + 68 }}>
       {/* App bar */}
       <div className="appbar">
         <div className="between">

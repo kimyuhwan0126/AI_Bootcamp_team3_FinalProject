@@ -32,7 +32,14 @@ export default function ApiLive() {
     setErr(null);
     try {
       const r = await fetch("/api/diag", { cache: "no-store" });
-      if (!r.ok) throw new Error("진단 엔드포인트를 사용할 수 없어요 (개발 모드 전용).");
+      // /api/diag 는 외부 API를 실제로 호출하므로 운영 빌드에서는 막혀 있다.
+      // 키 설정 여부만 보려면 /api/status 를 쓰면 된다(항상 열려 있음).
+      if (!r.ok)
+        throw new Error(
+          "진단 엔드포인트는 개발 모드 전용이에요. `npm run dev` 로 실행하거나, " +
+            "운영에서 확인해야 하면 환경변수 ENABLE_DEBUG=1 을 넣어주세요. " +
+            "키 설정 여부만 보려면 /api/status 를 열면 됩니다."
+        );
       setD(await r.json());
       setTs(new Date().toLocaleTimeString("ko-KR"));
     } catch (e: any) {
