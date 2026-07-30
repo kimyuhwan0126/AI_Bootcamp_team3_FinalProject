@@ -6,6 +6,7 @@
 //  · 카카오 로그인: 정식회원 승격
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { loginAsGuest } from "@/lib/session";
 
 export default function LoginSheet({
@@ -20,6 +21,9 @@ export default function LoginSheet({
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // 서버 렌더 중에는 document 가 없으므로 마운트 후에만 포털을 만든다
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!open) return;
@@ -35,7 +39,7 @@ export default function LoginSheet({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   function submit() {
     const s = loginAsGuest(name);
@@ -49,7 +53,14 @@ export default function LoginSheet({
     onClose();
   }
 
-  return (
+  // ⚠️ document.body 로 포털한다 — 이 컴포넌트는 V8Header 안에서 쓰이고,
+  //    .v8-header 에는 backdrop-filter 가 걸려 있다. backdrop-filter 는
+  //    transform 처럼 fixed 자손의 기준 박스를 자기 자신으로 바꾸므로,
+  //    헤더 안에 그대로 두면 오버레이가 높이 56px 헤더 안에 갇혀 모달 위쪽
+  //    (제목·이름 입력칸)이 화면 밖으로 잘려 나간다. 실제로 그렇게 보였다.
+  //    .appbar / .leaderbar / .v8-bottomnav 도 같은 속성을 쓰니, 그 안에서
+  //    오버레이를 띄우려면 반드시 포털을 거쳐야 한다.
+  return createPortal(
     <div className="v8-overlay" onClick={onClose}>
       <div className="v8-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="로그인">
         <h2>로그인</h2>
@@ -98,6 +109,7 @@ export default function LoginSheet({
           닫기
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

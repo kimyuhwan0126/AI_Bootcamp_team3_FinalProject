@@ -168,7 +168,11 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 
 /* modal */
 .backdrop{position:fixed;inset:0;background:rgba(8,14,26,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center;padding:14px}
-.modal{width:100%;max-width:412px;background:var(--panel);border-radius:20px 20px 16px 16px;box-shadow:var(--sheet);padding:18px;border:1px solid var(--hair)}
+/* max-height + overflow-y — 창이 짧으면(노트북 작은 화면·모바일 가로) 내용이
+   뷰포트를 넘쳐 위아래가 잘리고 스크롤도 안 됐다. 오버레이 padding(14px×2)만큼
+   빼서 모달 안에서 스크롤되게 한다. dvh 는 모바일 브라우저 주소창 높이 반영. */
+.modal{width:100%;max-width:412px;background:var(--panel);border-radius:20px 20px 16px 16px;box-shadow:var(--sheet);padding:18px;border:1px solid var(--hair);
+  max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow-y:auto}
 
 .kv{display:flex;gap:10px;font-size:13px;padding:2px 0}
 .kv .k{color:var(--ink-faint);width:72px;flex-shrink:0}
@@ -337,7 +341,12 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 /* 모달 */
 .v8-overlay{position:fixed;inset:0;z-index:80;background:rgba(10,16,28,.5);display:flex;align-items:center;justify-content:center;padding:20px;
   animation:v8-fade .18s ease}
+/* max-height + overflow-y — 프로토타입에서 고쳐뒀던 것을 실앱에 이식.
+   없으면 창이 짧을 때 내용이 뷰포트를 넘쳐 위쪽(제목·입력칸)이 잘리고,
+   align-items:center 때문에 그 부분으로 스크롤도 못 한다(로그인 시트에서 발생).
+   오버레이 padding(20px×2)만큼 빼서 모달 안에서 스크롤되게 한다. */
 .v8-modal{width:100%;max-width:380px;background:var(--panel);border-radius:18px;padding:20px;box-shadow:var(--shadow);
+  max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow-y:auto;
   animation:v8-pop .22s cubic-bezier(.2,.9,.3,1.3)}
 @keyframes v8-fade{from{opacity:0}to{opacity:1}}
 @keyframes v8-pop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
