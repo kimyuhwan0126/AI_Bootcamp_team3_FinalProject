@@ -6,6 +6,47 @@
 
 ---
 
+## v8.0.0 — 2026-07-30
+
+### v8 — 클릭 프로토타입 구현 + Supabase 영속화 (claude/moimer-v8-implementation-plan)
+
+CEO 결정: v8 클릭 프로토타입의 방향을 채택. 프로토타입의 원본이 `feat/v7-mockup`
+브랜치의 실앱이므로 그 트리를 베이스로 가져오고, 코드 네이밍을 v8로 정렬한 뒤
+프로토타입과 어긋난 화면을 맞췄다. AI 채팅은 **비활성만** 하고 코드는 보존한다
+(나중에 다시 넣을 수 있도록). 데이터는 인메모리 → **Supabase**로 전환.
+
+| 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
+|---|---|---|---|---|
+| 2026-07-30 | Claude(AI) | 전체 | `feat/v7-mockup` 트리를 main 히스토리 위에 커밋 1개로 채택 | main과 v7은 공통 조상이 없어 머지 불가. v7이 main의 lib/ai.ts·prefs·AI trace를 이미 포함 |
+| 2026-07-30 | Claude(AI) | `capture-feature.mjs`, `capture-prefs.mjs` | 제거 | 데모 GIF 캡처용(puppeteer 의존) — v8 범위 외 |
+| 2026-07-30 | Claude(AI) | `package.json` | 7.0.0 → 8.0.0, `@neondatabase/serverless` → `@supabase/supabase-js` | 버전 정렬 · DB를 Supabase로 결정 |
+| 2026-07-30 | Claude(AI) | `app/components/v7/` → `app/components/v8/` | 폴더·`V7Header`→`V8Header`·`V7Tab`→`V8Tab` 이름 변경 | 프로토타입이 v8이므로 코드 네이밍도 v8로 통일 |
+| 2026-07-30 | Claude(AI) | `app/globals.css` + 화면 6곳 | CSS 클래스 접두사 `v7-*` → `v8-*` (107곳), localStorage 키 `moimer:v7:*` → `moimer:v8:*` | 같은 사유. 미배포 상태라 키 마이그레이션 불필요 |
+| 2026-07-30 | Claude(AI) | `app/components/v8/Splash.tsx` | 자동 전환 3슬라이드 → 한 화면 + 차별점 키워드 칩 3개, 하단 "시작하기" CTA | 1.8초마다 넘어가 읽기 전에 사라졌다. "공평한 중간지점"만으로는 기존 서비스와 구분 안 됨 |
+| 2026-07-30 | Claude(AI) | `app/meetings/page.tsx` | 생성 완료 화면을 요약 카드로 교체 (이름·코드·정원·방장·모임 시간 + 초대 링크) | 초대 URL만 주면 입력값이 제대로 들어갔는지 확인할 데가 없었다 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/MeetingClient.tsx` | `✍ 다른 후보로 정하기` 게이트를 `stage==="chat"` → `stage!=="result"` 로 수정 | 거점 투표 단계(stage=main)에서 모달이 아예 열리지 않던 버그 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/MeetingClient.tsx` | 수동 확정 모달을 라디오 선택 + "이 후보로 확정" 방식으로 교체 | 후보 버튼을 바로 누르면 오클릭으로 확정됐다 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/MeetingClient.tsx`, `app/globals.css` | 방장 바 문구를 투표 진행률 기반으로 변경 (전원 투표 시 "투표 종료 및 확정" 강조) | "강제 확정(방장 권한)"이 정상 마감도 월권처럼 읽혔다 |
+| 2026-07-30 | Claude(AI) | `supabase/schema.sql` (신규) | meetings(+jsonb) / participants / votes 3테이블 + RLS + updated_at 트리거 | 쓰기 경합 기준으로 분리 — 참가자·투표를 모임 행에 담으면 동시 쓰기에 표가 사라진다 |
+| 2026-07-30 | Claude(AI) | `lib/supabase.ts`, `lib/persistence.ts` (신규) | 서버 전용 클라이언트 + Meeting ↔ 행 매핑 | 도메인 로직을 건드리지 않고 저장 계층만 교체하기 위함 |
+| 2026-07-30 | Claude(AI) | `lib/store.ts` | 전 함수 async 화 + 읽기/쓰기 경계 추가. Supabase 모드에선 인메모리 캐시 없음 | 서버리스는 인스턴스가 여러 개라 캐시를 들면 다른 인스턴스가 쓴 표가 폴링에 안 보인다 |
+| 2026-07-30 | Claude(AI) | `lib/store.ts` | `setRegionCandidates` 의 후보 변경 감지를 id → **지역 이름** 비교로 수정 | id는 순위(r1·r2·r3)라 후보가 바뀌어도 그대로 → 엉뚱한 지역의 표가 남았다 |
+| 2026-07-30 | Claude(AI) | `app/api/debug/route.ts` | `seedScenario` 에 빠진 `await` 추가 | Promise 가 되었는데 await 이 없어 시드가 적용되지 않았다 (타입 검사로 안 잡히는 자리) |
+| 2026-07-30 | Claude(AI) | `lib/ai.ts` | 호출부 await 추가 + `search_more_places`/`evaluate_region` 결과를 `saveCandidates` 로 명시 저장 | DB 모드에선 객체를 그 자리에서 고쳐도 저장되지 않는다 |
+| 2026-07-30 | Claude(AI) | `app/api/status/route.ts`, `app/api/diag/route.ts`, `lib/env.ts` | DB 연결 상태 노출 (`configured`/`keyKind`/`ready`) + 테이블별 조회 진단 | 키만 있고 스키마 미적용·RLS 차단인 경우를 구분해야 원인을 안다 |
+| 2026-07-30 | Claude(AI) | `.env.example` | Neon → Supabase 전면 갱신, 키 발급 위치·주의사항 명시 | DB 전환 반영 |
+| 2026-07-30 | Claude(AI) | `README.md` | v8 기준으로 재작성 | 옛 `develop` 보일러플레이트(src/·zustand·room/[id])를 설명해 실제 코드와 달랐다 |
+| 2026-07-30 | Claude(AI) | `CLAUDE.md` | v8 실제 스택 기준으로 재작성 (Tailwind·shadcn·Gemini·src/ 기술 제거), 색상·데이터 계층 규칙 추가 | AI가 매 세션 처음 읽는 파일이 코드와 달라 잘못된 전제를 갖게 됐다 |
+| 2026-07-30 | Claude(AI) | `팀원_실행안내.md` | v8 기준 + Supabase 준비 절차(스키마 실행·키 3종·확인 방법) 추가 | 팀원이 DB 없이 시작해 데이터가 사라지는 혼란 방지 |
+| 2026-07-30 | Claude(AI) | `memory/status.md` | v8 상태로 갱신 | 진행 상황 인계 |
+
+검증: `npx tsc --noEmit` 통과 · `next build` 통과 · 실서버 기동 후 API 전 구간 왕복
+(생성 → 참여 3명 → 모임시간 → 출발지 4명 → 거점후보 → 4명 동시투표 4표 전부 기록 →
+투표취소 → 비방장 확정 거부 → 거점 확정(stage=main) → 가게 투표·확정 → 자가신고 →
+예약 → 최종상태). 후보 변경 시 표 무효화 / 후보 동일 시 표 유지 각각 확인.
+
+---
+
 ## v7.0.0 — 2026-07-28
 
 ### v7 — v3 인프라 재사용 + 피그마/목업 IA 재구성 (feat/v7-mockup)

@@ -1,4 +1,4 @@
-# SyncSpot Skills (인덱스)
+# 모이머(Moimer) Skills — 인덱스
 
 > Claude Code / AGENTS.md 호환 에이전트가 로드하는 재사용 가능한 작업 스킬 집합.
 > 각 스킬은 독립 `.md` 파일. 필요 시 에이전트가 참조.
