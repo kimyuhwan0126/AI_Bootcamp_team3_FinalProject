@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   if (!code || !pid || !Number.isFinite(toLat) || !Number.isFinite(toLng)) {
     return NextResponse.json({ error: "code/participantId/toLat/toLng 필요" }, { status: 400 });
   }
-  const state = getState(code);
+  const state = await getState(code);
   if (!state) return NextResponse.json({ error: "모임 없음" }, { status: 404 });
   const p = state.participants.find((x) => x.id === pid);
   if (!p) return NextResponse.json({ error: "참가자 없음" }, { status: 404 });

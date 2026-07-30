@@ -17,6 +17,7 @@ import {
   confirmRegion,
   confirmPlace,
   updatePrefs,
+  saveCandidates,
 } from "./store";
 import { resolveGeocode, travelMinutes, recommendPlaces, emojiFor } from "./routing";
 import { searchPlacesKakao } from "./kakao";
@@ -245,7 +246,7 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
   } catch {
     return JSON.stringify({ error: "bad_arguments" });
   }
-  const m = getMeeting(code);
+  const m = await getMeeting(code);
   if (!m) return JSON.stringify({ error: "모임 없음" });
 
   try {
@@ -257,12 +258,12 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
           ? await recommendPlaces(target.name, { lat: target.lat, lng: target.lng })
           : undefined;
         // 단계 가드: 수동 확정과 경합해도 stale 확정은 거부됨
-        const r = confirmRegion(
+        const r = await confirmRegion(
           { code, regionId: String(args.region_id), by: "ai" },
           { places: real }
         );
         if (!r.ok) return JSON.stringify({ error: r.error });
-        const places = getMeeting(code)?.places ?? [];
+        const places = (await getMeeting(code))?.places ?? [];
         return JSON.stringify({
           confirmed: r.regionName,
           note: "지역 확정 완료. 아래는 카카오 검색 기반 실제 가게 후보다. 이걸로 장소 논의를 시작하라.",
@@ -273,12 +274,12 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
         });
       }
       case "confirm_place": {
-        const r = confirmPlace({ code, placeId: String(args.place_id), by: "ai" });
+        const r = await confirmPlace({ code, placeId: String(args.place_id), by: "ai" });
         if (!r.ok) return JSON.stringify({ error: r.error });
         return JSON.stringify({ confirmed: r.placeName, note: "최종 확정 완료. 축하 인사와 함께 요약해라." });
       }
       case "save_preferences": {
-        const r = updatePrefs(code, {
+        const r = await updatePrefs(code, {
           purpose: args.purpose,
           mood: args.mood,
           budget: args.budget,
@@ -332,6 +333,8 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
           added.push(doc.name);
         }
         m.places = m.places.map((p, i) => ({ ...p, id: `p${i + 1}` })); // id 재부여
+        // DB 모드에서는 객체를 고쳐도 저장되지 않는다 — 명시적으로 써 준다
+        await saveCandidates(code, { places: m.places });
         return JSON.stringify({
           found: added.length,
           added,
@@ -362,6 +365,7 @@ async function runTool(code: string, name: string, argsJson: string): Promise<st
         };
         cand.id = `r${m.regions.length + 1}`;
         m.regions.push(cand); // 후보 목록에 추가 → UI 카드에도 표시됨
+        await saveCandidates(code, { regions: m.regions });
         return JSON.stringify({
           added: { id: cand.id, name: nm, max_min: maxMin, dev_min: devMin,
                    per_person: per.map((x) => `${x.name} ${x.min}분`) },
@@ -473,7 +477,7 @@ function buildMessages(m: Meeting, force: boolean) {
 // ═════════ 판단 루프 ═════════
 
 async function decide(code: string, force: boolean): Promise<void> {
-  const m = getMeeting(code);
+  const m = await getMeeting(code);
   if (!m || m.stage !== "chat") return;
 
   await probePrimary();
@@ -514,7 +518,7 @@ async function decide(code: string, force: boolean): Promise<void> {
       traceEvent({ type: "silent", ...baseCtx, round: i + 1 });
       return; // 침묵
     }
-    appendAiChat(code, text);
+    await appendAiChat(code, text);
     return;
   }
 }
@@ -539,7 +543,7 @@ export async function runAiTurn(code: string, opts?: { force?: boolean }): Promi
     }
   } catch (e: any) {
     console.error("[ai] 판단 실패:", e?.message);
-    appendSystemChat(
+    await appendSystemChat(
       key,
       "⚠ AI 연결에 문제가 있어요. 잠시 후 다시 말을 걸거나, 방장은 하단 '직접 확정'으로 진행할 수 있어요."
     );

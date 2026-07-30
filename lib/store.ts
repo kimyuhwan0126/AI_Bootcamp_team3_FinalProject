@@ -1,11 +1,15 @@
 // ─────────────────────────────────────────────────────────────
-// store.ts — 데이터 계층 (v2: 투표 → AI 대화)
+// store.ts — 데이터 계층
 //
-//  · 기본: 인메모리 스토어 (기기에서 즉시 실행 / 데모용)
-//  · DATABASE_URL 설정 시: Neon(Postgres)로 확장 (schema.sql 참고)
+//  · Supabase 키가 있으면: Supabase(Postgres)에 영속 저장 (supabase/schema.sql)
+//  · 키가 없으면: 인메모리 (`npm run dev` 만으로 전체 플로우 시연 가능)
 //
-//  Vercel 서버리스에서는 인스턴스 간 메모리가 공유되지 않으므로
-//  운영 배포는 반드시 Neon(DATABASE_URL)을 사용하세요.
+//  도메인 로직(누가 무엇을 바꿀 수 있는지, 단계 전환 규칙)은 Meeting 객체를
+//  그대로 만지는 방식을 유지하고, 읽기/쓰기만 persistence.ts 를 거친다.
+//
+//  ⚠️ Supabase 모드에서는 인메모리 캐시를 두지 않고 매 요청마다 DB에서 읽는다.
+//     서버리스는 인스턴스가 여러 개라, 한 인스턴스가 캐시를 들고 있으면 다른
+//     인스턴스가 쓴 투표·출발지가 1.8초 폴링에 계속 안 보인다.
 // ─────────────────────────────────────────────────────────────
 import type {
   Meeting,
@@ -18,45 +22,87 @@ import type {
   MeetingPrefs,
 } from "./types";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
+import { hasSupabase } from "./supabase";
+import {
+  loadMeeting,
+  meetingExists,
+  saveMeeting,
+  upsertParticipant,
+  upsertParticipants,
+  setVote,
+  clearVotes,
+} from "./persistence";
 
-const USE_NEON = !!process.env.DATABASE_URL;
+type Result = { ok: boolean; error?: string };
 
-// HMR/serverless 재로드에도 살아남도록 globalThis에 보관
+// HMR/serverless 재로드에도 살아남도록 globalThis에 보관.
+// Supabase 미설정 시에는 이 Map 이 유일한 저장소가 된다.
 const g = globalThis as unknown as {
   __moimer?: Map<string, Meeting>;
   __moimerAiBusy?: Map<string, boolean>;
 };
-const meetings: Map<string, Meeting> = g.__moimer ?? new Map();
-if (!g.__moimer) g.__moimer = meetings;
-// AI가 판단 중인 모임 표시 (UI: "AI 생각 중…")
+const memMeetings: Map<string, Meeting> = g.__moimer ?? new Map();
+if (!g.__moimer) g.__moimer = memMeetings;
+// AI가 판단 중인 모임 표시 (UI: "AI 생각 중…"). 휘발성이라 DB에 두지 않는다.
 const aiBusy: Map<string, boolean> = g.__moimerAiBusy ?? new Map();
 if (!g.__moimerAiBusy) g.__moimerAiBusy = aiBusy;
 
-function genCode(): string {
+// ── 읽기/쓰기 경계 ─────────────────────────────────────────────
+async function read(code: string): Promise<Meeting | undefined> {
+  const key = (code ?? "").toUpperCase();
+  if (!key) return undefined;
+  if (!hasSupabase) return memMeetings.get(key);
+  return (await loadMeeting(key)) ?? undefined;
+}
+
+/** 모임 행(단계·후보·대화·선호·예약)을 저장. 인메모리 모드면 아무것도 안 한다. */
+async function write(m: Meeting): Promise<void> {
+  if (!hasSupabase) {
+    memMeetings.set(m.code, m);
+    return;
+  }
+  await saveMeeting(m);
+}
+
+async function writeParticipant(m: Meeting, p: Participant): Promise<void> {
+  if (!hasSupabase) {
+    memMeetings.set(m.code, m);
+    return;
+  }
+  await upsertParticipant(m.code, p);
+}
+
+async function genCode(): Promise<string> {
+  // 0/O, 1/I/L 처럼 헷갈리는 글자는 제외 — 코드를 말로 불러주는 경우가 많다
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let c = "";
-  for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random() * chars.length)];
-  return meetings.has(c) ? genCode() : c;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let c = "";
+    for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random() * chars.length)];
+    const taken = hasSupabase ? await meetingExists(c) : memMeetings.has(c);
+    if (!taken) return c;
+  }
+  // 12번 연속 충돌은 사실상 불가능하지만, 무한 재귀로 서버를 멈추지는 않는다
+  throw new Error("초대 코드를 만들지 못했어요. 다시 시도해 주세요.");
 }
 function genId(prefix: string): string {
   return prefix + Math.random().toString(36).slice(2, 9);
 }
 
-export function getMeeting(code: string): Meeting | undefined {
-  return meetings.get(code.toUpperCase());
+export async function getMeeting(code: string): Promise<Meeting | undefined> {
+  return read(code);
 }
 export function setAiBusy(code: string, busy: boolean) {
   aiBusy.set(code.toUpperCase(), busy);
 }
 
 // ── 생성 (Leader: 모임방 개설 — 모임이름, 비번, 인원수) ──
-export function createMeeting(input: {
+export async function createMeeting(input: {
   name: string;
   password: string;
   headcount: number;
   leaderName: string;
-}): { code: string; leaderId: string } {
-  const code = genCode();
+}): Promise<{ code: string; leaderId: string }> {
+  const code = await genCode();
   const leaderId = genId("u_");
   const leader: Participant = {
     id: leaderId,
@@ -90,27 +136,32 @@ export function createMeeting(input: {
     reservation: null,
     createdAt: new Date().toISOString(),
   };
-  meetings.set(code, meeting);
+  // 참가자 행이 모임 행을 참조하므로(FK) 모임을 먼저 넣는다
+  await write(meeting);
+  if (hasSupabase) await upsertParticipants(code, [leader]);
   return { code, leaderId };
 }
 
 // ── 참여 (User: 모임이름/코드 + 비번 > 참여) ──
-export function joinMeeting(input: {
+export async function joinMeeting(input: {
   code: string;
   password: string;
   name: string;
   headcount?: number;
   ignoreCapacity?: boolean;
-}): { ok: true; participantId: string } | { ok: false; error: string } {
-  const m = meetings.get(input.code.toUpperCase());
+}): Promise<{ ok: true; participantId: string } | { ok: false; error: string }> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임을 찾을 수 없어요. 코드를 확인해 주세요." };
   if (m.password !== input.password) return { ok: false, error: "비밀번호가 일치하지 않아요." };
   if (!input.ignoreCapacity && m.participants.length >= m.headcount) {
-    return { ok: false, error: `정원이 가득 찼어요 (${m.participants.length}/${m.headcount}명). 방장에게 정원 상향을 요청하세요.` };
+    return {
+      ok: false,
+      error: `정원이 가득 찼어요 (${m.participants.length}/${m.headcount}명). 방장에게 정원 상향을 요청하세요.`,
+    };
   }
   const id = genId("u_");
   const name = input.name || `참가자${m.participants.length}`;
-  m.participants.push({
+  const p: Participant = {
     id,
     name,
     isLeader: false,
@@ -121,43 +172,38 @@ export function joinMeeting(input: {
     transport: "transit",
     status: null,
     etaText: null,
-  });
+  };
+  m.participants.push(p);
+  await writeParticipant(m, p);
   // 대화가 이미 시작됐다면 합류 사실을 채팅에도 알림 (AI가 새 참가자를 인지)
   if (m.stage === "chat") {
     pushMsg(m, "system", "", `${name} 님이 모임에 합류했어요.`);
+    await write(m);
   }
   return { ok: true, participantId: id };
 }
 
 // ── 출발지 등록 (User) ──
-export function setOrigin(input: {
+export async function setOrigin(input: {
   code: string;
   participantId: string;
   origin: string;
   transport: Transport;
-}): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code);
-  if (!m) return { ok: false, error: "모임 없음" };
-  const p = m.participants.find((x) => x.id === input.participantId);
-  if (!p) return { ok: false, error: "참가자 없음" };
-  p.origin = input.origin;
-  p.transport = input.transport;
+}): Promise<Result> {
   const c = geocode(input.origin);
-  p.lat = c.lat;
-  p.lng = c.lng;
-  return { ok: true };
+  return setOriginCoords({ ...input, lat: c.lat, lng: c.lng });
 }
 
 // ── 출발지 등록(좌표 주입 버전) — 실 지오코딩 결과를 라우트에서 전달 ──
-export function setOriginCoords(input: {
+export async function setOriginCoords(input: {
   code: string;
   participantId: string;
   origin: string;
   transport: Transport;
   lat: number;
   lng: number;
-}): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code);
+}): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p) return { ok: false, error: "참가자 없음" };
@@ -165,6 +211,7 @@ export function setOriginCoords(input: {
   p.transport = input.transport;
   p.lat = input.lat;
   p.lng = input.lng;
+  await writeParticipant(m, p);
   return { ok: true };
 }
 
@@ -184,11 +231,11 @@ function pushMsg(m: Meeting, role: ChatMsg["role"], name: string, text: string):
 }
 
 // 대화 시작 (Leader) — 지역 후보를 계산해 chat 스테이지 진입 + AI 오프닝
-export function openChat(
+export async function openChat(
   input: { code: string; participantId: string },
   opts?: { regions?: RegionCandidate[] }
-): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code);
+): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p?.isLeader) return { ok: false, error: "방장만 시작할 수 있어요." };
@@ -215,16 +262,17 @@ export function openChat(
       `다른 동네가 좋으면 이름만 말해주세요 — 이동시간을 바로 계산해 드릴게요 🙂\n` +
       `언제 만날지, 어떤 분위기(조용한/신나는)나 예산 생각도 편하게 말해주시면 반영할게요!`
   );
+  await write(m);
   return { ok: true };
 }
 
 // 사용자 채팅 추가
-export function appendUserChat(input: {
+export async function appendUserChat(input: {
   code: string;
   participantId: string;
   text: string;
-}): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code);
+}): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   if (m.stage !== "chat") return { ok: false, error: "지금은 대화 단계가 아니에요." };
   const p = m.participants.find((x) => x.id === input.participantId);
@@ -232,37 +280,48 @@ export function appendUserChat(input: {
   const text = input.text.trim().slice(0, 500);
   if (!text) return { ok: false, error: "빈 메시지" };
   pushMsg(m, "user", p.name, text);
+  await write(m);
   return { ok: true };
 }
 
 // AI가 대화에서 수집한 선호·일정 병합 (lib/ai.ts의 save_preferences 도구가 호출)
-export function updatePrefs(code: string, partial: MeetingPrefs): { ok: boolean; dateChanged: boolean; prefs?: MeetingPrefs } {
-  const m = meetings.get(code.toUpperCase());
+// 모임 시간(meetTime 액션)도 prefs.timeText 로 여기에 들어온다.
+export async function updatePrefs(
+  code: string,
+  partial: MeetingPrefs
+): Promise<{ ok: boolean; dateChanged: boolean; prefs?: MeetingPrefs }> {
+  const m = await read(code);
   if (!m) return { ok: false, dateChanged: false };
   const before = `${m.prefs.dateText ?? ""}|${m.prefs.timeText ?? ""}`;
   for (const [k, v] of Object.entries(partial)) {
-    if (typeof v === "string" && v.trim()) (m.prefs as any)[k] = v.trim().slice(0, 60);
+    if (typeof v === "string" && v.trim())
+      (m.prefs as Record<string, string>)[k] = v.trim().slice(0, 60);
   }
   const dateChanged = before !== `${m.prefs.dateText ?? ""}|${m.prefs.timeText ?? ""}`;
   if (dateChanged && (m.prefs.dateText || m.prefs.timeText)) {
     pushMsg(m, "system", "", `📅 일정 기록: ${[m.prefs.dateText, m.prefs.timeText].filter(Boolean).join(" ")}`);
   }
+  await write(m);
   return { ok: true, dateChanged, prefs: m.prefs };
 }
 
 // AI/시스템 메시지 추가 (lib/ai.ts에서 사용)
-export function appendAiChat(code: string, text: string) {
-  const m = meetings.get(code.toUpperCase());
-  if (m) pushMsg(m, "ai", "AI", text);
+export async function appendAiChat(code: string, text: string): Promise<void> {
+  const m = await read(code);
+  if (!m) return;
+  pushMsg(m, "ai", "AI", text);
+  await write(m);
 }
-export function appendSystemChat(code: string, text: string) {
-  const m = meetings.get(code.toUpperCase());
-  if (m) pushMsg(m, "system", "", text);
+export async function appendSystemChat(code: string, text: string): Promise<void> {
+  const m = await read(code);
+  if (!m) return;
+  pushMsg(m, "system", "", text);
+  await write(m);
 }
 
-// ── 지역 확정 (AI 도구 또는 방장 수동) ──
+// ── 지역 확정 (투표 마감 · AI 도구 · 방장 수동) ──
 //  regionId: 기존 후보 id / 또는 커스텀 후보 객체(후보 밖 지역 합의 시)
-export function confirmRegion(
+export async function confirmRegion(
   input: {
     code: string;
     regionId?: string;
@@ -270,8 +329,8 @@ export function confirmRegion(
     by: "ai" | "leader" | "vote";
   },
   opts?: { places?: PlaceCandidate[] } // 카카오 실검색 결과 주입(없으면 mock)
-): { ok: boolean; error?: string; regionName?: string } {
-  const m = meetings.get(input.code.toUpperCase());
+): Promise<{ ok: boolean; error?: string; regionName?: string }> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   // 거점 투표는 메인 화면에서도 진행되므로 main 단계 확정도 허용한다.
   if (m.stage === "result") return { ok: false, error: "이미 끝난 모임이에요." };
@@ -289,7 +348,9 @@ export function confirmRegion(
   if (!region) return { ok: false, error: "해당 지역 후보가 없어요." };
 
   m.winnerRegionId = region.id;
-  m.places = opts?.places?.length ? opts.places : generatePlaces(region.name, { lat: region.lat, lng: region.lng });
+  m.places = opts?.places?.length
+    ? opts.places
+    : generatePlaces(region.name, { lat: region.lat, lng: region.lng });
   m.aiPhase = "place";
   m.stage = "chat"; // 메인에서 확정한 경우에도 가게 단계로 넘어간다
   m.placeVotes = {};
@@ -297,18 +358,23 @@ export function confirmRegion(
     m,
     "system",
     "",
-    `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정"}). 이제 장소를 정해요.`
+    `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${
+      input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정"
+    }). 이제 장소를 정해요.`
   );
+  await write(m);
+  // 가게 후보가 새로 만들어졌으니 이전 가게 표는 의미가 없다
+  await clearVotes(m.code, "place");
   return { ok: true, regionName: region.name };
 }
 
-// ── 장소 확정 (AI 도구 또는 방장 수동) → 결과 화면 ──
-export function confirmPlace(input: {
+// ── 장소 확정 (투표 마감 · AI 도구 · 방장 수동) → 결과 화면 ──
+export async function confirmPlace(input: {
   code: string;
   placeId: string;
   by: "ai" | "leader" | "vote";
-}): { ok: boolean; error?: string; placeName?: string } {
-  const m = meetings.get(input.code.toUpperCase());
+}): Promise<{ ok: boolean; error?: string; placeName?: string }> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   if (m.stage !== "chat") return { ok: false, error: "대화 단계가 아니에요." };
   if (m.aiPhase !== "place") return { ok: false, error: "먼저 지역을 확정해야 해요." };
@@ -322,38 +388,44 @@ export function confirmPlace(input: {
     m,
     "system",
     "",
-    `🎉 ${place.name}(으)로 최종 확정! (${input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정"})`
+    `🎉 ${place.name}(으)로 최종 확정! (${
+      input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정"
+    })`
   );
+  await write(m);
   return { ok: true, placeName: place.name };
 }
 
 // ── 참가자 자가신고 도착 상태(정상/지체 중/많이 늦음) + 도착 예정 시간 ──
 //  본인 항목만 수정 가능(회의록). 타인 id를 넣어도 서버에서 막지는 않으므로
 //  API 라우트에서 participantId === 요청자 확인 후에만 호출해야 한다.
-export function setParticipantStatus(input: {
+export async function setParticipantStatus(input: {
   code: string;
   participantId: string;
   status: "green" | "yellow" | "red" | null;
   etaText?: string | null;
-}): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code.toUpperCase());
+}): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p) return { ok: false, error: "참가자를 찾을 수 없어요." };
   p.status = input.status;
   if (input.etaText !== undefined) p.etaText = input.etaText?.trim().slice(0, 40) || null;
+  await writeParticipant(m, p);
   return { ok: true };
 }
 
 // ── 거점/가게 후보 투표 (1인 1표) ──────────────────────────────
 //  같은 후보를 다시 누르면 취소, 다른 후보를 누르면 표를 옮긴다.
-export function castVote(input: {
+//  Supabase 모드에서는 votes 테이블의 PK(code,target,participant_id)가
+//  1인 1표를 보장하므로, 여러 명이 동시에 눌러도 표가 유실되지 않는다.
+export async function castVote(input: {
   code: string;
   participantId: string;
   target: "region" | "place";
   candidateId: string | null;
-}): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code.toUpperCase());
+}): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p) return { ok: false, error: "참가자를 찾을 수 없어요." };
@@ -362,41 +434,75 @@ export function castVote(input: {
   if (!m.placeVotes) m.placeVotes = {};
   const box = input.target === "region" ? m.regionVotes : m.placeVotes;
 
-  if (!input.candidateId) {
+  // 취소: 후보를 비워 보냈거나, 이미 찍은 후보를 다시 누른 경우
+  const candidateId = input.candidateId;
+  if (!candidateId || box[p.id] === candidateId) {
     delete box[p.id];
+    if (hasSupabase) await setVote(m.code, input.target, p.id, null);
+    else memMeetings.set(m.code, m);
     return { ok: true };
   }
+
   const pool: { id: string }[] = input.target === "region" ? m.regions : m.places;
-  if (!pool.some((c) => c.id === input.candidateId))
+  if (!pool.some((c) => c.id === candidateId))
     return { ok: false, error: "해당 후보가 없어요." };
-  // 같은 후보 재선택 = 취소
-  if (box[p.id] === input.candidateId) delete box[p.id];
-  else box[p.id] = input.candidateId;
+
+  box[p.id] = candidateId;
+  if (hasSupabase) await setVote(m.code, input.target, p.id, candidateId);
+  else memMeetings.set(m.code, m);
   return { ok: true };
 }
 
 // ── 거점 후보 갱신 (출발지가 바뀌면 재계산) ──
 //  stage 는 건드리지 않는다 — 메인 화면에서도 투표할 수 있게 하기 위함.
-export function setRegionCandidates(
+export async function setRegionCandidates(
   code: string,
   regions: RegionCandidate[]
-): { ok: boolean; error?: string } {
-  const m = meetings.get(code.toUpperCase());
+): Promise<Result> {
+  const m = await read(code);
   if (!m) return { ok: false, error: "모임 없음" };
   if (m.winnerRegionId) return { ok: true }; // 이미 확정된 뒤엔 후보를 흔들지 않는다
-  const prev = m.regions.map((r) => r.id).join(",");
+
+  // ⚠️ 후보 id 는 순위(r1·r2·r3)라 후보가 완전히 바뀌어도 그대로다 —
+  //    id 로 비교하면 "달라졌는지"를 절대 감지할 수 없어(예전 버그),
+  //    엉뚱한 지역에 찍힌 표가 그대로 남았다. 지역 이름으로 비교한다.
+  const prev = m.regions.map((r) => r.name).join(",");
+  const next = regions.map((r) => r.name).join(",");
+  // 후보가 그대로면 쓸 이유가 없다 — 1.8초 폴링마다 DB에 쓰지 않도록 막는다
+  if (prev === next) return { ok: true };
+
   m.regions = regions;
-  // 후보 목록이 달라지면 기존 표는 의미가 없다
-  if (prev !== regions.map((r) => r.id).join(",")) m.regionVotes = {};
+  m.regionVotes = {};
+  await write(m);
+  // 후보가 달라졌으니 기존 표는 의미가 없다
+  await clearVotes(m.code, "region");
+  return { ok: true };
+}
+
+/**
+ * AI 도구가 후보 목록을 직접 손질한 뒤 저장하는 통로.
+ * (search_more_places 로 가게를 더 찾거나, evaluate_region 으로 참가자가 제안한
+ *  동네를 후보에 추가하는 경우 — 인메모리 시절엔 객체를 그 자리에서 고치면
+ *  그게 곧 저장이었지만, DB 모드에서는 명시적으로 써 줘야 한다)
+ */
+export async function saveCandidates(
+  code: string,
+  patch: { regions?: RegionCandidate[]; places?: PlaceCandidate[] }
+): Promise<Result> {
+  const m = await read(code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  if (patch.regions) m.regions = patch.regions;
+  if (patch.places) m.places = patch.places;
+  await write(m);
   return { ok: true };
 }
 
 // ── 다시 논의 (Leader): 장소 단계 → 지역 단계로, 결과 → 장소 단계로 ──
-export function reopenDiscussion(
+export async function reopenDiscussion(
   input: { code: string; participantId: string; target: "region" | "place" },
   opts?: { regions?: RegionCandidate[] }
-): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code.toUpperCase());
+): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p?.isLeader) return { ok: false, error: "방장만 되돌릴 수 있어요." };
@@ -412,6 +518,8 @@ export function reopenDiscussion(
     m.placeVotes = {};
     if (opts?.regions?.length) m.regions = opts.regions;
     pushMsg(m, "system", "", "🔄 방장이 중간지역 논의를 다시 열었어요. 의견을 말해주세요!");
+    await write(m);
+    await clearVotes(m.code);
   } else {
     if (!m.winnerRegionId) return { ok: false, error: "확정된 지역이 없어요." };
     m.winnerPlaceId = null;
@@ -419,13 +527,15 @@ export function reopenDiscussion(
     m.aiPhase = "place";
     m.stage = "chat";
     pushMsg(m, "system", "", "🔄 방장이 장소 논의를 다시 열었어요. 어디가 좋을까요?");
+    await write(m);
+    await clearVotes(m.code, "place");
   }
   return { ok: true };
 }
 
 // ── 처음으로 (Leader) ──
-export function backToMain(input: { code: string; participantId: string }): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code.toUpperCase());
+export async function backToMain(input: { code: string; participantId: string }): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p?.isLeader) return { ok: false, error: "방장만 조작할 수 있어요." };
@@ -437,16 +547,18 @@ export function backToMain(input: { code: string; participantId: string }): { ok
   m.regionVotes = {};
   m.placeVotes = {};
   m.reservation = null;
+  await write(m);
+  await clearVotes(m.code);
   return { ok: true };
 }
 
 // ── 유료서비스: 가게 예약 > 결제(선입금) — 모의결제 ──
-export function reserve(input: {
+export async function reserve(input: {
   code: string;
   participantId: string;
   placeId: string;
-}): { ok: boolean; error?: string } {
-  const m = meetings.get(input.code);
+}): Promise<Result> {
+  const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const place = m.places.find((p) => p.id === input.placeId);
   if (!place) return { ok: false, error: "가게를 찾을 수 없어요." };
@@ -460,12 +572,13 @@ export function reserve(input: {
     status: "paid",
     paidAt: new Date().toISOString(),
   };
+  await write(m);
   return { ok: true };
 }
 
 // ── 상태 조회 (비밀번호 제외) ──
-export function getState(code: string): MeetingState | null {
-  const m = meetings.get(code.toUpperCase());
+export async function getState(code: string): Promise<MeetingState | null> {
+  const m = await read(code);
   if (!m) return null;
   return {
     code: m.code,
@@ -491,4 +604,4 @@ export function getState(code: string): MeetingState | null {
   };
 }
 
-export const storeInfo = { backend: USE_NEON ? "neon" : ("memory" as const) };
+export const storeInfo = { backend: hasSupabase ? ("supabase" as const) : ("memory" as const) };

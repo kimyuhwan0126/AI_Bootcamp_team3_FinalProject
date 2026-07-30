@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "bad_json" }, { status: 400 });
   }
-  const result = seedScenario(String(body?.scenario || ""));
+  const result = await seedScenario(String(body?.scenario || ""));
   if (!result) return NextResponse.json({ error: "unknown_scenario" }, { status: 400 });
   return NextResponse.json({ ok: true, ...result });
 }

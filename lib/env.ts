@@ -13,6 +13,7 @@ export const env = {
 export const has = {
   kakaoLogin: !!env.kakaoRest,
   kakaoGeocode: !!env.kakaoRest,
+  kakaoJs: !!env.kakaoJs, // 브라우저 지도 SDK — 없으면 스키매틱 지도로 폴백
   odsay: !!env.odsay,
   tmap: !!env.tmap,
 };
