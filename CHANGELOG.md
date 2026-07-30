@@ -29,6 +29,7 @@
 | 2026-07-30 | Claude(AI) | `package.json` | `next` `14.2.15` → **`^14.2.35`** | `npm audit` 에서 **critical** 취약점. 공개 저장소 + Vercel 배포 예정이라 방치할 수 없다. 14.2 안의 패치 업그레이드만 했다(16 으로 올리면 breaking change) |
 | 2026-07-30 | Claude(AI) | `.nvmrc` (신규), `.github/workflows/ci.yml` | Node 버전을 `22` 로 고정하고 CI 가 `node-version-file` 로 같은 파일을 읽게 | 팀원 4명이 각자 다른 Node 로 개발하면 "내 컴에선 되는데"가 생긴다. 버전을 올릴 때 고칠 곳도 한 군데가 된다 |
 | 2026-07-30 | Claude(AI) | `README.md`, `팀원_실행안내.md`, `docs/팀_개발환경.md` | 팀원 진입점 정비 — 무엇부터 읽고 무엇을 만지는지. v8 시절 서술 정정(채팅 위상·버튼 이름·구조도) | 저장소를 처음 여는 사람이 5분 안에 시작할 수 있어야 한다 |
+| 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md`, `docs/노션_통합개발환경.md` | 머지 방식 정정 — "Squash 만 허용" ❌ → `feat/*→develop` 은 Squash, `develop→main` 은 merge commit. 실제로 만든 룰셋 내용으로 설정표 갱신 | Squash 로만 잠그면 `develop→main` 에서 develop 커밋이 한 덩어리로 뭉개지고 두 브랜치 히스토리가 갈라져 이후 머지마다 충돌한다 |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.
