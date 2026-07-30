@@ -11,6 +11,7 @@ Next.js 14 (App Router) + TypeScript + Supabase. **키가 하나도 없어도 �
 
 ```bash
 git clone <이 저장소>
+nvm use                        # .nvmrc 의 Node 버전 (22). nvm 없으면 Node 22 설치
 npm install
 cp .env.example .env.local     # 값은 비워도 됩니다
 npm run dev                    # http://localhost:3000
