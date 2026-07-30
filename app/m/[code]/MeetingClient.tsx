@@ -11,6 +11,14 @@ import BottomNav from "@/app/components/v8/BottomNav";
 import type { GeoSuggest } from "@/app/api/geocode/route";
 import { arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
 import { formatMinutes, formatGap } from "@/lib/format";
+import ChatPanel from "./sections/ChatPanel";
+import VoteList from "./sections/VoteList";
+import PastStepView from "./sections/PastStepView";
+import TravelTimes from "./sections/TravelTimes";
+import AddParticipant from "./sections/AddParticipant";
+import AddRegionModal from "./sections/AddRegionModal";
+import ManualPickModal from "./sections/ManualPickModal";
+import { openGoogleCalendar, downloadIcs } from "@/lib/calendar";
 import { FLAGS } from "@/lib/flags";
 
 const DEV = process.env.NODE_ENV !== "production";
@@ -441,6 +449,9 @@ export default function MeetingClient({ code }: { code: string }) {
       : state.regions.reduce((best, r) =>
           (regionTally[r.id] ?? 0) > (regionTally[best.id] ?? 0) ? r : best
         ).id;
+
+  // 지금 무엇을 투표 중인가 — 후보 목록·집계·투표 액션이 모두 이 값을 따른다
+  const votePhase: "region" | "place" = state.aiPhase === "region" ? "region" : "place";
 
   // ── 가게 투표 집계 (2차) ──
   const placeVotesMap = state.placeVotes ?? {};
@@ -997,78 +1008,20 @@ export default function MeetingClient({ code }: { code: string }) {
                 )
               ) : (
                 // v8: 채팅 대신 실제 투표 — 서버에 집계되고 전원에게 실시간 반영된다
-                <div className="stack" style={{ gap: 8 }}>
-                  {(state.aiPhase === "region" ? state.regions : state.places).length === 0 && (
-                    <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>아직 후보가 없어요.</p>
-                  )}
-                  {state.aiPhase === "region"
-                    ? state.regions.map((r) => {
-                        const n = regionTally[r.id] ?? 0;
-                        const mine = myRegionVote === r.id;
-                        return (
-                          <div key={r.id} className="v8-voterow">
-                            <div className="grow">
-                              <div className="i-title">
-                                {r.name}
-                                {topRegionId === r.id && n > 0 && (
-                                  <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>최다</span>
-                                )}
-                                {r.proposedBy && (
-                                  <span className="chip line" style={{ marginLeft: 6, fontSize: 9 }}>
-                                    {r.proposedBy} 제안
-                                  </span>
-                                )}
-                              </div>
-                              <div className="i-sub"><b>{n}표</b> · 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}</div>
-                            </div>
-                            <button
-                              className={"v8-votepill" + (mine ? " voted" : "")}
-                              disabled={busy || !me}
-                              onClick={() =>
-                                act(
-                                  { action: "vote", participantId: me?.id, target: "region", candidateId: r.id },
-                                  mine ? "투표를 취소했어요" : `${r.name}에 투표했어요`
-                                )
-                              }
-                            >
-                              {mine ? "투표함 ✓" : "투표"}
-                            </button>
-                          </div>
-                        );
-                      })
-                    : state.places.map((p) => {
-                        const n = placeTally[p.id] ?? 0;
-                        const mine = myPlaceVote === p.id;
-                        return (
-                          <div key={p.id} className="v8-voterow">
-                            <div className="grow">
-                              <div className="i-title">
-                                {p.emoji} {p.name}
-                                {topPlaceId === p.id && n > 0 && (
-                                  <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>최다</span>
-                                )}
-                              </div>
-                              <div className="i-sub">
-                                <b>{n}표</b> · {p.category} · {p.distanceM}m
-                                {p.reservable ? " · 예약가능" : ""}
-                              </div>
-                            </div>
-                            <button
-                              className={"v8-votepill" + (mine ? " voted" : "")}
-                              disabled={busy || !me}
-                              onClick={() =>
-                                act(
-                                  { action: "vote", participantId: me?.id, target: "place", candidateId: p.id },
-                                  mine ? "투표를 취소했어요" : `${p.name}에 투표했어요`
-                                )
-                              }
-                            >
-                              {mine ? "투표함 ✓" : "투표"}
-                            </button>
-                          </div>
-                        );
-                      })}
-                </div>
+                <VoteList
+                  target={votePhase}
+                  state={state}
+                  tally={votePhase === "region" ? regionTally : placeTally}
+                  myVote={(votePhase === "region" ? myRegionVote : myPlaceVote) ?? null}
+                  topId={votePhase === "region" ? topRegionId : topPlaceId}
+                  disabled={busy || !me}
+                  onVote={(candidateId, candidateName, mine) =>
+                    act(
+                      { action: "vote", participantId: me?.id, target: votePhase, candidateId },
+                      mine ? "투표를 취소했어요" : `${candidateName}에 투표했어요`
+                    )
+                  }
+                />
               )}
               <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
                 {AI_CHAT_ENABLED
@@ -1084,58 +1037,18 @@ export default function MeetingClient({ code }: { code: string }) {
             {/* 참가자별 이동시간 + 경로 상세 (시안1·2) */}
             {destRegion && <TravelTimes state={state} dest={destRegion} onOpen={setRouteFor} />}
 
-            {/* 채팅 패널 — v8에서는 비활성 */}
+            {/* 채팅 패널 — 기본 비활성. 담당자 파일: sections/ChatPanel.tsx */}
             {AI_CHAT_ENABLED && (
-            <div className="card stack" style={{ gap: 10 }}>
-              <div className="between">
-                <span className="eyebrow">모임 채팅</span>
-                {state.aiBusy && (
-                  <span className="aithink">
-                    🤖 AI 생각 중 <span className="dots"><i /><i /><i /></span>
-                  </span>
-                )}
-              </div>
-
-              {/* AI가 대화에서 수집한 모임 정보 (폼 없이 채워짐) */}
-              <PrefChips prefs={state.prefs} />
-
-
-              <div className="chatlog">
-                {state.chat.map((c: ChatMsg) => {
-                  const cls =
-                    c.role === "system" ? "sys" : c.role === "ai" ? "ai" : c.name === myName ? "me" : "other";
-                  return (
-                    <div key={c.id} className={"cmsg " + cls}>
-                      {(cls === "other" || cls === "ai") && (
-                        <span className="who">{cls === "ai" ? "🤖 AI 도우미" : c.name}</span>
-                      )}
-                      <div className="bub">{c.text}</div>
-                    </div>
-                  );
-                })}
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* 빠른답변 칩 — 타이핑 없이 탭 1번으로 의견 전달 */}
-              <div className="chips">
-                {quickChips.map((q) => (
-                  <button key={q} disabled={busy} onClick={() => sendChat(q)}>{q}</button>
-                ))}
-              </div>
-
-              <div className="row" style={{ gap: 8 }}>
-                <input
-                  className="input grow"
-                  value={chatText}
-                  onChange={(e) => setChatText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") sendChat(chatText); }}
-                  placeholder="편하게 의견을 말해보세요…"
-                />
-                <button className="btn sm" disabled={busy || !chatText.trim()} onClick={() => sendChat(chatText)}>
-                  전송
-                </button>
-              </div>
-            </div>
+              <ChatPanel
+                state={state}
+                myName={myName}
+                chatEndRef={chatEndRef}
+                quickChips={quickChips}
+                text={chatText}
+                onTextChange={setChatText}
+                onSend={sendChat}
+                busy={busy}
+              />
             )}
           </>
         )}
@@ -1320,150 +1233,36 @@ export default function MeetingClient({ code }: { code: string }) {
       {/* ✍ 다른 후보로 정하기 — 최다득표가 아닌 후보로도 정할 수 있는 예외 수단.
           거점 단계는 stage="main", 가게 단계는 stage="chat" 이므로 끝난 모임만 제외한다.
           (예전에는 stage==="chat" 으로 잠겨 있어 거점 단계에서 아예 열리지 않았다) */}
-      {/* ＋ 다른 후보 등록 — 지도(카카오 로컬) 검색으로 원하는 지역을 후보에 올린다.
-          방장 전용이 아니다: 자동 추천이 엉뚱할 때 누구든 "여기로 하자"를 낼 수 있어야
-          투표가 의미를 갖는다(특히 수도권 밖에서 기하 중간점이 시골로 잡히는 경우). */}
+      {/* ＋ 다른 후보 등록 · ✍ 다른 후보로 정하기 — 담당자 파일: sections/*.tsx */}
       {showAddRegion && (
-        <div className="backdrop" onClick={() => setShowAddRegion(false)}>
-          <div className="modal stack" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
-            <div>
-              <b style={{ fontSize: 16 }}>＋ 다른 후보 등록</b>
-              <p className="muted" style={{ fontSize: 12, margin: "4px 0 0", lineHeight: 1.55 }}>
-                만나고 싶은 지역을 검색해 후보에 추가해요. 추가하면 모두의 이동시간이
-                계산되고, 다른 후보들과 함께 투표 대상이 됩니다.
-              </p>
-            </div>
-            <input
-              className="input"
-              value={regionQuery}
-              onChange={(e) => setRegionQuery(e.target.value)}
-              placeholder="예: 대전역, 동대구역, 천안아산역…"
-              autoComplete="off"
-              autoFocus
-            />
-            <div className="stack" style={{ gap: 8, minHeight: 44 }}>
-              {regionSearching && <p className="faint" style={{ fontSize: 12, margin: 0 }}>검색 중…</p>}
-              {/* 검색이 못 찾아도 막다른 길이 되지 않게 — 입력한 이름 그대로 등록할 수
-                  있게 한다(좌표는 서버가 지오코딩으로 찾는다). 프로토타입의 안전망과 같다. */}
-              {!regionSearching && regionHits?.length === 0 && (
-                <>
-                  <p className="faint" style={{ fontSize: 12, margin: 0 }}>
-                    검색 결과가 없어요. 이름 그대로 등록할 수도 있어요.
-                  </p>
-                  <button
-                    className="v8-voterow"
-                    style={{ margin: 0, textAlign: "left", cursor: "pointer" }}
-                    disabled={busy}
-                    onClick={() => addRegionFrom({ name: regionQuery.trim(), address: "직접 입력", lat: NaN, lng: NaN })}
-                  >
-                    <div className="grow">
-                      <div className="i-title">‘{regionQuery.trim()}’(으)로 등록</div>
-                      <div className="i-sub">위치는 서버가 찾아요</div>
-                    </div>
-                    <span className="v8-votepill">추가</span>
-                  </button>
-                </>
-              )}
-              {(regionHits ?? []).map((s) => (
-                <button
-                  key={`${s.name}${s.lat}`}
-                  className="v8-voterow"
-                  style={{ margin: 0, textAlign: "left", cursor: "pointer" }}
-                  disabled={busy}
-                  onClick={() => addRegionFrom(s)}
-                >
-                  <div className="grow">
-                    <div className="i-title">{s.name}</div>
-                    <div className="i-sub">{s.address}</div>
-                  </div>
-                  <span className="v8-votepill">추가</span>
-                </button>
-              ))}
-            </div>
-            <button className="btn ghost" onClick={() => setShowAddRegion(false)}>닫기</button>
-          </div>
-        </div>
+        <AddRegionModal
+          query={regionQuery}
+          onQueryChange={setRegionQuery}
+          hits={regionHits}
+          searching={regionSearching}
+          busy={busy}
+          onPick={addRegionFrom}
+          onClose={() => setShowAddRegion(false)}
+        />
       )}
 
       {showManual && stage !== "result" && (
-        <div className="backdrop" onClick={() => setShowManual(null)}>
-          <div className="modal stack" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
-            <div>
-              <b style={{ fontSize: 16 }}>✍ 다른 후보로 정하기</b>
-              <p className="muted" style={{ fontSize: 12, margin: "4px 0 0", lineHeight: 1.55 }}>
-                최다득표가 아닌 곳으로도 정할 수 있어요. 예약이 안 되거나 사정이 있을 때 쓰세요.
-              </p>
-            </div>
-            <div className="stack" style={{ gap: 8 }}>
-              {(showManual === "region" ? state.regions : state.places).length === 0 && (
-                <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>아직 후보가 없어요.</p>
-              )}
-              {showManual === "region"
-                ? state.regions.map((r) => (
-                    <label
-                      key={r.id}
-                      className={"opt" + (manualPick === r.id ? " sel" : "")}
-                      style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
-                    >
-                      <input
-                        type="radio"
-                        name="manualPick"
-                        checked={manualPick === r.id}
-                        onChange={() => setManualPick(r.id)}
-                      />
-                      <div className="grow">
-                        <b style={{ fontSize: 13 }}>{r.name}</b>
-                        <div className="faint" style={{ fontSize: 11 }}>
-                          최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}
-                        </div>
-                      </div>
-                    </label>
-                  ))
-                : state.places.map((p) => (
-                    <label
-                      key={p.id}
-                      className={"opt" + (manualPick === p.id ? " sel" : "")}
-                      style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
-                    >
-                      <input
-                        type="radio"
-                        name="manualPick"
-                        checked={manualPick === p.id}
-                        onChange={() => setManualPick(p.id)}
-                      />
-                      <div className="grow">
-                        <b style={{ fontSize: 13 }}>
-                          {p.emoji} {p.name}
-                        </b>
-                        <div className="faint" style={{ fontSize: 11 }}>
-                          {p.category} · {p.distanceM}m
-                          {p.rating > 0 ? ` · ⭐${p.rating}` : ""}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-            </div>
-            <button
-              className="btn"
-              disabled={busy || !manualPick}
-              onClick={async () => {
-                const target = showManual;
-                const pool: { id: string; name: string }[] =
-                  target === "region" ? state.regions : state.places;
-                const picked = pool.find((c) => c.id === manualPick);
-                if (!picked) return;
-                setShowManual(null);
-                await act(
-                  { action: "confirmManual", participantId: me?.id, target, id: picked.id },
-                  `${picked.name}(으)로 확정했어요`
-                );
-              }}
-            >
-              이 후보로 확정
-            </button>
-            <button className="btn ghost" onClick={() => setShowManual(null)}>취소</button>
-          </div>
-        </div>
+        <ManualPickModal
+          target={showManual}
+          state={state}
+          picked={manualPick}
+          onPick={setManualPick}
+          busy={busy}
+          onConfirm={async (id, name) => {
+            const target = showManual;
+            setShowManual(null);
+            await act(
+              { action: "confirmManual", participantId: me?.id, target, id },
+              `${name}(으)로 확정했어요`
+            );
+          }}
+          onClose={() => setShowManual(null)}
+        />
       )}
 
       {/* 경로 상세 바텀시트 (시안1·2) */}
@@ -1551,256 +1350,3 @@ export default function MeetingClient({ code }: { code: string }) {
 }
 
 // ── 참가자별 이동시간 카드 (행 탭 → 경로 상세 시트) — 시안1·2 진입점 ──
-// ── 지난 단계 조회(읽기전용) — 스텝 탭을 눌러서 들어온다 ──
-//  실제 진행 단계를 건드리지 않고 그 시점의 후보·득표·확정 결과만 보여준다.
-//  다시 편집하려면(투표/확정) 배너의 "현재 단계로"로 나가서 방장 되돌리기를 써야 한다.
-function PastStepView({ step, state }: { step: 0 | 1 | 2; state: MeetingState }) {
-  if (step === 0) {
-    const votes = state.regionVotes ?? {};
-    const tally = (id: string) => Object.values(votes).filter((v) => v === id).length;
-    return (
-      <div className="card stack" style={{ gap: 10 }}>
-        <span className="eyebrow">① 거점 투표 · 지난 기록</span>
-        {state.regions.length === 0 ? (
-          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>당시 거점 후보가 없었어요.</p>
-        ) : (
-          <div className="stack" style={{ gap: 8 }}>
-            {state.regions.map((r) => (
-              <div key={r.id} className="v8-voterow">
-                <div className="grow">
-                  <div className="i-title">
-                    {r.name}
-                    {state.winnerRegion?.id === r.id && <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>확정됨</span>}
-                  </div>
-                  <div className="i-sub">
-                    <b>{tally(r.id)}표</b> · 최대 {formatMinutes(r.maxMin)} · 편차 {formatGap(r.devMin)}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-  if (step === 1) {
-    const votes = state.placeVotes ?? {};
-    const tally = (id: string) => Object.values(votes).filter((v) => v === id).length;
-    return (
-      <div className="card stack" style={{ gap: 10 }}>
-        <span className="eyebrow">② 가게 투표 · 지난 기록</span>
-        {state.places.length === 0 ? (
-          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>당시 가게 후보가 없었어요.</p>
-        ) : (
-          <div className="stack" style={{ gap: 8 }}>
-            {state.places.map((p) => (
-              <div key={p.id} className="v8-voterow">
-                <div className="grow">
-                  <div className="i-title">
-                    {p.emoji} {p.name}
-                    {state.winnerPlace?.id === p.id && <span className="chip ok" style={{ marginLeft: 6, fontSize: 9 }}>확정됨</span>}
-                  </div>
-                  <div className="i-sub">
-                    <b>{tally(p.id)}표</b> · {p.category} · {p.distanceM}m
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-  return null;
-}
-
-function TravelTimes({
-  state,
-  dest,
-  title,
-  onOpen,
-}: {
-  state: MeetingState;
-  dest: RegionCandidate;
-  title?: string;
-  onOpen: (pid: string) => void;
-}) {
-  const rows = state.participants.filter((p) => p.lat != null);
-  if (rows.length === 0) return null;
-  const mins = new Map(dest.perParticipant.map((x) => [x.pid, x.min]));
-  const max = Math.max(1, ...dest.perParticipant.map((x) => x.min));
-  // 도착 신호등 — 회의록: 정시권(초록)/지체(노랑)/많이 늦음(빨강).
-  // 다들 같은 순간 출발한다고 볼 때 제일 빠른 사람 대비 얼마나 더 걸리는지로 매긴다.
-  const groupMins = dest.perParticipant.map((x) => x.min);
-  return (
-    <div className="card stack" style={{ gap: 2 }}>
-      <div className="between" style={{ marginBottom: 6 }}>
-        <span className="eyebrow">{title ?? "참가자별 이동시간"}</span>
-        <span className="faint" style={{ fontSize: 11 }}>→ {dest.name} 기준</span>
-      </div>
-      {rows.map((p) => {
-        const m = mins.get(p.id);
-        // 본인이 남긴 상태가 있으면 그걸 우선 — 없으면 이동시간 기반 추정
-        const status = p.status ?? (m != null && groupMins.length > 0 ? arrivalStatus(m, groupMins) : null);
-        const statusColor = status ? ARRIVAL_COLOR[status] : "var(--ac)";
-        return (
-          <button key={p.id} className="travelrow" onClick={() => onOpen(p.id)} title="탭하면 경로 상세를 볼 수 있어요">
-            <div className={"av" + (p.transport === "car" ? " car" : "")} style={status ? { boxShadow: `0 0 0 2px ${statusColor}` } : undefined}>
-              {p.name.slice(0, 1)}
-            </div>
-            <div className="grow" style={{ minWidth: 0 }}>
-              <div className="between" style={{ marginBottom: 3 }}>
-                <span className="muted" style={{ fontSize: 11.5, fontWeight: 700 }}>{p.name}</span>
-                <span className="row" style={{ gap: 5 }}>
-                  {status && (
-                    <span className="chip" style={{ fontSize: 8.5, padding: "2px 7px", background: `${statusColor}22`, color: statusColor }}>
-                      ● {ARRIVAL_LABEL[status]}
-                    </span>
-                  )}
-                  <span className="chip ok" style={{ fontSize: 8.5, padding: "2px 7px" }}>실시간</span>
-                  <b className="tnum" style={{ fontSize: 11.5, color: statusColor }}>{formatMinutes(m)}</b>
-                </span>
-              </div>
-              <div className="bar sm">
-                <i style={{ width: `${m != null ? Math.round((m / max) * 100) : 0}%`, background: statusColor }} />
-              </div>
-              <div className="faint" style={{ fontSize: 10, marginTop: 3 }}>
-                {p.transport === "car" ? "🚗 자차" : "🚇 대중교통"} · <b style={{ color: "var(--ac)" }}>경로 상세 ›</b>
-              </div>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── AI가 수집한 모임 정보 칩 ──
-function PrefChips({ prefs }: { prefs: MeetingState["prefs"] }) {
-  const items: [string, string | undefined][] = [
-    ["🎯", prefs.purpose],
-    ["✨", prefs.mood],
-    ["📅", [prefs.dateText, prefs.timeText].filter(Boolean).join(" ") || undefined],
-    ["💰", prefs.budget],
-    ["🍺", prefs.alcohol],
-    ["🥗", prefs.dietary],
-  ];
-  const filled = items.filter(([, v]) => v);
-  if (filled.length === 0) return null;
-  return (
-    <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-      {filled.map(([icon, v]) => (
-        <span key={icon} className="chip line" style={{ fontSize: 10.5 }}>
-          {icon} {v}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// ── 모임 일정 계산 (AI가 대화에서 수집한 날짜·시간 사용, 없으면 다음 토요일 19시) ──
-function meetingSchedule(state: MeetingState): { start: Date; end: Date; fmt: (d: Date) => string } {
-  let start: Date;
-  if (state.prefs.dateIso) {
-    const [h, m] = (state.prefs.timeHhmm || "19:00").split(":").map(Number);
-    start = new Date(`${state.prefs.dateIso}T00:00:00`);
-    start.setHours(h || 19, m || 0, 0, 0);
-  } else {
-    start = new Date();
-    start.setDate(start.getDate() + ((6 - start.getDay() + 7) % 7 || 7)); // 다음 토요일
-    start.setHours(19, 0, 0, 0);
-  }
-  const end = new Date(start.getTime() + 2 * 3600 * 1000);
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}` +
-    `T${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
-  return { start, end, fmt };
-}
-
-// ── Google 캘린더에 추가 (원클릭, 파일 다운로드 없음) ──
-function openGoogleCalendar(state: MeetingState) {
-  const { start, end, fmt } = meetingSchedule(state);
-  const place = state.winnerPlace ? `${state.winnerPlace.name} (${state.winnerRegion?.name})` : state.name;
-  const p = new URLSearchParams({
-    action: "TEMPLATE",
-    text: state.name,
-    dates: `${fmt(start)}/${fmt(end)}`,
-    location: place,
-    details:
-      `모이머로 정한 모임 · 참여자 ${state.totalParticipants}명` +
-      (state.winnerPlace?.url ? `\n카카오맵: ${state.winnerPlace.url}` : "") +
-      `\n모임 페이지: ${location.origin}/m/${state.code}`,
-  });
-  window.open(`https://calendar.google.com/calendar/render?${p.toString()}`, "_blank", "noopener");
-}
-
-// ── .ics 캘린더 파일 생성 (Apple/Outlook용 보조) ──
-function downloadIcs(state: MeetingState) {
-  const { start, end, fmt } = meetingSchedule(state);
-  const place = state.winnerPlace ? `${state.winnerPlace.name} (${state.winnerRegion?.name})` : state.name;
-  const ics = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//Moimer//KO",
-    "BEGIN:VEVENT",
-    `UID:${state.code}@moimer`,
-    `DTSTART:${fmt(start)}`,
-    `DTEND:${fmt(end)}`,
-    `SUMMARY:${state.name}`,
-    `LOCATION:${place}`,
-    `DESCRIPTION:모이머로 정한 모임 · 참여자 ${state.totalParticipants}명`,
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].join("\r\n");
-  const blob = new Blob([ics], { type: "text/calendar" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `moimer-${state.code}.ics`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ── 테스트용 참가자 추가 모달 ──
-function AddParticipant({ code, onClose, onAdded }: { code: string; onClose: () => void; onAdded: (id: Identity) => void }) {
-  const [name, setName] = useState("");
-  const [pw, setPw] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  async function go() {
-    setErr(null);
-    setBusy(true);
-    try {
-      const r = await fetch("/api/meeting", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "join", code, password: pw, name }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      const id: Identity = { id: d.participantId, name, isLeader: false };
-      addIdentity(code, id);
-      onAdded(id);
-    } catch (e: any) {
-      setErr(e.message);
-      setBusy(false);
-    }
-  }
-  return (
-    <div className="backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <b style={{ fontSize: 16 }}>참가자로 참여 (테스트)</b>
-        <p className="muted" style={{ fontSize: 12, margin: "4px 0 12px" }}>한 기기에서 여러 참가자를 추가해 전체 플로우를 시험할 수 있어요.</p>
-        <div className="stack" style={{ gap: 10 }}>
-          <input className="input" placeholder="참가자 이름" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="input" placeholder="모임 비밀번호" value={pw} onChange={(e) => setPw(e.target.value)} />
-          {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
-          <div className="row" style={{ gap: 8 }}>
-            <button className="btn ghost" onClick={onClose}>취소</button>
-            <button className="btn" disabled={busy || !name || !pw} onClick={go}>참여</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
