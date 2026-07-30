@@ -1,13 +1,13 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────
-// v7 모임원 탭 — 참여자 목록 + 도착 신호등 자가신고
+// v8 모임원 탭 — 참여자 목록 + 도착 신호등 자가신고
 //  본인 항목만 눌러서 상태(정상/지체 중/많이 늦음)와 도착 예정 시간을 남길 수
 //  있다. 다른 참여자 항목은 조회만 가능(회의록).
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
-import BottomNav from "../components/v7/BottomNav";
-import V7Header from "../components/v7/V7Header";
+import BottomNav from "../components/v8/BottomNav";
+import V8Header from "../components/v8/V8Header";
 import type { ArrivalSelfStatus, MeetingState } from "@/lib/types";
 import { getActive } from "@/lib/identity";
 // 홈·지도와 같은 팔레트 사용 (신호등 색과 겹치지 않는 색만 들어있다)
@@ -89,8 +89,8 @@ export default function MembersPage() {
   }
 
   return (
-    <main className="device v7-page">
-      <V7Header />
+    <main className="device v8-page">
+      <V8Header />
       {meetings.length > 1 && (
         <div className="pad" style={{ paddingBottom: 0 }}>
           <select className="input" value={selected} onChange={(e) => setSelected(Number(e.target.value))}>
@@ -101,7 +101,7 @@ export default function MembersPage() {
         </div>
       )}
       {!m ? (
-        <div className="v7-empty" style={{ marginTop: 40 }}>
+        <div className="v8-empty" style={{ marginTop: 40 }}>
           아직 참여 중인 모임이 없어요.
           <br />
           모임 탭에서 새 모임을 만들거나 참여해보세요.
@@ -111,13 +111,13 @@ export default function MembersPage() {
           <div className="label" style={{ padding: "12px 16px 4px" }}>
             {m.name} · 참여자 <b style={{ color: "var(--ink)" }}>{m.totalParticipants}명</b>
           </div>
-          <div className="v7-list">
+          <div className="v8-list">
             {m.participants.map((p, i) => {
               const isMe = p.id === me?.id;
               return (
                 <button
                   key={p.id}
-                  className="v7-item"
+                  className="v8-item"
                   style={{ textAlign: "left", font: "inherit", cursor: isMe ? "pointer" : "default" }}
                   onClick={isMe ? openEdit : undefined}
                   title={isMe ? "탭해서 내 도착 상태를 남겨요" : undefined}
@@ -162,8 +162,8 @@ export default function MembersPage() {
       )}
 
       {editing && meRow && (
-        <div className="v7-overlay" onClick={(e) => e.target === e.currentTarget && setEditing(false)}>
-          <div className="v7-modal stack" style={{ gap: 12 }}>
+        <div className="v8-overlay" onClick={(e) => e.target === e.currentTarget && setEditing(false)}>
+          <div className="v8-modal stack" style={{ gap: 12 }}>
             <div>
               <h2>{meRow.name} · 출발지 {meRow.origin || "미입력"}</h2>
               <p className="m-sub">본인 항목만 상태와 도착 예정 시간을 수정할 수 있어요. 다른 참여자는 조회만 가능합니다.</p>

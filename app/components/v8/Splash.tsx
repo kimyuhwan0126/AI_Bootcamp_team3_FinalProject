@@ -8,7 +8,7 @@ const SLIDES = [
   { head: "모임 생성과 투표로\n다 같이 정해요", sub: "거점 투표 → 가게 투표 → 최종 확정까지" },
 ];
 
-const KEY = "moimer:v7:splash";
+const KEY = "moimer:v8:splash";
 
 // 첫 방문 시 1회: 로고 + 3단계 안내 슬라이드 자동 전환 후 메인으로
 export default function Splash() {
@@ -41,7 +41,7 @@ export default function Splash() {
   if (!show) return null;
   const s = SLIDES[idx];
   return (
-    <div className={"v7-splash" + (fade ? " fade" : "")}>
+    <div className={"v8-splash" + (fade ? " fade" : "")}>
       <button className="s-skip" onClick={dismiss}>건너뛰기</button>
       <div className="s-logo">MOIMER</div>
       <div className="s-head">

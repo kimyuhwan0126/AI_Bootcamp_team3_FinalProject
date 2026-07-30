@@ -6,14 +6,14 @@ import type { MeetingState, ChatMsg, RegionCandidate } from "@/lib/types";
 import { getIdentities, getActive, setActive, addIdentity, type Identity } from "@/lib/identity";
 import KakaoMap, { pinColor, type MapRoute, type MapCandidate } from "@/app/components/KakaoMap";
 import RouteSheet from "@/app/components/RouteSheet";
-import StepIcons from "@/app/components/v7/StepIcons";
-import BottomNav from "@/app/components/v7/BottomNav";
+import StepIcons from "@/app/components/v8/StepIcons";
+import BottomNav from "@/app/components/v8/BottomNav";
 import type { GeoSuggest } from "@/app/api/geocode/route";
 import { arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
 
 const DEV = process.env.NODE_ENV !== "production";
 
-// v7 결정: AI 채팅/챗봇 비활성 (후순위 분류).
+// v8 결정: AI 채팅/챗봇 비활성 (코드는 보존, 진입점만 차단 — 후순위 분류).
 // 이 화면은 v3에서 그대로 넘어와 채팅 UI를 갖고 있으므로 플래그로 가린다.
 // 다시 켜려면 true 로만 바꾸면 된다 — 코드는 지우지 않았다.
 const AI_CHAT_ENABLED = false;
@@ -429,7 +429,7 @@ export default function MeetingClient({ code }: { code: string }) {
         : [...state.places.slice(0, 3).map((p) => `${p.name} 좋아요!`), "아무데나 좋아요 👍", "다른 종류는 없어요?"]
       : [];
 
-  // 하단 5탭 내비게이션(v7-bottomnav, 64px)이 이 화면에도 항상 떠 있어야
+  // 하단 5탭 내비게이션(v8-bottomnav, 64px)이 이 화면에도 항상 떠 있어야
   // 확정 후 홈으로 곧장 돌아갈 수 있다. 방장 컨트롤 바(leaderbar)가 있으면
   // 그 위에 쌓이므로 여백을 그만큼 더 확보한다.
   const showLeaderbar = isLeader && !viewingPast;
@@ -521,7 +521,7 @@ export default function MeetingClient({ code }: { code: string }) {
         <div className="map">
           {/* 홈과 동일한 지도 조작 — 참가자가 2명 이상 위치를 넣었을 때만 의미가 있다 */}
           {!mapFallback && located.length > 0 && (
-            <div className="v7-maplayer">
+            <div className="v8-maplayer">
               <div className="seg2">
                 <button className={mapView === "me" ? "on" : ""} onClick={() => setMapView("me")}>내 위치 보기</button>
                 <button className={mapView === "all" ? "on" : ""} onClick={() => setMapView("all")}>전체 위치 보기</button>
@@ -592,7 +592,7 @@ export default function MeetingClient({ code }: { code: string }) {
             </div>
           )}
           {!mapFallback && state.winnerRegion && (
-            <div className="v7-mapnote">
+            <div className="v8-mapnote">
               📍 중간 추천 지역: <b>{state.winnerRegion.name}</b> · {state.winnerRegion.reason}
               {routes.length > 0 && !routes.every((r) => r.real) && (
                 <span className="faint">{" · "}점선은 직선 근사(경로 API 미응답)</span>
@@ -626,7 +626,7 @@ export default function MeetingClient({ code }: { code: string }) {
                   autoComplete="off"
                 />
                 {originSuggests !== null && (
-                  <div className="v7-ac">
+                  <div className="v8-ac">
                     {originSuggests.length === 0 ? (
                       <div className="empty">검색 결과가 없어요.</div>
                     ) : (
@@ -708,7 +708,7 @@ export default function MeetingClient({ code }: { code: string }) {
                       const n = regionTally[r.id] ?? 0;
                       const mine = myRegionVote === r.id;
                       return (
-                        <div key={r.id} className="v7-voterow">
+                        <div key={r.id} className="v8-voterow">
                           <div className="grow">
                             <div className="i-title">
                               {r.name}
@@ -721,7 +721,7 @@ export default function MeetingClient({ code }: { code: string }) {
                             </div>
                           </div>
                           <button
-                            className={"v7-votepill" + (mine ? " voted" : "")}
+                            className={"v8-votepill" + (mine ? " voted" : "")}
                             disabled={busy || !me}
                             onClick={() =>
                               act(
@@ -805,7 +805,7 @@ export default function MeetingClient({ code }: { code: string }) {
                   </div>
                 )
               ) : (
-                // v7: 채팅 대신 실제 투표 — 서버에 집계되고 전원에게 실시간 반영된다
+                // v8: 채팅 대신 실제 투표 — 서버에 집계되고 전원에게 실시간 반영된다
                 <div className="stack" style={{ gap: 8 }}>
                   {(state.aiPhase === "region" ? state.regions : state.places).length === 0 && (
                     <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>아직 후보가 없어요.</p>
@@ -815,7 +815,7 @@ export default function MeetingClient({ code }: { code: string }) {
                         const n = regionTally[r.id] ?? 0;
                         const mine = myRegionVote === r.id;
                         return (
-                          <div key={r.id} className="v7-voterow">
+                          <div key={r.id} className="v8-voterow">
                             <div className="grow">
                               <div className="i-title">
                                 {r.name}
@@ -826,7 +826,7 @@ export default function MeetingClient({ code }: { code: string }) {
                               <div className="i-sub"><b>{n}표</b> · 최대 {r.maxMin}분 · 편차 {r.devMin}분</div>
                             </div>
                             <button
-                              className={"v7-votepill" + (mine ? " voted" : "")}
+                              className={"v8-votepill" + (mine ? " voted" : "")}
                               disabled={busy || !me}
                               onClick={() =>
                                 act(
@@ -844,7 +844,7 @@ export default function MeetingClient({ code }: { code: string }) {
                         const n = placeTally[p.id] ?? 0;
                         const mine = myPlaceVote === p.id;
                         return (
-                          <div key={p.id} className="v7-voterow">
+                          <div key={p.id} className="v8-voterow">
                             <div className="grow">
                               <div className="i-title">
                                 {p.emoji} {p.name}
@@ -858,7 +858,7 @@ export default function MeetingClient({ code }: { code: string }) {
                               </div>
                             </div>
                             <button
-                              className={"v7-votepill" + (mine ? " voted" : "")}
+                              className={"v8-votepill" + (mine ? " voted" : "")}
                               disabled={busy || !me}
                               onClick={() =>
                                 act(
@@ -884,7 +884,7 @@ export default function MeetingClient({ code }: { code: string }) {
             {/* 참가자별 이동시간 + 경로 상세 (시안1·2) */}
             {destRegion && <TravelTimes state={state} dest={destRegion} onOpen={setRouteFor} />}
 
-            {/* 채팅 패널 — v7에서는 비활성 */}
+            {/* 채팅 패널 — v8에서는 비활성 */}
             {AI_CHAT_ENABLED && (
             <div className="card stack" style={{ gap: 10 }}>
               <div className="between">
@@ -1092,7 +1092,7 @@ export default function MeetingClient({ code }: { code: string }) {
                 disabled={busy}
                 title="출발지·거점 투표 화면으로 돌아갑니다"
                 onClick={() =>
-                  // v7은 거점 투표가 메인 화면에 있으므로 뒤로가기는 항상 메인이다.
+                  // v8은 거점 투표가 메인 화면에 있으므로 뒤로가기는 항상 메인이다.
                   // (AI 모드에서는 기존대로 거점 논의만 다시 연다)
                   AI_CHAT_ENABLED && state.aiPhase === "place"
                     ? act({ action: "reopen", participantId: me?.id, target: "region" }, "거점부터 다시 정해요")
@@ -1296,7 +1296,7 @@ function PastStepView({ step, state }: { step: 0 | 1 | 2; state: MeetingState })
         ) : (
           <div className="stack" style={{ gap: 8 }}>
             {state.regions.map((r) => (
-              <div key={r.id} className="v7-voterow">
+              <div key={r.id} className="v8-voterow">
                 <div className="grow">
                   <div className="i-title">
                     {r.name}
@@ -1324,7 +1324,7 @@ function PastStepView({ step, state }: { step: 0 | 1 | 2; state: MeetingState })
         ) : (
           <div className="stack" style={{ gap: 8 }}>
             {state.places.map((p) => (
-              <div key={p.id} className="v7-voterow">
+              <div key={p.id} className="v8-voterow">
                 <div className="grow">
                   <div className="i-title">
                     {p.emoji} {p.name}

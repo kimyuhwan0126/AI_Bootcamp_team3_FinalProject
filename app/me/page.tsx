@@ -1,18 +1,18 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────
-// v7 내정보 탭 — 목업의 마이페이지 (저장 위치 · 이동수단 · 스케줄)
+// v8 내정보 탭 — 목업의 마이페이지 (저장 위치 · 이동수단 · 스케줄)
 //  저장 위치/이동수단은 localStorage에 보관되어 다음 모임에 재사용.
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
-import BottomNav from "../components/v7/BottomNav";
-import V7Header from "../components/v7/V7Header";
-import { IcPin, IcWalk, IcTransit, IcCar, IcRefresh, IcLogout, IcPerson } from "../components/v7/Icons";
-import LoginSheet from "../components/v7/LoginSheet";
-import { useSession } from "../components/v7/useSession";
+import BottomNav from "../components/v8/BottomNav";
+import V8Header from "../components/v8/V8Header";
+import { IcPin, IcWalk, IcTransit, IcCar, IcRefresh, IcLogout, IcPerson } from "../components/v8/Icons";
+import LoginSheet from "../components/v8/LoginSheet";
+import { useSession } from "../components/v8/useSession";
 import { logout, sessionLabel } from "@/lib/session";
 
-const PROFILE_KEY = "moimer:v7:profile";
+const PROFILE_KEY = "moimer:v8:profile";
 
 interface Profile {
   savedPlaces: string[];
@@ -50,8 +50,8 @@ export default function MePage() {
   }
 
   return (
-    <main className="device v7-page">
-      <V7Header />
+    <main className="device v8-page">
+      <V8Header />
 
       <div className="row" style={{ padding: "6px 16px 14px", gap: 10 }}>
         <div style={{ width: 42, height: 42, borderRadius: "50%", background: "var(--ac-soft)", color: "var(--ac-deep)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -77,13 +77,13 @@ export default function MePage() {
 
       <LoginSheet open={loginOpen} onClose={() => setLoginOpen(false)} />
 
-      <div className="v7-mycard">
+      <div className="v8-mycard">
         <div className="t"><IcPin />내 저장 위치</div>
         <div className="d">자주 가는 출발지를 미리 등록해두면, 모임을 만들 때 바로 불러와요.</div>
-        <div className="v7-tags">
+        <div className="v8-tags">
           {profile.savedPlaces.length === 0 && <span className="faint" style={{ fontSize: 11 }}>아직 저장된 위치가 없어요.</span>}
           {profile.savedPlaces.map((p) => (
-            <button key={p} className="v7-tag" onClick={() => save({ ...profile, savedPlaces: profile.savedPlaces.filter((x) => x !== p) })}>
+            <button key={p} className="v8-tag" onClick={() => save({ ...profile, savedPlaces: profile.savedPlaces.filter((x) => x !== p) })}>
               {p} ✕
             </button>
           ))}
@@ -94,22 +94,22 @@ export default function MePage() {
         </div>
       </div>
 
-      <div className="v7-mycard">
+      <div className="v8-mycard">
         <div className="t"><IcWalk />애용 이동수단</div>
         <div className="d">새로 만드는 모임에 이 이동수단이 기본으로 적용돼요.</div>
-        <div className="v7-trans">
+        <div className="v8-trans">
           <button className={profile.transport === "transit" ? "on" : ""} onClick={() => save({ ...profile, transport: "transit" })}><IcTransit />대중교통</button>
           <button className={profile.transport === "car" ? "on" : ""} onClick={() => save({ ...profile, transport: "car" })}><IcCar />차량</button>
         </div>
       </div>
 
-      <div className="v7-mycard">
+      <div className="v8-mycard">
         <div className="t"><IcRefresh />스케줄 가져오기</div>
         <div className="d">구글 캘린더에서 일정을 가져와 모임 조율에 활용하는 기능 — 팀 결정에 따라 후순위로 분류되어 다음 단계에서 연결돼요.</div>
         <button className="btn ghost sm" disabled>구글 캘린더에서 가져오기 (준비 중)</button>
       </div>
 
-      <div className="v7-mycard">
+      <div className="v8-mycard">
         <div className="t">계정</div>
         {ready && session ? (
           <>

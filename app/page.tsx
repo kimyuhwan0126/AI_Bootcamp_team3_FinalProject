@@ -1,24 +1,24 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────
-// v7 홈 (비회원 메인) — 피그마/목업 moimer_mockup_v7.html 기준
+// v8 홈 (비회원 메인) — v8 클릭 프로토타입 기준
 //  검색(자동완성) → 출발지 칩(최대 8) → 중간지점 추천(공평 스코어)
 //  → 카카오맵 표시 → 주변 카페/음식점/술집/교통 리스트
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import KakaoMap, { MapPin, MapRoute, MapCandidate, pinColor } from "./components/KakaoMap";
-import BottomNav from "./components/v7/BottomNav";
-import V7Header from "./components/v7/V7Header";
-import Splash from "./components/v7/Splash";
-import StepIcons from "./components/v7/StepIcons";
-import { IcSearch, IcPlus } from "./components/v7/Icons";
+import BottomNav from "./components/v8/BottomNav";
+import V8Header from "./components/v8/V8Header";
+import Splash from "./components/v8/Splash";
+import StepIcons from "./components/v8/StepIcons";
+import { IcSearch, IcPlus } from "./components/v8/Icons";
 import { recommendRegions, arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
 import type { Participant, RegionCandidate } from "@/lib/types";
 import type { GeoSuggest } from "./api/geocode/route";
 import type { NearbyItem } from "./api/places/route";
 import type { MeetingState } from "@/lib/types";
 import { loginAsKakao } from "@/lib/session";
-import { useSession } from "./components/v7/useSession";
+import { useSession } from "./components/v8/useSession";
 import { getIdentities, setActive, type Identity } from "@/lib/identity";
 
 // localStorage 에 저장된 내 모임 코드들
@@ -61,7 +61,7 @@ function thumbFor(path: string): string {
   return "🍽️";
 }
 
-const ORIGINS_KEY = "moimer:v7:origins";
+const ORIGINS_KEY = "moimer:v8:origins";
 const CATS: { key: string; label: string }[] = [
   { key: "all", label: "전체" },
   { key: "cafe", label: "카페" },
@@ -112,7 +112,7 @@ export default function Home() {
       /* 무시 */
     }
     try {
-      const p = JSON.parse(localStorage.getItem("moimer:v7:profile") || "null");
+      const p = JSON.parse(localStorage.getItem("moimer:v8:profile") || "null");
       if (p?.transport) setDefaultTransport(p.transport as Transport);
     } catch {
       /* 무시 */
@@ -546,9 +546,9 @@ export default function Home() {
   const editingOrigin = editing ? origins.find((o) => o.id === editing) ?? null : null;
 
   return (
-    <main className="device v7-page">
+    <main className="device v8-page">
       <Splash />
-      <V7Header />
+      <V8Header />
 
       {loginErr && (
         <div
@@ -572,8 +572,8 @@ export default function Home() {
 
       {/* 모임 선택 — 목업의 "협성대 브레인스파크 모임 ▾" 바 */}
       {myMeetings.length > 0 && (
-        <div className="v7-searchwrap" style={{ marginBottom: 6, position: "relative" }}>
-          <button className="v7-meetbar" onClick={() => setMeetOpen((v) => !v)} aria-expanded={meetOpen}>
+        <div className="v8-searchwrap" style={{ marginBottom: 6, position: "relative" }}>
+          <button className="v8-meetbar" onClick={() => setMeetOpen((v) => !v)} aria-expanded={meetOpen}>
             {selectedMeeting ? (
               <>
                 <b>{selectedMeeting.name.replace(/\s*모임$/, "")}</b>
@@ -586,7 +586,7 @@ export default function Home() {
           </button>
 
           {meetOpen && (
-            <div className="v7-meetmenu">
+            <div className="v8-meetmenu">
               {myMeetings.map((m) => (
                 <button
                   key={m.code}
@@ -613,8 +613,8 @@ export default function Home() {
           검색 결과를 누르면 곧바로 출발지로 추가되고(+선택→확인 이중 클릭 없이),
           이어서 이동수단 선택 시트가 열린다. */}
       {!selectedMeeting && (
-      <div className="v7-searchwrap">
-        <div className="v7-search">
+      <div className="v8-searchwrap">
+        <div className="v8-search">
           <IcSearch />
           <input
             value={query}
@@ -624,7 +624,7 @@ export default function Home() {
           />
         </div>
         {suggests !== null && (
-          <div className="v7-ac">
+          <div className="v8-ac">
             {suggests.length === 0 ? (
               <div className="empty">검색 결과가 없어요.</div>
             ) : (
@@ -641,7 +641,7 @@ export default function Home() {
       )}
 
       {/* 출발지 칩 — 모임 모드면 참여자(읽기 전용), 아니면 내가 넣은 출발지(편집 가능) */}
-      <div className="v7-chips">
+      <div className="v8-chips">
         {selectedMeeting
           ? activeOrigins.map((o, i) => {
               const p = selectedMeeting.participants.find((x) => x.id === o.id);
@@ -652,7 +652,7 @@ export default function Home() {
               // 테두리로 돌린다(지도 경로선과 매칭을 잃지 않도록).
               // 누르면 이 출발지의 경로만 지도에서 진하게 강조된다(다시 누르면 해제).
               return (
-                <button key={o.id} className="v7-chip" onClick={() => toggleFocus(o.id)} aria-pressed={focused} title="눌러서 이 경로만 강조해서 보기">
+                <button key={o.id} className="v8-chip" onClick={() => toggleFocus(o.id)} aria-pressed={focused} title="눌러서 이 경로만 강조해서 보기">
                   <div
                     className="c-dot"
                     style={{
@@ -672,7 +672,7 @@ export default function Home() {
           : origins.map((o, i) => {
               const focused = focusOriginId === o.id;
               return (
-                <div key={o.id} className="v7-chip">
+                <div key={o.id} className="v8-chip">
                   <button
                     className="c-dot"
                     style={{
@@ -707,15 +707,15 @@ export default function Home() {
             })}
         {!selectedMeeting && origins.length < 8 && (
           <button
-            className="v7-chip-add"
+            className="v8-chip-add"
             title="검색해서 출발지를 추가하세요"
-            onClick={() => (document.querySelector(".v7-search input") as HTMLInputElement | null)?.focus()}
+            onClick={() => (document.querySelector(".v8-search input") as HTMLInputElement | null)?.focus()}
           >
             <IcPlus />
           </button>
         )}
       </div>
-      <div className="v7-maxhint">
+      <div className="v8-maxhint">
         {selectedMeeting
           ? `${selectedMeeting.name} · 참여자 ${activeOrigins.length}명의 출발지예요.`
           : origins.length >= 8
@@ -724,8 +724,8 @@ export default function Home() {
       </div>
 
       {/* 지도 */}
-      <div className="v7-mapwrap">
-        <div className="v7-maplayer">
+      <div className="v8-mapwrap">
+        <div className="v8-maplayer">
           {/* 기준 선택은 비회원 탐색 전용 — 모임 후보는 서버가 계산한다 */}
           {!selectedMeeting && (
             <div className="seg2">
@@ -762,7 +762,7 @@ export default function Home() {
           )}
         </div>
         {activeOrigins.length === 0 ? (
-          <div className="v7-mapempty">
+          <div className="v8-mapempty">
             {selectedMeeting ? "아직 출발지를 입력한 참여자가 없어요" : "아직 출발지가 없어요"}
             <small>
               {selectedMeeting
@@ -771,7 +771,7 @@ export default function Home() {
             </small>
           </div>
         ) : mapFail ? (
-          <div className="v7-mapempty">
+          <div className="v8-mapempty">
             지도를 불러오지 못했어요
             <small>
               카카오 JS 키(NEXT_PUBLIC_KAKAO_JS_KEY) 설정 후 표시됩니다
@@ -796,14 +796,14 @@ export default function Home() {
         )}
         {selectedMeeting ? (
           selectedMeeting.winnerRegion ? (
-            <div className="v7-mapnote">
+            <div className="v8-mapnote">
               📍 중간 추천 지역: <b>{selectedMeeting.winnerRegion.name}</b> · {selectedMeeting.winnerRegion.reason}
             </div>
           ) : null
         ) : midLoading ? (
-          <div className="v7-mapnote">실 이동시간(ODsay/TMAP)으로 계산 중…</div>
+          <div className="v8-mapnote">실 이동시간(ODsay/TMAP)으로 계산 중…</div>
         ) : midpoint ? (
-          <div className="v7-mapnote">
+          <div className="v8-mapnote">
             📍 중간 추천 지역: <b>{midpoint.name}</b> · {midpoint.reason}
             {criteria === "time" && (
               <span className="faint">
@@ -850,7 +850,7 @@ export default function Home() {
               {/* 후보 리스트 */}
               <div className="stack" style={{ gap: 8 }}>
                 {votePool.length === 0 ? (
-                  <div className="v7-empty">
+                  <div className="v8-empty">
                     {votePhase === 0
                       ? selectedMeeting.participants.every((p) => p.lat == null)
                         ? "참여자들이 출발지를 등록하면 거점 후보가 만들어져요."
@@ -862,7 +862,7 @@ export default function Home() {
                     const n = tallyOf(r.id);
                     const mine = myVote === r.id;
                     return (
-                      <div key={r.id} className="v7-voterow">
+                      <div key={r.id} className="v8-voterow">
                         <div className="i-thumb" style={{ width: 38, height: 38, borderRadius: 999, background: "var(--ac-soft)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>🚉</div>
                         <div className="grow">
                           <div className="i-title">{r.name}</div>
@@ -872,7 +872,7 @@ export default function Home() {
                           </div>
                         </div>
                         <button
-                          className={"v7-votepill" + (mine ? " voted" : "")}
+                          className={"v8-votepill" + (mine ? " voted" : "")}
                           disabled={voteBusy || !voterId}
                           onClick={() => meetAct({ action: "vote", participantId: voterId, target: "region", candidateId: r.id })}
                         >
@@ -886,7 +886,7 @@ export default function Home() {
                     const n = tallyOf(p.id);
                     const mine = myVote === p.id;
                     return (
-                      <div key={p.id} className="v7-voterow">
+                      <div key={p.id} className="v8-voterow">
                         <div className="i-thumb" style={{ width: 38, height: 38, borderRadius: 10, background: "var(--ac-soft)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{p.emoji || "🍽️"}</div>
                         <div className="grow">
                           <div className="i-title">
@@ -899,7 +899,7 @@ export default function Home() {
                           </div>
                         </div>
                         <button
-                          className={"v7-votepill" + (mine ? " voted" : "")}
+                          className={"v8-votepill" + (mine ? " voted" : "")}
                           disabled={voteBusy || !voterId}
                           onClick={() => meetAct({ action: "vote", participantId: voterId, target: "place", candidateId: p.id })}
                         >
@@ -912,7 +912,7 @@ export default function Home() {
               </div>
 
               {votePool.length > 0 && (
-                <p className="v7-hint" style={{ padding: "0 4px", textAlign: "left" }}>
+                <p className="v8-hint" style={{ padding: "0 4px", textAlign: "left" }}>
                   방장은 투표가 다 안 끝나도 확정할 수 있어요.
                   {topCandidate && Object.keys(voteBox).length > 0 ? ` 현재 최다득표: ${topCandidate.name}` : ""}
                 </p>
@@ -1015,18 +1015,18 @@ export default function Home() {
       {/* 카테고리 탭 + 주변 리스트 — 비회원(직접 입력) 탐색 모드 전용 */}
       {!selectedMeeting && (
       <>
-      <div className="v7-cats">
+      <div className="v8-cats">
         {CATS.map((c) => (
-          <button key={c.key} className={"v7-cat" + (cat === c.key ? " on" : "")} onClick={() => setCat(c.key)}>
+          <button key={c.key} className={"v8-cat" + (cat === c.key ? " on" : "")} onClick={() => setCat(c.key)}>
             {c.label}
           </button>
         ))}
       </div>
-      <div className="v7-list">
+      <div className="v8-list">
         {activeOrigins.length < 2 ? (
-          <div className="v7-empty">출발지를 2개 이상 추가하면 중간지점 주변 정보를 보여드려요.</div>
+          <div className="v8-empty">출발지를 2개 이상 추가하면 중간지점 주변 정보를 보여드려요.</div>
         ) : nearby.length === 0 ? (
-          <div className="v7-empty">주변에서 결과를 찾지 못했어요.</div>
+          <div className="v8-empty">주변에서 결과를 찾지 못했어요.</div>
         ) : (
           nearby.map((p) => {
             const inner = (
@@ -1043,9 +1043,9 @@ export default function Home() {
             );
             const key = `${p.name}${p.distanceM}`;
             return p.url ? (
-              <a key={key} className="v7-item" href={p.url} target="_blank" rel="noreferrer">{inner}</a>
+              <a key={key} className="v8-item" href={p.url} target="_blank" rel="noreferrer">{inner}</a>
             ) : (
-              <div key={key} className="v7-item">{inner}</div>
+              <div key={key} className="v8-item">{inner}</div>
             );
           })
         )}
@@ -1055,11 +1055,11 @@ export default function Home() {
 
       {/* 출발지 편집 시트 — 칩 아이콘 클릭 시 */}
       {editingOrigin && (
-        <div className="v7-overlay" onClick={() => setEditing(null)}>
-          <div className="v7-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="v8-overlay" onClick={() => setEditing(null)}>
+          <div className="v8-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <h2>{editingOrigin.name}</h2>
             <p className="m-sub">이 출발지의 이동수단을 골라주세요. 중간지점 계산에 반영돼요.</p>
-            <div className="v7-trans">
+            <div className="v8-trans">
               {TRANSPORTS.map((t) => (
                 <button
                   key={t.key}

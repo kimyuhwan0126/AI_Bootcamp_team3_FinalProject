@@ -1,14 +1,14 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────
-// v7 모임 탭 — 모임 목록 + 생성/참여 모달 (v3 /api/meeting 재사용)
+// v8 모임 탭 — 모임 목록 + 생성/참여/생성완료 모달 (/api/meeting)
 //  생성 완료 시 초대 URL 자동 생성 + 클립보드 복사 (회의록 결정)
 // ─────────────────────────────────────────────────────────────
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import BottomNav from "../components/v7/BottomNav";
-import V7Header from "../components/v7/V7Header";
-import { IcSearch, IcPeople } from "../components/v7/Icons";
+import BottomNav from "../components/v8/BottomNav";
+import V8Header from "../components/v8/V8Header";
+import { IcSearch, IcPeople } from "../components/v8/Icons";
 import { addIdentity } from "@/lib/identity";
 import type { MeetingState } from "@/lib/types";
 
@@ -138,29 +138,29 @@ function MeetingsInner() {
   const done = shown.filter((m) => m.stage === "result");
 
   return (
-    <main className="device v7-page">
-      <V7Header />
+    <main className="device v8-page">
+      <V8Header />
       <div style={{ padding: "4px 16px 10px" }}>
         <button className="btn" onClick={() => setModal("create")}>
           <span style={{ width: 16, height: 16, display: "inline-flex" }}><IcPeople /></span> 새 모임 만들기
         </button>
       </div>
-      <div className="v7-searchwrap">
-        <div className="v7-search">
+      <div className="v8-searchwrap">
+        <div className="v8-search">
           <IcSearch />
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="모임 이름으로 검색" />
         </div>
       </div>
 
       <div className="label" style={{ padding: "6px 16px 4px" }}>최근 등록 모임</div>
-      <div className="v7-list" style={{ paddingBottom: 4 }}>
+      <div className="v8-list" style={{ paddingBottom: 4 }}>
         {ongoing.length === 0 ? (
-          <div className="v7-empty">진행 중인 모임이 없어요. 새 모임을 만들어보세요.</div>
+          <div className="v8-empty">진행 중인 모임이 없어요. 새 모임을 만들어보세요.</div>
         ) : (
           ongoing.map((m) => {
             const s = STAGE_LABEL[m.stage] || STAGE_LABEL.main;
             return (
-              <button key={m.code} className="v7-item" style={{ cursor: "pointer", font: "inherit", textAlign: "left" }} onClick={() => router.push(`/m/${m.code}`)}>
+              <button key={m.code} className="v8-item" style={{ cursor: "pointer", font: "inherit", textAlign: "left" }} onClick={() => router.push(`/m/${m.code}`)}>
                 <div className="grow">
                   <div className="i-title">{m.name}</div>
                   <div className="i-sub" style={s.on ? { color: "var(--ac)", fontWeight: 800 } : undefined}>
@@ -175,12 +175,12 @@ function MeetingsInner() {
       </div>
 
       <div className="label" style={{ padding: "10px 16px 4px" }}>이전 모임</div>
-      <div className="v7-list">
+      <div className="v8-list">
         {done.length === 0 ? (
-          <div className="v7-empty">아직 결정된 모임이 없어요.</div>
+          <div className="v8-empty">아직 결정된 모임이 없어요.</div>
         ) : (
           done.map((m) => (
-            <button key={m.code} className="v7-item" style={{ cursor: "pointer", font: "inherit", textAlign: "left" }} onClick={() => router.push(`/m/${m.code}`)}>
+            <button key={m.code} className="v8-item" style={{ cursor: "pointer", font: "inherit", textAlign: "left" }} onClick={() => router.push(`/m/${m.code}`)}>
               <div className="grow">
                 <div className="i-title">{m.name}</div>
                 <div className="i-sub">확정 완료{m.winnerPlace ? ` · ${m.winnerPlace.name}` : ""}</div>
@@ -193,8 +193,8 @@ function MeetingsInner() {
 
       {/* 생성 모달 */}
       {modal === "create" && (
-        <div className="v7-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
-          <div className="v7-modal stack" style={{ gap: 12 }}>
+        <div className="v8-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
+          <div className="v8-modal stack" style={{ gap: 12 }}>
             <div>
               <h2>새 모임 만들기</h2>
               <p className="m-sub">생성하면 초대 URL이 만들어지고 클립보드에 복사돼요.</p>
@@ -236,8 +236,8 @@ function MeetingsInner() {
 
       {/* 참여 모달 */}
       {modal === "join" && (
-        <div className="v7-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
-          <div className="v7-modal stack" style={{ gap: 12 }}>
+        <div className="v8-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
+          <div className="v8-modal stack" style={{ gap: 12 }}>
             <div>
               <h2>모임 참여하기</h2>
               <p className="m-sub">초대 URL을 붙여넣거나, 코드+패스워드로 참여할 수 있어요.</p>

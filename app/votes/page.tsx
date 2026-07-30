@@ -1,15 +1,15 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────
-// v7 투표함 — 내 모임의 실제 거점/가게 후보로 투표
+// v8 투표함 — 내 모임의 실제 거점/가게 후보로 투표
 //  후보는 /api/meeting 의 regions·places 를 그대로 사용한다.
 //  (하드코딩 목업 제거 — 모임이 없으면 빈 상태를 보여준다)
 //  투표는 서버(/api/meeting action=vote)에 집계되어 모임 상세 화면과 공유된다.
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from "react";
-import BottomNav from "../components/v7/BottomNav";
-import V7Header from "../components/v7/V7Header";
-import StepIcons from "../components/v7/StepIcons";
+import BottomNav from "../components/v8/BottomNav";
+import V8Header from "../components/v8/V8Header";
+import StepIcons from "../components/v8/StepIcons";
 import { getActive } from "@/lib/identity";
 import type { MeetingState } from "@/lib/types";
 
@@ -105,9 +105,9 @@ export default function VotesPage() {
   // 모임이 없을 때 — 목업으로 채우지 않고 안내
   if (!loading && meetings.length === 0) {
     return (
-      <main className="device v7-page">
-        <V7Header />
-        <div className="v7-empty" style={{ marginTop: 40 }}>
+      <main className="device v8-page">
+        <V8Header />
+        <div className="v8-empty" style={{ marginTop: 40 }}>
           아직 참여 중인 모임이 없어요.
           <div className="faint" style={{ fontSize: 11, marginTop: 6 }}>
             모임 탭에서 모임을 만들거나 참여하면 이곳에서 투표할 수 있어요.
@@ -119,20 +119,20 @@ export default function VotesPage() {
   }
 
   return (
-    <main className="device v7-page">
-      <V7Header />
+    <main className="device v8-page">
+      <V8Header />
 
       {loading ? (
-        <div className="v7-empty" style={{ marginTop: 40 }}>불러오는 중…</div>
+        <div className="v8-empty" style={{ marginTop: 40 }}>불러오는 중…</div>
       ) : (
         <>
           {/* 모임이 여러 개면 전환 */}
           {meetings.length > 1 && (
-            <div className="v7-cats" style={{ paddingTop: 8 }}>
+            <div className="v8-cats" style={{ paddingTop: 8 }}>
               {meetings.map((mm, i) => (
                 <button
                   key={mm.code}
-                  className={"v7-cat" + (i === selected ? " on" : "")}
+                  className={"v8-cat" + (i === selected ? " on" : "")}
                   onClick={() => {
                     setSelected(i);
                     setTab("region");
@@ -144,7 +144,7 @@ export default function VotesPage() {
             </div>
           )}
 
-          <div className="v7-votetabs">
+          <div className="v8-votetabs">
             <button className={tab === "region" ? "on" : ""} onClick={() => setTab("region")}>지역 투표</button>
             <button className={tab === "shop" ? "on" : ""} onClick={() => setTab("shop")}>가게 투표</button>
           </div>
@@ -171,9 +171,9 @@ export default function VotesPage() {
 
           {tab === "region" ? (
             <>
-              <div className="v7-list" style={{ paddingTop: 8 }}>
+              <div className="v8-list" style={{ paddingTop: 8 }}>
                 {regions.length === 0 ? (
-                  <div className="v7-empty">
+                  <div className="v8-empty">
                     아직 거점 후보가 없어요.
                     <div className="faint" style={{ fontSize: 11, marginTop: 6 }}>
                       참여자들이 출발지를 입력하면 후보가 만들어져요.
@@ -181,7 +181,7 @@ export default function VotesPage() {
                   </div>
                 ) : (
                   regions.map((r) => (
-                    <div key={r.id} className="v7-voterow">
+                    <div key={r.id} className="v8-voterow">
                       <div className="grow">
                         <div className="i-title">
                           {r.name}
@@ -195,7 +195,7 @@ export default function VotesPage() {
                       </div>
                       {!decided && (
                         <button
-                          className={"v7-votepill" + (regionVote === r.id ? " voted" : "")}
+                          className={"v8-votepill" + (regionVote === r.id ? " voted" : "")}
                           disabled={busy || !myId}
                           onClick={() => vote("region", r.id)}
                         >
@@ -207,7 +207,7 @@ export default function VotesPage() {
                 )}
               </div>
               {regions.length > 0 && !decided && (
-                <div className="v7-hint">
+                <div className="v8-hint">
                   방장이 모임 화면에서 확정하면 다음 단계로 넘어가요.
                   {regionVote ? ` 현재 내 선택: ${regions.find((r) => r.id === regionVote)?.name}` : ""}
                 </div>
@@ -215,9 +215,9 @@ export default function VotesPage() {
             </>
           ) : (
             <>
-              <div className="v7-list" style={{ paddingTop: 8 }}>
+              <div className="v8-list" style={{ paddingTop: 8 }}>
                 {places.length === 0 ? (
-                  <div className="v7-empty">
+                  <div className="v8-empty">
                     아직 가게 후보가 없어요.
                     <div className="faint" style={{ fontSize: 11, marginTop: 6 }}>
                       거점이 확정되면 그 주변 가게가 후보로 올라와요.
@@ -225,7 +225,7 @@ export default function VotesPage() {
                   </div>
                 ) : (
                   places.map((s) => (
-                    <div key={s.id} className="v7-voterow">
+                    <div key={s.id} className="v8-voterow">
                       <div
                         className="i-thumb"
                         style={{ width: 38, height: 38, borderRadius: 10, background: "var(--ac-soft)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}
@@ -246,7 +246,7 @@ export default function VotesPage() {
                       </div>
                       {!decided && (
                         <button
-                          className={"v7-votepill" + (shopVote === s.id ? " voted" : "")}
+                          className={"v8-votepill" + (shopVote === s.id ? " voted" : "")}
                           disabled={busy || !myId}
                           onClick={() => vote("place", s.id)}
                         >
@@ -258,12 +258,12 @@ export default function VotesPage() {
                 )}
               </div>
               {places.length > 0 && !decided && (
-                <div className="v7-hint">방장이 모임 화면에서 확정하면 최종 확정으로 넘어가요.</div>
+                <div className="v8-hint">방장이 모임 화면에서 확정하면 최종 확정으로 넘어가요.</div>
               )}
             </>
           )}
 
-          <div className="v7-hint" style={{ marginTop: "auto", paddingBottom: 10 }}>
+          <div className="v8-hint" style={{ marginTop: "auto", paddingBottom: 10 }}>
             {myId
               ? "표는 서버에 집계돼 모임 상세 화면과 실시간으로 공유돼요. 확정은 방장이 모임 화면에서 합니다."
               : "이 기기로 참여한 모임이 아니라 투표할 수 없어요. 모임 화면에서 먼저 참가해주세요."}

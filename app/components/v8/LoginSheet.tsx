@@ -50,8 +50,8 @@ export default function LoginSheet({
   }
 
   return (
-    <div className="v7-overlay" onClick={onClose}>
-      <div className="v7-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="로그인">
+    <div className="v8-overlay" onClick={onClose}>
+      <div className="v8-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="로그인">
         <h2>로그인</h2>
         <p className="m-sub">가입하지 않아도, 이름만 있으면 모임을 만들고 투표할 수 있어요.</p>
 

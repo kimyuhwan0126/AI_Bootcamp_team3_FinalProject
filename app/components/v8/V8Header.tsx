@@ -11,7 +11,7 @@ import { logout } from "@/lib/session";
 
 // 로고 + 모임 생성(+) · 로그인/계정(→) · 알림(종)
 // 회의록 1차: 상단 메뉴는 로그인 필요 영역 → 비회원이 누르면 로그인 유도
-export default function V7Header() {
+export default function V8Header() {
   const router = useRouter();
   const { session, ready } = useSession();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -29,18 +29,18 @@ export default function V7Header() {
   }
 
   return (
-    <header className="v7-header">
-      <Link href="/" className="v7-logo" style={{ textDecoration: "none", color: "inherit" }}>
+    <header className="v8-header">
+      <Link href="/" className="v8-logo" style={{ textDecoration: "none", color: "inherit" }}>
         MOIMER
       </Link>
-      <div className="v7-hbtns">
-        <button className="v7-iconbtn" title="모임 생성" onClick={() => guard("/meetings?open=create")}>
+      <div className="v8-hbtns">
+        <button className="v8-iconbtn" title="모임 생성" onClick={() => guard("/meetings?open=create")}>
           <IcPlus />
         </button>
 
         {/* 모임 참가 — 로그인 상태는 배지로만 표시(목업과 동일).
             로그인 자체는 내정보 탭, 또는 비회원이 이 버튼을 누를 때 뜨는 시트에서 한다. */}
-        <button className="v7-iconbtn" title="모임 참가" onClick={() => guard("/meetings?open=join")}>
+        <button className="v8-iconbtn" title="모임 참가" onClick={() => guard("/meetings?open=join")}>
           <IcLogin />
           {ready && session ? (
             <span className="s-badge" aria-label={session.kind === "kakao" ? "카카오 로그인됨" : "임시 로그인됨"}>
@@ -49,12 +49,12 @@ export default function V7Header() {
           ) : null}
         </button>
 
-        <button className="v7-iconbtn" title="알림" onClick={() => setNotifOpen((v) => !v)}>
+        <button className="v8-iconbtn" title="알림" onClick={() => setNotifOpen((v) => !v)}>
           <IcBell />
         </button>
 
         {notifOpen && (
-          <div className="v7-notif">
+          <div className="v8-notif">
             <h3>알림</h3>
             {/* 실제 알림 발송은 미연동 — 가짜 알림을 채우지 않고 빈 상태를 보여준다 */}
             <p className="faint" style={{ fontSize: 11, margin: "2px 0 0", lineHeight: 1.6 }}>

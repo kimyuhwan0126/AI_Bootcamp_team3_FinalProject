@@ -1,4 +1,4 @@
-// v7 공용 아이콘 — 목업(moimer_mockup_v7.html)과 동일한 라인 스타일
+// v8 공용 아이콘 — v8 클릭 프로토타입과 동일한 라인 스타일
 export function IcHome() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="M4 11l8-7 8 7v9a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1v-9z" /></svg>;
 }
