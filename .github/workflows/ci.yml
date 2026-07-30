@@ -46,7 +46,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # .nvmrc 하나로 CI 와 팀원 로컬의 Node 버전을 맞춘다
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
