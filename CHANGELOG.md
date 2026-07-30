@@ -105,17 +105,21 @@ CEO 결정: 새 저장소에서 팀원들과 각자 브랜치로 **동시에** �
 
 | 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
 |---|---|---|---|---|
-| 2026-07-30 | Claude(AI) | `app/m/[code]/sections/` (신규 7파일) | `MeetingClient.tsx` 1,802줄 → **1,352줄**. VoteList · ChatPanel(+PrefChips) · AddRegionModal · ManualPickModal · TravelTimes · PastStepView · AddParticipant 분리 | 한 파일을 두 사람이 만지면 매일 충돌난다. 채팅 담당·투표 담당이 각자 파일을 갖게 하는 것이 목적 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/sections/` (신규 **15파일**) | `MeetingClient.tsx` 1,802줄 → **906줄** (-50%). 화면 조각을 전부 분리: VoteList · ChatPanel(+PrefChips) · AddRegionModal · ManualPickModal · LeaderBar · MeetingHeader · MapPanel · OriginForm · ParticipantList · ResultSection · ReserveModal · TravelTimes · PastStepView · AddParticipant · DebugWidget | 한 파일을 두 사람이 만지면 매일 충돌난다. 담당자가 만질 파일이 전부 400줄 미만이 되는 것이 목적 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/MeetingClient.tsx` | 거점 투표 행이 STAGE MAIN 과 STAGE CHAT 에 **복제**돼 있던 것을 `VoteList` 하나로 통합 | 한쪽만 고치면 같은 투표가 화면마다 다르게 보이는 사고가 날 자리였다 |
 | 2026-07-30 | Claude(AI) | `lib/calendar.ts` (신규) | 구글 캘린더·.ics 내보내기 함수 3종을 화면에서 분리 | 순수 함수라 화면에 있을 이유가 없다 |
 | 2026-07-30 | Claude(AI) | `app/m/[code]/CLAUDE.md` (신규) | 파일별 소유자 · 이 화면에서 났던 사고 4건 · 데이터 흐름 | 이 화면이 프로젝트에서 제일 충돌이 잦다. 폴더별 짧은 지시가 전역 지시보다 잘 지켜진다 |
 | 2026-07-30 | Claude(AI) | `tests/modals.spec.ts` (신규) | 후보 등록·수동 확정 모달을 실제로 열고 눌러 확인 | 모달은 조건부 렌더라 prop 하나만 어긋나도 빌드·타입검사를 통과한 채 조용히 안 열린다 |
 
-**남은 일**: `MeetingClient.tsx` 가 아직 1,352줄(목표 400줄). STAGE MAIN/RESULT 와
-방장 바를 더 뗄 수 있으나 공유 상태가 많아 컨텍스트 도입이 필요하다.
-**하려면 팀원 합류 전에** — 합류 후엔 모든 브랜치가 충돌한다.
+**남은 일**: `MeetingClient.tsx` 906줄 = 로직 572 + 조립 334. 화면 조각은 전부
+나왔으므로 **소유권 분리는 끝났다**(팀원이 만질 파일은 모두 400줄 미만).
+더 줄이려면 로직을 `useMeeting()` 훅으로 빼면 되지만, 그 코드는 어차피 통합
+세션 소유라 충돌 방지 효과가 없다 — 급하지 않다.
 
 **검증**: `npx tsc --noEmit` · `npm run build` · 스모크 4/4 통과
 (플래그 off/on 양쪽 확인 — on 에서는 투표 UI 가 채팅으로 대체되므로 모달 테스트는 skip).
+스모크를 **결과 화면까지** 확장했고, 출발지 등록은 API 가 아니라 **UI 를 직접 조작**한다.
+지도·방장 바는 리팩터 영향이 커서 스크린샷으로 눈 검사까지 했다.
 추천 결과가 리팩터 전과 **동일**함을 실서버로 확인
 (강남역+홍대입구 → `종로3가(48/13)` → `시청(48/19)` → `사당(55/26)`, 순서·문구 그대로).
 스모크의 실효성은 `MeetingClient` 를 일부러 깨뜨려 확인 — 빌드는 통과하고 스모크만 실패했다.

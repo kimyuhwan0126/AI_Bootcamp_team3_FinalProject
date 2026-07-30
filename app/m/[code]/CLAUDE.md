@@ -7,19 +7,31 @@
 
 ```
 page.tsx              서버 컴포넌트 (code 만 넘긴다)
-MeetingClient.tsx     상태 + 폴링 + 액션 + 전체 레이아웃      🔒 통합 세션
+MeetingClient.tsx     상태 + 폴링 + 액션 + 조립           🔒 통합 세션
 sections/
-  VoteList.tsx        거점/가게 투표 목록                    👤 투표·추천 담당
-  AddRegionModal.tsx  ＋ 다른 후보 등록 (지도 검색)           👤 투표·추천 담당
-  ManualPickModal.tsx ✍ 다른 후보로 정하기 (방장)            👤 투표·추천 담당
-  ChatPanel.tsx       AI 채팅 패널 (+ PrefChips)             👤 채팅·AI 파싱 담당
+  VoteList.tsx        거점/가게 투표 목록                 👤 투표·추천 담당
+  AddRegionModal.tsx  ＋ 다른 후보 등록 (지도 검색)        👤 투표·추천 담당
+  ManualPickModal.tsx ✍ 다른 후보로 정하기 (방장)         👤 투표·추천 담당
+  LeaderBar.tsx       방장 컨트롤 바 (확정·되돌리기)       👤 투표·추천 담당
+  ChatPanel.tsx       AI 채팅 패널 (+ PrefChips)          👤 채팅·AI 파싱 담당
+  MeetingHeader.tsx   헤더 · 신원 전환 · 스텝
+  MapPanel.tsx        지도 (+ SDK 실패 시 폴백)
+  OriginForm.tsx      출발지 등록 폼
+  ParticipantList.tsx 참여자 현황
+  ResultSection.tsx   최종 결과 화면
+  ReserveModal.tsx    예약·선입금(모의)
   TravelTimes.tsx     참가자별 이동시간 목록
   PastStepView.tsx    지난 단계 조회(읽기전용)
   AddParticipant.tsx  참가자 추가 모달(테스트용)
+  DebugWidget.tsx     개발 빌드 전용 빠른 채우기
 ```
 
 **자기 담당 파일만 만진다.** `MeetingClient.tsx` 를 고쳐야 할 것 같으면
 멈추고 PR 설명에 이유를 쓴다 — 여기가 이 프로젝트에서 제일 충돌이 잦은 파일이다.
+
+> 화면 조각은 전부 `sections/` 로 나왔고, `MeetingClient.tsx` 에 남은 것은
+> **상태·폴링·액션(로직 572줄) + 조립(334줄)** 이다. 새 UI 를 만들 때는
+> `sections/` 에 파일을 만들고 여기서 한 줄로 꽂는다.
 
 ## 이 화면에서 실제로 났던 사고 (반복 금지)
 
@@ -74,6 +86,9 @@ npm run verify        # tsc + build + 브라우저 스모크
 
 ## 남은 일
 
-`MeetingClient.tsx` 가 아직 **1,300줄대**다(목표 400줄). STAGE MAIN/RESULT 블록과
-방장 바를 더 떼어낼 수 있지만, 공유 상태가 많아 컨텍스트 도입이 필요하다 —
-팀원 합류 후에 하면 모든 브랜치가 충돌하므로 **하려면 합류 전에** 한다.
+`MeetingClient.tsx` 906줄. 화면 조각은 전부 `sections/` 로 나왔으므로
+**담당자별 소유권 분리는 끝났다** — 팀원이 만질 파일은 모두 400줄 미만이다.
+
+더 줄이려면 상태·폴링·액션(로직 572줄)을 `useMeeting()` 커스텀 훅으로 빼면 된다.
+다만 그 코드는 어차피 통합 세션 소유라 **충돌 방지 효과는 없다** — 순수하게
+읽기 편해지는 작업이라 급하지 않다. (팀원 합류 후에 해도 무방)

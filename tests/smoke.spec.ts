@@ -82,11 +82,8 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   });
   const memberId: string = joined.participantId;
 
-  await act(request, { action: "origin", code, participantId: leaderId, origin: "강남역", transport: "transit" });
+  // 참가자2 는 API 로, 방장은 아래에서 **화면을 직접 조작해** 등록한다
   await act(request, { action: "origin", code, participantId: memberId, origin: "홍대입구", transport: "transit" });
-
-  const regions = await act(request, { action: "regions", code });
-  expect(regions.regions.length, "거점 후보가 하나도 안 나왔다").toBeGreaterThan(0);
 
   // ── 2. 상세 화면이 실제로 렌더되는지 (여기서 화면 미렌더 버그가 잡힌다) ──
   const idents: Ident[] = [
@@ -95,6 +92,15 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   ];
   await loginAs(page, code, idents, leaderId);
   await page.goto(`/m/${code}`);
+
+  // ── 출발지 등록을 UI 로 (OriginForm) ──
+  //  발표 시연에서 사람이 실제로 하는 동작이라 API 가 아니라 화면으로 확인한다.
+  await page.getByPlaceholder("예: 강남역").fill("강남역");
+  await page.getByRole("button", { name: /출발지 등록|출발지 수정/ }).click();
+  await expect(page.getByText("출발지를 등록했어요")).toBeVisible();
+
+  const regions = await act(request, { action: "regions", code });
+  expect(regions.regions.length, "거점 후보가 하나도 안 나왔다").toBeGreaterThan(0);
 
   await expect(page.getByText("스모크 모임").first()).toBeVisible();
   await expect(page.getByText(`코드 ${code}`).first()).toBeVisible();
@@ -135,6 +141,24 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   // 확정 결과가 화면에도 반영되는지 (폴링 1.8초라 넉넉히 기다린다)
   await page.reload();
   await expect(page.getByText(topRegion).filter({ visible: true }).first()).toBeVisible();
+
+  // ── 5. 가게까지 확정 → 최종 결과 화면 ──
+  //  발표에서 마지막으로 보여주는 화면이라 여기까지 와야 데모 경로가 끝난다.
+  expect(afterConfirm.places?.length, "거점 확정 후 가게 후보가 안 만들어졌다").toBeGreaterThan(0);
+  const topPlace = afterConfirm.places[0];
+  await act(request, {
+    action: "confirmManual",
+    code,
+    participantId: leaderId,
+    target: "place",
+    id: topPlace.id,
+  });
+
+  await page.reload();
+  await expect(page.getByText("추천장소 확정")).toBeVisible();
+  await expect(page.getByText(topPlace.name).filter({ visible: true }).first()).toBeVisible();
+  // 부가기능(캘린더·링크 공유)까지 그려져야 결과 화면이 온전한 것
+  await expect(page.getByRole("button", { name: /Google 캘린더에 추가/ })).toBeVisible();
 
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });
