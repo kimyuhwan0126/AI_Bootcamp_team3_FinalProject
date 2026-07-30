@@ -38,3 +38,24 @@ export const supabaseKeyKind: "service_role" | "anon" | "none" = serviceKey
   : anonKey
   ? "anon"
   : "none";
+
+/**
+ * 앱이 실제로 접속을 시도하는 Supabase URL (진단용).
+ *
+ * `TypeError: fetch failed` 는 원인을 전혀 말해주지 않는다 — 오타든 끝의 슬래시든
+ * 값 뒤 공백이든 똑같이 그 한 줄만 나온다. 그래서 "앱이 무슨 주소로 갔는지"를
+ * 그대로 보여준다. 대시보드의 Project URL 과 글자 단위로 대조하면 끝난다.
+ * (카카오 KOE006 때 `kakaoRedirect` 를 노출한 것과 같은 이유)
+ *
+ * ⚠️ URL 은 비밀이 아니다(브라우저에도 내려가는 `NEXT_PUBLIC_` 값). 키는 절대 노출하지 않는다.
+ *
+ * 눈에 안 보이는 공백·개행이 진짜 범인인 경우가 많아 길이도 함께 준다 —
+ * `len !== trimmedLen` 이면 값 앞뒤에 공백이 붙어 있다는 뜻이다.
+ */
+export const supabaseUrlInfo = {
+  url,
+  len: url.length,
+  trimmedLen: url.trim().length,
+  endsWithSlash: url.endsWith("/"),
+  hasScheme: /^https?:\/\//.test(url),
+};
