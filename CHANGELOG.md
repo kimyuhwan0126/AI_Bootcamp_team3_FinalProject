@@ -38,7 +38,7 @@ CEO 결정: v8 클릭 프로토타입의 방향을 채택. 프로토타입의 �
 | 2026-07-30 | Claude(AI) | `README.md` | v8 기준으로 재작성 | 옛 `develop` 보일러플레이트(src/·zustand·room/[id])를 설명해 실제 코드와 달랐다 |
 | 2026-07-30 | Claude(AI) | `CLAUDE.md` | v8 실제 스택 기준으로 재작성 (Tailwind·shadcn·Gemini·src/ 기술 제거), 색상·데이터 계층 규칙 추가 | AI가 매 세션 처음 읽는 파일이 코드와 달라 잘못된 전제를 갖게 됐다 |
 | 2026-07-30 | Claude(AI) | `팀원_실행안내.md` | v8 기준 + Supabase 준비 절차(스키마 실행·키 3종·확인 방법) 추가 | 팀원이 DB 없이 시작해 데이터가 사라지는 혼란 방지 |
-| 2026-07-30 | Claude(AI) | `memory/status.md` | v8 상태로 갱신 | 진행 상황 인계 |
+| 2026-07-30 | Claude(AI) | `memory/status.md` | v8 상태로 갱신 → 이후 추천 알고리즘 현황·미착수 항목·이식 유실 버그 목록까지 인계 문서로 재작성 | 진행 상황 인계. 특히 "프로토타입이 고쳐둔 것이 실앱으로 이식되지 않은" 패턴이 반복돼 재발 방지 기록을 남김 |
 | 2026-07-30 | Claude(AI) | `app/globals.css`, `app/m/[code]/MeetingClient.tsx` | `.leaderbar` 를 sticky → **fixed** 로 변경 + 하단 여백 136→148px | 브라우저 검증에서 발견: sticky+bottom:64px 는 문서 끝까지 스크롤하면 바가 흐름 위치보다 64px 위로 올라앉아 마지막 카드를 덮었다(`✍ 다른 후보로 정하기` 가 31px 가려져 클릭 불가). 하단 5탭과 같은 fixed 방식으로 통일 |
 | 2026-07-30 | Claude(AI) | `lib/persistence.ts` | 참가자 조회 정렬을 `is_leader desc, joined_at asc, id asc` 로 완전 결정화 | joined_at 단독 정렬은 동순위가 가능하고(Postgres now()는 트랜잭션 시작 시각), 참가자 순서가 PIN_COLORS 색인이라 폴링마다 순서가 흔들리면 사람별 칩·핀 색이 계속 바뀐다 |
 | 2026-07-30 | Claude(AI) | `app/components/v8/LoginSheet.tsx` | 오버레이를 `createPortal(document.body)` 로 이동 | `.v8-header` 의 `backdrop-filter` 가 fixed 자손의 기준 박스를 헤더(높이 56px)로 바꿔, 로그인 모달 위쪽(제목·이름칸)이 화면 밖으로 잘렸다. `+` 버튼 → 로그인 시트에서 실제로 발생 |
