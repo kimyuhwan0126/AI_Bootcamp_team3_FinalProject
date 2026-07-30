@@ -186,6 +186,25 @@ export default function MeetingClient({ code }: { code: string }) {
     flash(`전원 의견 발화 · ${mode === "consensus" ? "합의" : "갈림"}`);
   }
 
+  // ── 내정보(프로필) 연결 — 애용 이동수단·저장 위치를 출발지 폼에 반영 ──
+  //  내정보 탭이 "새로 만드는 모임에 기본 적용" · "모임을 만들 때 바로 불러와요"
+  //  라고 약속하는데, 정작 이 폼이 프로필을 읽지 않아 반영되지 않았다 (CEO 보고).
+  const [savedPlaces, setSavedPlaces] = useState<string[]>([]);
+  const profileTransportRef = useRef<"transit" | "car" | null>(null);
+  useEffect(() => {
+    try {
+      const p: unknown = JSON.parse(localStorage.getItem("moimer:v8:profile") || "null");
+      if (p && typeof p === "object") {
+        const t = (p as { transport?: unknown }).transport;
+        if (t === "car" || t === "transit") profileTransportRef.current = t;
+        const sp = (p as { savedPlaces?: unknown }).savedPlaces;
+        if (Array.isArray(sp)) setSavedPlaces(sp.filter((x): x is string => typeof x === "string"));
+      }
+    } catch {
+      /* 프로필 없음/손상 — 기본값으로 진행 */
+    }
+  }, []);
+
   const meRow = useMemo(
     () => state?.participants.find((p) => p.id === me?.id),
     [state, me]
@@ -193,7 +212,13 @@ export default function MeetingClient({ code }: { code: string }) {
   useEffect(() => {
     if (meRow) {
       setOrigin(meRow.origin || "");
-      setTransport((meRow.transport as any) || "transit");
+      // 아직 출발지를 등록하기 전이면 서버 기본값(transit) 대신 내정보의
+      // 애용 이동수단을 기본으로 쓴다. 이미 등록했다면 서버 값이 진실이다.
+      if (!meRow.origin && profileTransportRef.current) {
+        setTransport(profileTransportRef.current);
+      } else {
+        setTransport(meRow.transport === "car" ? "car" : "transit");
+      }
     }
   }, [meRow?.id]);
 
@@ -231,6 +256,15 @@ export default function MeetingClient({ code }: { code: string }) {
     skipOriginSearchRef.current = true;
     setOrigin(s.name);
     setOriginCoord({ lat: s.lat, lng: s.lng });
+    setOriginSuggests(null);
+  }
+
+  // 내 저장 위치 칩 — 누르면 입력칸에 채워진다 ("등록" 버튼으로 확정하는 건 동일).
+  // 저장 위치는 텍스트뿐이라 좌표가 없다 → 서버가 등록 시 카카오 지오코딩으로 찾는다.
+  function pickSavedPlace(name: string) {
+    skipOriginSearchRef.current = true; // 채우자마자 자동완성이 다시 열리는 것 방지
+    setOrigin(name);
+    setOriginCoord(null);
     setOriginSuggests(null);
   }
 
@@ -711,6 +745,19 @@ export default function MeetingClient({ code }: { code: string }) {
                   </div>
                 )}
               </div>
+              {/* 내정보 탭에 저장해 둔 위치 — 누르면 입력칸에 바로 채워진다 */}
+              {savedPlaces.length > 0 && (
+                <div>
+                  <label className="label">내 저장 위치</label>
+                  <div className="v8-tags" style={{ marginBottom: 0 }}>
+                    {savedPlaces.map((n) => (
+                      <button key={n} type="button" className="v8-tag" onClick={() => pickSavedPlace(n)}>
+                        📍 {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="label">이동 수단</label>
                 <div className="seg">

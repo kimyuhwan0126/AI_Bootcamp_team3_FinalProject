@@ -47,6 +47,7 @@ CEO 결정: v8 클릭 프로토타입의 방향을 채택. 프로토타입의 �
 | 2026-07-30 | Claude(AI) | `app/api/status/route.ts` | `kakaoRedirect`(앱이 실제로 보내는 Redirect URI) 노출 | KOE006 진단용 — 콘솔 등록값과 글자 단위 대조가 가능해진다. URL이라 비밀 아님 |
 | 2026-07-30 | Claude(AI) | `app/components/v8/Icons.tsx` | 모임 참여 아이콘 화살표를 문 "안으로" 향하게 교체 | 밖으로 나가는 방향이면 탈퇴/로그아웃처럼 읽힌다 — 프로토타입·회의록에서 확정했던 방향인데 실앱만 반대로 남아 있었다 (CEO 지적) |
 | 2026-07-30 | Claude(AI) | `app/api/auth/kakao/route.ts` | `?debug=1` 진단 모드 추가 (dev 전용) — 카카오에 보내는 REST키 마스킹·redirectUri·인가 URL을 JSON으로 반환 | KOE006은 카카오 페이지에서 막혀 앱이 사유를 못 보여준다. "보낸 값"을 보여주면 콘솔 등록값과 대조해 원인을 찾을 수 있다 |
+| 2026-07-30 | Claude(AI) | `app/m/[code]/MeetingClient.tsx` | 내정보 프로필을 출발지 폼에 연결 — 저장 위치를 원터치 칩으로, 애용 이동수단을 기본값으로 | 내정보 탭이 "모임을 만들 때 바로 불러와요"·"새 모임에 기본 적용"이라 약속하는데 이 폼이 프로필을 읽지 않아 반영되지 않았다 (CEO 보고). 이미 등록된 출발지의 이동수단은 서버 값이 우선 |
 | 2026-07-30 | Claude(AI) | `app/api-live/page.tsx` | 진단 차단 시 안내를 실행 가능하게 보강 (`npm run dev` / `ENABLE_DEBUG=1` / `/api/status` 대안 제시) | 운영 빌드에서 `/api/diag` 가 403 인데 "개발 모드 전용"만 떠 다음 행동을 알 수 없었다 |
 
 검증: `npx tsc --noEmit` 통과 · `next build` 통과 · **실제 브라우저(Chromium)로 화면 구동 확인**
