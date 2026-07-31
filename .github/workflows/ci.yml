@@ -71,3 +71,53 @@ jobs:
           name: playwright-report-${{ matrix.name }}
           path: playwright-report/
           retention-days: 7
+
+  # ── CHANGELOG 기입 확인 ─────────────────────────────────────────
+  #  루트 CLAUDE.md §6: "파일을 바꿨으면 CHANGELOG.md 에 반드시 기입한다."
+  #  기억에 의존하면 바쁠 때 빠진다 — 빠진 채로 3주가 지나면 무엇을 왜 바꿨는지
+  #  아무도 복원할 수 없다. 그래서 기계가 확인한다.
+  #
+  #  코드·설정 변경만 대상이다. 문서만 고친 PR 은 통과시킨다(문서는 그 자체가 기록).
+  changelog:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CHANGELOG 기입 확인
+        run: |
+          set -euo pipefail
+          BASE="${{ github.base_ref }}"
+          git fetch origin "$BASE" --quiet
+          CHANGED=$(git diff --name-only "origin/$BASE...HEAD")
+
+          echo "── 이 PR 이 바꾼 파일 ──"
+          echo "$CHANGED"
+          echo
+
+          # 기록이 필요한 변경인가 (코드·설정)
+          NEEDS=$(echo "$CHANGED" | grep -E '^(app/|lib/|tests/|supabase/|\.github/|package\.json|package-lock\.json|tsconfig\.json|next\.config\.mjs|playwright\.config\.ts|\.nvmrc|\.eslintrc\.json|\.gitignore|\.env\.example)' || true)
+
+          if [ -z "$NEEDS" ]; then
+            echo "✅ 문서만 바뀐 PR — CHANGELOG 기입 생략 가능"
+            exit 0
+          fi
+
+          if echo "$CHANGED" | grep -qx 'CHANGELOG.md'; then
+            echo "✅ CHANGELOG.md 에 기입됨"
+            exit 0
+          fi
+
+          echo "❌ 코드·설정을 바꿨는데 CHANGELOG.md 에 기록이 없습니다."
+          echo
+          echo "기록이 필요한 변경:"
+          echo "$NEEDS" | sed 's/^/  /'
+          echo
+          echo "CHANGELOG.md 의 표에 한 줄 추가하세요:"
+          echo "  | 날짜 | 작업자 | 대상 파일 | 무엇을 바꿨나 | 왜 |"
+          echo
+          echo "(루트 CLAUDE.md §6 — 기록 없는 변경 금지)"
+          exit 1
