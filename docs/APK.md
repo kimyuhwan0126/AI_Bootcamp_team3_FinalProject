@@ -29,7 +29,7 @@
 
 1. vercel.com → New Project → GitHub 저장소 선택
 2. Environment Variables 에 `.env.local` 값들을 넣는다
-   (⚠️ `SUPABASE_SERVICE_ROLE_KEY` 는 **Production 만** 체크)
+   (⚠️ `DATABASE_URL` 은 **Production 만** 체크)
 3. 배포되면 `https://<프로젝트>.vercel.app` 이 나온다 — 이게 앱의 주소다
 
 브라우저(안드로이드 크롬)로 그 주소를 열어 **⋮ → 앱 설치**가 뜨면 PWA 요건 통과다.

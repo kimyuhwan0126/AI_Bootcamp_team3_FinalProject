@@ -1,13 +1,13 @@
 // ─────────────────────────────────────────────────────────────
 // store.ts — 데이터 계층
 //
-//  · Supabase 키가 있으면: Supabase(Postgres)에 영속 저장 (supabase/schema.sql)
+//  · DATABASE_URL 이 있으면: Neon(Postgres)에 영속 저장 (db/schema.sql)
 //  · 키가 없으면: 인메모리 (`npm run dev` 만으로 전체 플로우 시연 가능)
 //
 //  도메인 로직(누가 무엇을 바꿀 수 있는지, 단계 전환 규칙)은 Meeting 객체를
 //  그대로 만지는 방식을 유지하고, 읽기/쓰기만 persistence.ts 를 거친다.
 //
-//  ⚠️ Supabase 모드에서는 인메모리 캐시를 두지 않고 매 요청마다 DB에서 읽는다.
+//  ⚠️ DB(Neon) 모드에서는 인메모리 캐시를 두지 않고 매 요청마다 DB에서 읽는다.
 //     서버리스는 인스턴스가 여러 개라, 한 인스턴스가 캐시를 들고 있으면 다른
 //     인스턴스가 쓴 투표·출발지가 1.8초 폴링에 계속 안 보인다.
 // ─────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ import type {
   MeetingPrefs,
 } from "./types";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
-import { hasSupabase } from "./supabase";
+import { hasDb } from "./db";
 import {
   loadMeeting,
   meetingExists,
@@ -36,7 +36,7 @@ import {
 type Result = { ok: boolean; error?: string };
 
 // HMR/serverless 재로드에도 살아남도록 globalThis에 보관.
-// Supabase 미설정 시에는 이 Map 이 유일한 저장소가 된다.
+// DATABASE_URL 미설정 시에는 이 Map 이 유일한 저장소가 된다.
 const g = globalThis as unknown as {
   __moimer?: Map<string, Meeting>;
   __moimerAiBusy?: Map<string, boolean>;
@@ -51,13 +51,13 @@ if (!g.__moimerAiBusy) g.__moimerAiBusy = aiBusy;
 async function read(code: string): Promise<Meeting | undefined> {
   const key = (code ?? "").toUpperCase();
   if (!key) return undefined;
-  if (!hasSupabase) return memMeetings.get(key);
+  if (!hasDb) return memMeetings.get(key);
   return (await loadMeeting(key)) ?? undefined;
 }
 
 /** 모임 행(단계·후보·대화·선호·예약)을 저장. 인메모리 모드면 아무것도 안 한다. */
 async function write(m: Meeting): Promise<void> {
-  if (!hasSupabase) {
+  if (!hasDb) {
     memMeetings.set(m.code, m);
     return;
   }
@@ -65,7 +65,7 @@ async function write(m: Meeting): Promise<void> {
 }
 
 async function writeParticipant(m: Meeting, p: Participant): Promise<void> {
-  if (!hasSupabase) {
+  if (!hasDb) {
     memMeetings.set(m.code, m);
     return;
   }
@@ -78,7 +78,7 @@ async function genCode(): Promise<string> {
   for (let attempt = 0; attempt < 12; attempt++) {
     let c = "";
     for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random() * chars.length)];
-    const taken = hasSupabase ? await meetingExists(c) : memMeetings.has(c);
+    const taken = hasDb ? await meetingExists(c) : memMeetings.has(c);
     if (!taken) return c;
   }
   // 12번 연속 충돌은 사실상 불가능하지만, 무한 재귀로 서버를 멈추지는 않는다
@@ -138,7 +138,7 @@ export async function createMeeting(input: {
   };
   // 참가자 행이 모임 행을 참조하므로(FK) 모임을 먼저 넣는다
   await write(meeting);
-  if (hasSupabase) await upsertParticipants(code, [leader]);
+  if (hasDb) await upsertParticipants(code, [leader]);
   return { code, leaderId };
 }
 
@@ -417,7 +417,7 @@ export async function setParticipantStatus(input: {
 
 // ── 거점/가게 후보 투표 (1인 1표) ──────────────────────────────
 //  같은 후보를 다시 누르면 취소, 다른 후보를 누르면 표를 옮긴다.
-//  Supabase 모드에서는 votes 테이블의 PK(code,target,participant_id)가
+//  DB(Neon) 모드에서는 votes 테이블의 PK(code,target,participant_id)가
 //  1인 1표를 보장하므로, 여러 명이 동시에 눌러도 표가 유실되지 않는다.
 export async function castVote(input: {
   code: string;
@@ -438,7 +438,7 @@ export async function castVote(input: {
   const candidateId = input.candidateId;
   if (!candidateId || box[p.id] === candidateId) {
     delete box[p.id];
-    if (hasSupabase) await setVote(m.code, input.target, p.id, null);
+    if (hasDb) await setVote(m.code, input.target, p.id, null);
     else memMeetings.set(m.code, m);
     return { ok: true };
   }
@@ -448,7 +448,7 @@ export async function castVote(input: {
     return { ok: false, error: "해당 후보가 없어요." };
 
   box[p.id] = candidateId;
-  if (hasSupabase) await setVote(m.code, input.target, p.id, candidateId);
+  if (hasDb) await setVote(m.code, input.target, p.id, candidateId);
   else memMeetings.set(m.code, m);
   return { ok: true };
 }
@@ -654,4 +654,4 @@ export async function getState(code: string): Promise<MeetingState | null> {
   };
 }
 
-export const storeInfo = { backend: hasSupabase ? ("supabase" as const) : ("memory" as const) };
+export const storeInfo = { backend: hasDb ? ("neon" as const) : ("memory" as const) };
