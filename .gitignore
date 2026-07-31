@@ -21,6 +21,10 @@
 *.pem
 
 # debug
+#  ⚠️ lib/ai.ts 가 참가자들의 실제 대화를 logs/ai-trace.jsonl 에 기록한다.
+#     AI 채팅 플래그를 켜고 개발하면 이 파일이 생기는데, 공개 저장소라
+#     실수로 커밋되면 대화 내용이 그대로 공개된다.
+/logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
