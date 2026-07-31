@@ -50,7 +50,17 @@ export const dbConfigured = !!url;
  */
 function maskPassword(u: string): string {
   // postgres://user:password@host/db → postgres://user:***@host/db
-  return u.replace(/^([a-z+]+:\/\/[^:@/]+):[^@]*@/i, "$1:***@");
+  //
+  // ⚠️ 정규식 "스킴으로 시작할 때만 매칭" 방식은 금지 — 스킴이 빠진 값
+  // (`u:pw@h/db`, `psql 'postgresql://…'` 통째 복사)에서 매칭이 실패하면
+  // replace 가 원문을 그대로 돌려줘 비밀번호가 노출된다. 하필 그 경우가
+  // 접속 실패 → 진단 노출로 이어지는 바로 그 상황이다 (PR #15 리뷰에서 발견).
+  const at = u.lastIndexOf("@"); // 비밀번호에 @ 가 섞여도 마지막 @ 가 host 경계다
+  if (at < 0) return u; // 계정부가 없으면 가릴 것도 없다
+  const schemeEnd = u.indexOf("://");
+  const colon = u.indexOf(":", schemeEnd >= 0 ? schemeEnd + 3 : 0);
+  if (colon < 0 || colon > at) return u; // user 만 있고 비밀번호가 없는 형태
+  return `${u.slice(0, colon + 1)}***${u.slice(at)}`;
 }
 
 export const dbUrlInfo = {

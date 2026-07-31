@@ -56,6 +56,8 @@
 | 2026-07-31 | Claude(AI) | `.github/workflows/ci.yml` | changelog 잡 경로 패턴 `supabase/` → `db/` | 폴더명 변경 후에도 스키마 변경 PR 이 CHANGELOG 기입 검사를 받게 |
 | 2026-07-31 | Claude(AI) | `.env.example` | Supabase 3키 → `DATABASE_URL` 하나(서버 전용) | 환경변수 통일. 키 없으면 인메모리 폴백은 그대로 |
 | 2026-07-31 | Claude(AI) | `README.md`, `팀원_실행안내.md`, `docs/팀원_온보딩.md`, `docs/팀_개발환경.md`, `docs/노션_통합개발환경.md`, `docs/APK.md`, `CLAUDE.md`, `lib/CLAUDE.md`, `memory/status.md` | 스택·데이터 규칙·세팅 절차·소유권 표의 Supabase 서술을 Neon/`db/` 기준으로 정비. status.md §6 "멘토 확인 대기" → "팀 결정: Neon 확정", Neon 실접속은 **미검증** 으로 명기 | 문서가 코드와 어긋나면 다음 세션이 잘못된 전제로 시작한다(§4 에 기록된 실제 사고) |
+| 2026-07-31 | Claude(AI) | `lib/db.ts`, `app/api/status/route.ts` | `maskPassword` 를 정규식 매칭 → `lastIndexOf("@")` 경계 방식으로 재작성 + status 에 "마스킹 흔적 없으면 원문 대신 안내문" 안전벨트 | **PR #15 리뷰 지적(🔴)** — 스킴 없는 `DATABASE_URL`(psql 명령 통째 복사 등)은 정규식이 매칭 실패해 **비밀번호 원문이 `/api/status` 에 노출**됐다. 하필 그 경우가 진단이 잡으라던 상황이다. `@` 포함 비밀번호의 부분 노출(🟡)도 함께 해결 |
+| 2026-07-31 | Claude(AI) | `docs/팀원_온보딩.md` | 🆘 표에 "모임이 안 보이면 먼저 `/api/status` 의 `db.ready`" 행 추가 | PR #15 리뷰 지적(🟡) — 접속 실패가 "모임 없음"처럼 보여 코드 탓으로 오인하기 쉽다 |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.
