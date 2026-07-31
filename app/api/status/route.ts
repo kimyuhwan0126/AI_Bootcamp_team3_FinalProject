@@ -34,13 +34,16 @@ export async function GET() {
   // 않아서, 파일을 열어보지 않고는 오타인지 네트워크인지 알 수가 없다.
   // ⚠️ DATABASE_URL 에는 비밀번호가 들어 있으므로 masked(비밀번호 *** 처리)만 노출한다.
   if (dbConfigured && !dbStatus.ready) {
-    // 안전벨트: 계정부(@)가 있는데 마스킹 흔적(:***@)이 없으면 형식을 확신할 수
-    // 없다는 뜻이다 — 원문을 싣는 대신 힌트로만 안내한다 (비밀번호 노출 방지).
-    const looksCredentialed = dbUrlInfo.masked.includes("@");
-    dbStatus.url =
-      looksCredentialed && !dbUrlInfo.masked.includes(":***@")
-        ? "(형식을 알 수 없어 표시하지 않음 — 아래 힌트를 확인하세요)"
-        : dbUrlInfo.masked;
+    // 안전벨트: 스킴을 뗀 나머지에 콜론이나 @ 가 있는데 마스킹 흔적(:***@)이
+    // 없으면 형식을 확신할 수 없다는 뜻이다 — 원문 대신 안내문만 싣는다.
+    // "@ 가 있는가"로 판정하면 @ 앞에서 잘린 값(예: 개행 때문에
+    // `postgresql://user:비밀번호` 까지만 읽힌 경우)이 평문으로 새어 나간다.
+    const bare = dbUrlInfo.masked.replace(/^[a-z+]+:\/\//i, "");
+    const suspicious =
+      (bare.includes(":") || bare.includes("@")) && !dbUrlInfo.masked.includes(":***@");
+    dbStatus.url = suspicious
+      ? "(형식을 알 수 없어 표시하지 않음 — 아래 힌트를 확인하세요)"
+      : dbUrlInfo.masked;
     const hints: string[] = [];
     if (!dbUrlInfo.hasScheme) hints.push("postgresql:// 로 시작하지 않습니다");
     if (!dbUrlInfo.hasCredentials) hints.push("사용자:비밀번호@ 부분이 없습니다");
