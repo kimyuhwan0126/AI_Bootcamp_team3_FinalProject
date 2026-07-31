@@ -10,6 +10,7 @@
 //   total = Σ(weight_i × score_i) / Σ(weight_i)
 // ─────────────────────────────────────────────────────────────
 import { fairness } from "./fairness";
+import { weather } from "./weather";
 import type { Coord, ScoreContext, ScoredCandidate, Scorer, TravelEntry, WeatherSnapshot } from "./types";
 
 // ── 등록소 ─────────────────────────────────────────────────────
@@ -17,7 +18,8 @@ import type { Coord, ScoreContext, ScoredCandidate, Scorer, TravelEntry, Weather
 const REGISTRY: Scorer[] = [
   fairness,
   // commercial,  // 상권 밀집도 — 담당: (미정)
-  // weather,     // 날씨 조건   — 담당: (미정)
+  weather, // 날씨 조건 — FLAGS.weather(NEXT_PUBLIC_FF_WEATHER) 꺼져 있으면 비활성
+
   // personal,    // 개인별 선호 — 담당: (미정)
 ];
 

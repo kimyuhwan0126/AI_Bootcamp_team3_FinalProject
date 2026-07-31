@@ -59,6 +59,9 @@
 | 2026-07-31 | Claude(AI) | `lib/db.ts`, `app/api/status/route.ts` | `maskPassword` 를 정규식 매칭 → `lastIndexOf("@")` 경계 방식으로 재작성 + status 에 "마스킹 흔적 없으면 원문 대신 안내문" 안전벨트 | **PR #15 리뷰 지적(🔴)** — 스킴 없는 `DATABASE_URL`(psql 명령 통째 복사 등)은 정규식이 매칭 실패해 **비밀번호 원문이 `/api/status` 에 노출**됐다. 하필 그 경우가 진단이 잡으라던 상황이다. `@` 포함 비밀번호의 부분 노출(🟡)도 함께 해결 |
 | 2026-07-31 | Claude(AI) | `docs/팀원_온보딩.md` | 🆘 표에 "모임이 안 보이면 먼저 `/api/status` 의 `db.ready`" 행 추가 | PR #15 리뷰 지적(🟡) — 접속 실패가 "모임 없음"처럼 보여 코드 탓으로 오인하기 쉽다 |
 | 2026-07-31 | Claude(AI) | `app/api/status/route.ts` | 안전벨트 판정 반전 — "@ 가 있는가" → "스킴 뗀 나머지에 콜론/@ 가 있는데 마스킹 흔적(`:***@`)이 없는가" | **PR #15 재검토 지적(🔴 잔여 엣지)** — `@` 앞에서 잘린 값(개행으로 `postgresql://user:비밀번호` 까지만 읽힌 경우)이 기존 판정을 통과해 평문 노출됐다. 의심스러우면 안 싣는 쪽으로 넘어진다 |
+| 2026-07-31 | Claude(AI) | `lib/weather.ts` (신규) | Open-Meteo 날씨 조회 래퍼 — 키 불필요 무료 API, 실패·예보범위(16일) 밖이면 계절 평균 기반 결정적 mock(`real: false`), 실 성공값만 캐시, 실패 후 60초 재시도 쿨다운 | 날씨 스코어러의 데이터 소스. mock 폴백·성공값만 캐시 규칙(CLAUDE.md §4·5) 준수 |
+| 2026-07-31 | Claude(AI) | `lib/scoring/weather.ts` (신규) | 날씨 스코어러 — 강수확률·체감온도(쾌적 18~23°C)를 `worstOf` 로 조합, `ctx.weather` 없으면 후보 좌표로 직접 조회(후보별 지역 날씨 차이 반영), mock 은 "(계절 추정)" 으로 표시 | 추천 알고리즘 보강(status.md §3-2). `FLAGS.weather` 꺼져 있으면 비활성이라 기본 동작 불변 |
+| 2026-07-31 | Claude(AI) | `lib/scoring/index.ts` | `REGISTRY` 에 `weather` 등록 (import 1줄 + 배열 1줄 — 허용된 예외 범위) | 스코어러 등록소 규칙(scoring/CLAUDE.md) |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.
