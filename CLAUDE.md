@@ -58,7 +58,7 @@ memory/         작업 상태·인계 메모
 ```
 
 **하위 폴더의 `CLAUDE.md` 가 있으면 그쪽이 더 구체적이다** — 그 폴더에서 작업할 땐
-먼저 읽는다: `lib/scoring/CLAUDE.md`, `app/m/[code]/CLAUDE.md`.
+먼저 읽는다: `lib/CLAUDE.md`, `lib/scoring/CLAUDE.md`, `app/m/[code]/CLAUDE.md`.
 
 자세한 파일별 역할은 `README.md` §구조 참고.
 
@@ -168,6 +168,7 @@ memory/         작업 상태·인계 메모
 
 | 문서 | 내용 |
 |---|---|
+| `docs/팀원_온보딩.md` | ⭐ **팀원이 처음 읽는 문서** — 세팅부터 매일 지킬 규칙까지 |
 | `README.md` | 구조 · 외부 API · 데이터 저장 · 디버깅 도구 |
 | `팀원_실행안내.md` | 설치 · 키 설정 · Supabase 준비 · 작업 시 주의점 |
 | `docs/팀_개발환경.md` | 브랜치 · 저장소 설정 · 파일 소유권 (팀 동시 개발) |
