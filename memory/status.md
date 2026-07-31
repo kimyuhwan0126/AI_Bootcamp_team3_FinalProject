@@ -18,30 +18,63 @@ _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · �
 
 **팀원 4명이 동시에 개발할 수 있는 상태.** 기능 개발은 이제부터다.
 
+**✅ Vercel 프로덕션 배포 + Neon 실접속까지 실측 완료** (2026-07-31, 릴리스 `f0a4235`).
+
+프로덕션 `/api/status` 실측값:
+
 ```
-/api/status → kakao·kakaoJs·odsay·tmap 전부 true · store "neon"(DATABASE_URL 있을 때) / "memory"(없을 때)
+store "neon" · db.ready true · kakao true · kakaoJs true · tmap true
+kakaoRedirect https://<배포주소>/api/auth/kakao/callback
+odsay false ← 의도된 상태 (API 교체 예정이라 키를 뺐다. 추정값 폴백으로 동작)
+ai.ok false ← 의도된 상태 (Ollama 1순위가 팀 내부망 주소라 Vercel 에서 접근 불가.
+              `NEXT_PUBLIC_FF_AI_CHAT=0` 이라 화면 영향 없음)
 ```
 
 > DB 는 **Supabase → Neon 으로 이관됐다** (`lib/db.ts` · `db/schema.sql` · `DATABASE_URL`).
-> 키 없는 인메모리 경로는 verify(브라우저 스모크 포함)로 실측했다.
-> **Neon 실접속(`db.ready: true`)은 미검증** — 팀 `DATABASE_URL` 을 받은 뒤
-> `db/schema.sql` 실행 → `/api/status` 로 확인해야 한다. (Supabase 시절 실접속은 검증돼 있었다)
+> 로컬·프로덕션 **양쪽에서 `db.ready: true` 실측**했고, 키 없는 인메모리 경로도
+> verify(브라우저 스모크 포함)로 확인돼 있다. Neon 스키마는 콘솔에서 3테이블
+> (`meetings`·`participants`·`votes`) 생성 확인.
+
+**카카오 로그인 — 프로덕션에서 동작 확인 완료.** 배포 도메인이 생기거나 바뀌면
+**두 곳을 같이** 고쳐야 한다. 한쪽만 하면 조용히 실패한다:
+
+| 고칠 곳 | 값 | 빠뜨리면 |
+|---|---|---|
+| Vercel 환경변수 `KAKAO_REDIRECT_URI` | `https://<도메인>/api/auth/kakao/callback` | 기본값(`lib/env.ts:8`)인 **localhost 로 튕긴다** — 배포 화면에서 로그인했는데 내 PC 로 돌아온다 |
+| developers.kakao.com → 카카오 로그인 → Redirect URI | 위와 **글자 단위로 같은 값** | 카카오가 **KOE006**(앱 관리자 설정 오류)으로 거부 |
+
+둘 다 실제로 겪었다. 카카오 콘솔 등록은 즉시 반영되지만 환경변수 변경은 **재배포가 필요**하다.
+로컬용 `localhost` 항목은 지우지 말 것(여러 개 등록 가능).
 
 | 구성 | 상태 |
 |---|---|
 | 브랜치 | `main`(배포) ← `develop`(통합) ← `feat/*` |
 | 브랜치 보호 | `protect-main-develop` **Active** — 직접 푸시 거부 확인함 |
-| CI | `verify (flags-off)` · `verify (flags-on)` — PR 6건에서 실제 통과 |
-| 릴리스 | `v0.1.0` (발표일 `v1.0.0`) |
+| CI | `verify (flags-off)` · `verify (flags-on)` · `changelog` — PR 9건에서 실제 통과 |
+| 릴리스 | `v0.1.0` (발표일 `v1.0.0`) · main `f0a4235` |
+| 배포 | **Vercel 연결됨** — Production ← `main`, Preview ← 그 외 브랜치(PR 마다 자동) |
 | 로컬 | 키 없이 `npm run dev` 로 전체 플로우 동작 |
 
-**아직 안 한 것**: 팀원 초대 · `CODEOWNERS` 아이디 채우기 · Vercel 연결 · APK 리허설
+**아직 안 한 것**: 팀원 초대 · `CODEOWNERS` 아이디 채우기 · APK 리허설
+
+⚠️ **Preview 배포도 같은 실 DB(production 브랜치)를 쓴다** — 환경변수를 전 환경에 넣었기 때문.
+팀원이 Preview 에서 만든 테스트 모임이 실 DB 에 남으므로, 발표 전 `meetings` 정리가 필요하다.
+분리하려면 Neon dev 브랜치를 파서 Preview 전용 `DATABASE_URL` 을 넣으면 된다(미실시).
 
 **진행 중 (2026-07-31, 통합 세션)**:
-- PR #15(Neon 이관) — **머지 완료** (develop `3e6112c`, Squash)
-- PR #14(날씨 스코어러) — 리뷰 🟢(비차단 🟡 4건) · #15 머지로 생긴 CHANGELOG 충돌 해결·push 완료 · **머지는 CEO 승인 대기**
-- PR #17(CODEOWNERS 경로 `/lib/db.ts`·`/db/` 갱신) — 열림, 리뷰·머지 대기
-- Neon 실접속 검증 — **`DATABASE_URL` 수령 대기** (받으면 §1 의 미검증 문구를 실측으로 교체할 것)
+- PR #15(Neon 이관) · #17(CODEOWNERS 경로) — 머지 완료 → **#18 릴리스로 main 반영 완료**
+- PR #14(날씨 스코어러) — 리뷰 🟢(비차단 🟡 4건) · CHANGELOG 충돌 해결·push 완료 ·
+  **CEO 지시로 보류 중** (머지하지 않음)
+- ODsay → 다른 대중교통 API 로 **교체 예정** — 브랜치 세션 몫. 후보 조사 단계에서
+  "Vercel 서버리스에서 쓸 수 있는가(IP 화이트리스트 불필요)"와 시외 구간 커버를 기준으로 볼 것
+
+### 릴리스 리뷰가 남긴 후속 작업 (별도 PR — 급하지 않음)
+
+1. **DB 접속 실패 시 500 응답에 에러 본문이 없다** — 원인 파악이 불가능하다.
+   `DATABASE_URL` 이 있으면 인메모리 폴백을 타지 않는 설계라(의도됨), 접속이 끊기면
+   모임 생성이 빈 본문 500 으로 죽는다. 본문에 사유를 채우는 게 좋다
+2. `postcss` high 2건 — `next@14` 전이 의존성. 이번 릴리스가 만든 회귀가 아니다
+   (이전 main 에도 있었다). 해소하려면 next 16 승격(breaking)이라 **발표 전 보류 권장**
 
 ---
 
@@ -140,7 +173,9 @@ PR #14 의 날씨 스코어러는 `ctx.weather ?? getWeather(ctx.hub, ctx.when)`
 ### 3-5. 그 외
 
 - [ ] 모임 비밀번호 **평문** — `db/schema.sql` 의 `TODO(BE)`
-- [ ] Vercel 배포. AI 를 되살릴 땐 `void runAiTurn()` 을 `waitUntil()` 로 감쌀 것
+- [x] Vercel 배포 — **완료**(`f0a4235`). ⚠️ AI 를 되살릴 땐 `void runAiTurn()` 을
+      `waitUntil()` 로 감쌀 것. 그리고 Ollama 1순위가 팀 내부망 주소라
+      **Vercel 에서는 닿지 않는다** — 배포에서 AI 를 쓰려면 외부 접근 가능한 주소가 필요하다
 - [ ] 폴링(`MeetingClient.tsx:118` `setInterval(load, 1800)`) → Realtime 검토
 - [ ] 알림(헤더 벨, `V8Header.tsx:52`) 실데이터 연결 — 현재 빈 상태
 - [ ] 구글 캘린더 **가져오기** (`lib/calendar.ts` 는 내보내기만)
