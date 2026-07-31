@@ -33,6 +33,9 @@ npm run dev                    # http://localhost:3000
 | 3 | [`팀원_실행안내.md`](팀원_실행안내.md) | 실제 API 키 · Supabase 붙이기 |
 | 4 | [`CLAUDE.md`](CLAUDE.md) | AI 개발 규칙 (Claude Code · Ollama 공통) |
 
+> ⚠️ **시작하기 전에 커밋 이메일부터 가리세요.** 이 저장소는 **공개**라 커밋에 박힌
+> 이메일을 누구나 수집할 수 있습니다 — 온보딩 문서 **0단계**에 방법이 있습니다.
+
 **핵심 규칙 3줄**
 
 1. **자기 담당 파일만 만진다.** 공용 파일(`lib/types.ts` · `lib/store.ts` · `app/globals.css` …)을
