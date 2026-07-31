@@ -1,8 +1,8 @@
-# supabase/migrations — DB 변경은 여기에 파일을 "추가"한다
+# db/migrations — DB 변경은 여기에 파일을 "추가"한다
 
 ## 왜 이 폴더가 있나
 
-`supabase/schema.sql` 하나만 있으면, 세 사람이 각자 컬럼을 추가할 때
+`db/schema.sql` 하나만 있으면, 세 사람이 각자 컬럼을 추가할 때
 **전부 같은 파일 같은 근처를 고쳐서 머지할 때마다 충돌**난다.
 번호 붙은 파일을 하나씩 추가하는 방식이면 충돌이 물리적으로 안 난다.
 
@@ -18,13 +18,13 @@
    create index if not exists idx_x on y(z);
    ```
 4. PR 설명에 **"이 마이그레이션을 돌려야 함"** 이라고 적는다. 자동 적용은 없다 —
-   각자 Supabase 대시보드 → SQL Editor 에 붙여넣고 Run 한다.
+   각자 Neon 콘솔 → SQL Editor 에 붙여넣고 Run 한다.
 5. 통합 담당자가 머지할 때 `schema.sql` 에 같은 내용을 반영한다
    (새로 프로젝트를 파는 사람이 파일 하나만 돌리면 되게 유지하기 위함).
 
 ## 적용 방법
 
-Supabase 대시보드 → **SQL Editor** → 파일 내용을 붙여넣고 **Run**.
+Neon 콘솔 → **SQL Editor** → 파일 내용을 붙여넣고 **Run**.
 처음 세팅하는 사람은 `../schema.sql` 하나만 돌리면 최신 상태가 된다.
 
 ## 목록

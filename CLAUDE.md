@@ -13,7 +13,7 @@
 ## 0. 프로젝트 한 줄 요약
 
 각자의 출발지에서 **가장 공평한 중간 지점**을 찾아, **거점 투표 → 가게 투표 → 최종 확정**으로
-모임 장소를 정하는 Next.js + Supabase 서비스. 모이머의 핵심은 **장소 결정**이다.
+모임 장소를 정하는 Next.js + Neon(Postgres) 서비스. 모이머의 핵심은 **장소 결정**이다.
 
 앱 안 채팅(AI 파실리테이터)은 **플래그로 켜는 선택 기능**이다 — 기본은 꺼져 있고,
 대화는 카카오톡에서 한다는 전제로 화면이 설계돼 있다. 채팅 코드를 "범위 외"로
@@ -26,7 +26,7 @@
 - **FE**: Next.js 14 App Router + TypeScript + **순수 CSS**(`app/globals.css`)
   - Tailwind·shadcn/ui·Zustand·React Query 는 **쓰지 않는다.** 상태는 `useState` + 1.8초 폴링.
   - 디자인 토큰은 `app/globals.css` 최상단 `:root` CSS 변수. 컴포넌트 클래스는 `v8-*` 접두사.
-- **BE**: Next.js API Routes (`app/api/*`) + **Supabase**(PostgreSQL)
+- **BE**: Next.js API Routes (`app/api/*`) + **Neon**(PostgreSQL, `@neondatabase/serverless`)
 - **지도**: 카카오맵 JS SDK (`app/components/KakaoMap.tsx`)
 - **이동시간·경로**: ODsay(대중교통) · TMAP(자차)
 - **장소·지오코딩**: 카카오 로컬 API
@@ -36,7 +36,7 @@
   `NEXT_PUBLIC_FF_AI_CHAT=1` 로 켠다 (`lib/flags.ts`). 코드는 지우지 않는다.
 - **추천 점수**: `lib/scoring/` — 스코어러 플러그인. 자세히는 `lib/scoring/CLAUDE.md`
 - **테스트**: Playwright 스모크 (`tests/smoke.spec.ts`) — `npm run verify`
-- **배포**: Vercel + Supabase. 안드로이드는 **PWA + TWA(Bubblewrap) → APK** (`docs/APK.md`).
+- **배포**: Vercel + Neon. 안드로이드는 **PWA + TWA(Bubblewrap) → APK** (`docs/APK.md`).
   Flutter/React Native 재작성은 하지 않는다 — 지금 웹앱이 그대로 앱이 된다.
 - **결제**: ❌ 범위 외. 결과 화면의 선입금은 **모의결제**이며 실제 카드·계좌 정보를 받지 않는다.
 
@@ -52,7 +52,7 @@ lib/            도메인 로직 · 데이터 계층 · 외부 API 래퍼
 lib/scoring/    추천 점수 스코어러 (파일 = 관점 하나 = 담당자 한 명)
 tests/          Playwright 스모크
 docs/           APK 만들기 · 팀 개발환경
-supabase/       schema.sql + migrations/
+db/             schema.sql + migrations/
 mds/            초기 가이드 원본 (읽기 전용 참고)
 memory/         작업 상태·인계 메모
 ```
@@ -95,8 +95,8 @@ memory/         작업 상태·인계 메모
   (Promise 를 그냥 두면 타입 검사로는 안 잡히고 조용히 동작만 안 한다 — 실제로 겪은 버그).
 - 쓰기 단위를 지킨다: 모임 행은 `saveMeeting`, 참가자는 `upsertParticipant`, 표는 `setVote`.
   참가자·투표를 모임 행에 함께 담으면 동시 쓰기에 표가 사라진다.
-- Supabase 모드에서는 인메모리 캐시를 두지 않는다 (서버리스 인스턴스 간 불일치).
-- DB 스키마를 바꿀 땐 `supabase/schema.sql` 이 아니라 `supabase/migrations/NNN_*.sql` 을
+- DB(Neon) 모드에서는 인메모리 캐시를 두지 않는다 (서버리스 인스턴스 간 불일치).
+- DB 스키마를 바꿀 땐 `db/schema.sql` 이 아니라 `db/migrations/NNN_*.sql` 을
   **새로 추가**한다 (여러 명이 같은 파일을 고치면 매번 충돌).
 
 ### 팀 동시 개발 규칙 (여러 명이 붙을 때)
@@ -106,7 +106,7 @@ memory/         작업 상태·인계 메모
 - **🔒 공용 파일은 통합 담당자 소유**다. 고쳐야 할 것 같으면 **멈추고 PR 설명에 이유를 쓴다**:
   `lib/types.ts` · `lib/store.ts` · `lib/persistence.ts` · `lib/flags.ts` ·
   `lib/scoring/{index,types}.ts` · `app/globals.css` · `app/api/meeting/route.ts` ·
-  `supabase/schema.sql` · `package.json` · `CLAUDE.md`
+  `db/schema.sql` · `package.json` · `CLAUDE.md`
   (`.github/CODEOWNERS` 가 리뷰를 강제한다)
 - **한 파일 400줄을 넘기지 않는다.** 넘으면 쪼갠다. 큰 파일은 AI 가 엉뚱한 곳을 고치고,
   두 사람이 동시에 만지면 매일 충돌난다.
@@ -122,7 +122,7 @@ memory/         작업 상태·인계 메모
 - 유료/한도 있는 외부 API를 **실제로 호출하기 전** 반드시 사전 경고한다.
 - **경고 형식**: `[💰 비용 발생 가능] {무엇이} {얼마나}` 명시 후 승인 대기.
 - 대상: 카카오 로컬(일 한도), ODsay(무료 1,000콜/일), TMAP, Ollama Cloud(`:cloud` 모델),
-  Supabase 유료 플랜 전환.
+  Neon 유료 플랜 전환.
 - 이 규칙은 어떤 상황에서도 생략하지 않는다.
 
 ---
@@ -170,7 +170,7 @@ memory/         작업 상태·인계 메모
 |---|---|
 | `docs/팀원_온보딩.md` | ⭐ **팀원이 처음 읽는 문서** — 세팅부터 매일 지킬 규칙까지 |
 | `README.md` | 구조 · 외부 API · 데이터 저장 · 디버깅 도구 |
-| `팀원_실행안내.md` | 설치 · 키 설정 · Supabase 준비 · 작업 시 주의점 |
+| `팀원_실행안내.md` | 설치 · 키 설정 · Neon DB 준비 · 작업 시 주의점 |
 | `docs/팀_개발환경.md` | 브랜치 · 저장소 설정 · 파일 소유권 (팀 동시 개발) |
 | `docs/버전관리.md` | SemVer 규칙 · 릴리스 절차 |
 | `docs/APK.md` | PWA → 안드로이드 APK |
