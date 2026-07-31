@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { env, has } from "@/lib/env";
 import { probeAi } from "@/lib/ai";
-import { hasSupabase, supabaseKeyKind, supabase, supabaseUrlInfo } from "@/lib/supabase";
+import { db, dbConfigured, dbUrlInfo } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -9,38 +9,40 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const ai = await probeAi();
 
-  // 키가 있어도 스키마를 아직 안 만들었거나 RLS에 막히면 쓸 수 없다 —
-  // "키가 설정됨"과 "실제로 동작함"은 다르므로 가벼운 조회를 한 번 해 본다.
-  const db: {
+  // URL이 있어도 스키마를 아직 안 만들었거나 프로젝트가 일시정지면 쓸 수 없다 —
+  // "설정됨"과 "실제로 동작함"은 다르므로 가벼운 조회를 한 번 해 본다.
+  const dbStatus: {
     configured: boolean;
-    keyKind: string;
     ready: boolean;
     error?: string;
     url?: string;
     urlHint?: string;
   } = {
-    configured: hasSupabase,
-    keyKind: supabaseKeyKind,
+    configured: dbConfigured,
     ready: false,
   };
-  if (supabase) {
-    const { error } = await supabase.from("meetings").select("code").limit(1);
-    if (error) db.error = error.message;
-    else db.ready = true;
-
-    // 실패했을 때만 접속 주소를 함께 보여준다 — `fetch failed` 는 원인을 말해주지
-    // 않아서, 파일을 열어보지 않고는 오타인지 네트워크인지 알 수가 없다.
-    if (!db.ready) {
-      db.url = supabaseUrlInfo.url;
-      const hints: string[] = [];
-      if (!supabaseUrlInfo.hasScheme) hints.push("https:// 로 시작하지 않습니다");
-      if (supabaseUrlInfo.endsWithSlash) hints.push("끝에 / 가 붙어 있습니다");
-      if (supabaseUrlInfo.len !== supabaseUrlInfo.trimmedLen)
-        hints.push("값 앞뒤에 공백/개행이 있습니다");
-      db.urlHint = hints.length
-        ? hints.join(" · ")
-        : "주소는 형식상 정상입니다 — 대시보드의 Project URL 과 대조하거나, 프로젝트가 일시정지(paused)되지 않았는지 확인하세요";
+  if (db) {
+    try {
+      await db`select code from meetings limit 1`;
+      dbStatus.ready = true;
+    } catch (e) {
+      dbStatus.error = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  // 실패했을 때만 접속 주소를 함께 보여준다 — `fetch failed` 는 원인을 말해주지
+  // 않아서, 파일을 열어보지 않고는 오타인지 네트워크인지 알 수가 없다.
+  // ⚠️ DATABASE_URL 에는 비밀번호가 들어 있으므로 masked(비밀번호 *** 처리)만 노출한다.
+  if (dbConfigured && !dbStatus.ready) {
+    dbStatus.url = dbUrlInfo.masked;
+    const hints: string[] = [];
+    if (!dbUrlInfo.hasScheme) hints.push("postgresql:// 로 시작하지 않습니다");
+    if (!dbUrlInfo.hasCredentials) hints.push("사용자:비밀번호@ 부분이 없습니다");
+    if (dbUrlInfo.endsWithSlash) hints.push("끝에 / 가 붙어 있습니다(DB 이름이 비었을 수 있음)");
+    if (dbUrlInfo.len !== dbUrlInfo.trimmedLen) hints.push("값 앞뒤에 공백/개행이 있습니다");
+    dbStatus.urlHint = hints.length
+      ? hints.join(" · ")
+      : "주소는 형식상 정상입니다 — Neon 콘솔의 Connection string 과 대조하거나, db/schema.sql 을 실행했는지·프로젝트가 일시정지(idle/paused)되지 않았는지 확인하세요";
   }
 
   return NextResponse.json({
@@ -52,8 +54,8 @@ export async function GET() {
     kakaoRedirect: env.kakaoRedirect,
     odsay: has.odsay,
     tmap: has.tmap,
-    db, // { configured, keyKind, ready, error? }
-    store: hasSupabase ? "supabase" : "memory",
+    db: dbStatus, // { configured, ready, error?, url?, urlHint? }
+    store: db ? "neon" : "memory",
     ai, // { ok, active: "primary"|"fallback"|"none", model, url }
   });
 }

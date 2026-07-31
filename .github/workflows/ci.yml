@@ -99,7 +99,7 @@ jobs:
           echo
 
           # 기록이 필요한 변경인가 (코드·설정)
-          NEEDS=$(echo "$CHANGED" | grep -E '^(app/|lib/|tests/|supabase/|\.github/|package\.json|package-lock\.json|tsconfig\.json|next\.config\.mjs|playwright\.config\.ts|\.nvmrc|\.eslintrc\.json|\.gitignore|\.env\.example)' || true)
+          NEEDS=$(echo "$CHANGED" | grep -E '^(app/|lib/|tests/|db/|\.github/|package\.json|package-lock\.json|tsconfig\.json|next\.config\.mjs|playwright\.config\.ts|\.nvmrc|\.eslintrc\.json|\.gitignore|\.env\.example)' || true)
 
           if [ -z "$NEEDS" ]; then
             echo "✅ 문서만 바뀐 PR — CHANGELOG 기입 생략 가능"

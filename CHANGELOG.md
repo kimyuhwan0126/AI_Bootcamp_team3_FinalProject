@@ -47,6 +47,15 @@
 | 2026-07-30 | Claude(AI) | `.github/CODEOWNERS`, `docs/팀_개발환경.md` | 경로의 `[code]` → `*` (`/app/m/*/sections/ChatPanel.tsx`) + 함정 경고 | **CODEOWNERS 는 gitignore 문법이라 대괄호가 문자 클래스로 해석된다.** `[code]` 는 `c`·`o`·`d`·`e` 중 한 글자에 매칭되고 실제 폴더 `app/m/[code]/` 에는 절대 매칭되지 않는다 — 파일명을 고쳐도 그 줄은 여전히 무효였다. `git check-ignore` 로 재현 확인 |
 | 2026-07-30 | Claude(AI) | `app/m/[code]/CLAUDE.md` | "팀원이 만질 파일은 모두 400줄 미만" 주장 정정 — 실제로 `app/page.tsx` 1,118줄 · `lib/ai.ts` 590줄이 팀원 소유다 | 인계 문서의 거짓 주장은 다음 세션이 잘못된 전제로 작업하게 만든다(v8 에서 실제로 겪은 실패) |
 | 2026-07-30 | Claude(AI) | `docs/노션_통합개발환경.md` | 줄 수 `1,352` → `905` 최신화 · 아직 없는 스코어러 3종에 "앞으로 만들 파일" 표시 · Code Owners 설정이 `docs/팀_개발환경.md` 와 정반대이던 모순 제거 | 멘토님께 공유하는 문서라 사실관계가 어긋나면 안 된다 |
+| 2026-07-31 | Claude(AI) | `package.json`, `package-lock.json` | `@supabase/supabase-js` 제거 → `@neondatabase/serverless` 추가 (`npm install` 로 lock 동기화) | **팀 결정: DB 를 Neon 으로 이관** (멘토님 추천 수용). lock 이 어긋나면 CI 의 `npm ci` 가 죽는다 |
+| 2026-07-31 | Claude(AI) | `lib/db.ts` (신규), `lib/supabase.ts` (삭제) | 서버 전용 Neon 클라이언트 — `DATABASE_URL` 하나(서버 전용, `NEXT_PUBLIC_` 금지). 접속 실패 진단(스킴·끝 슬래시·공백 감지)은 postgres:// 형식에 맞게 이식, **URL 은 비밀번호를 *** 로 가린 masked 만 노출** | Supabase URL 은 공개값이었지만 `DATABASE_URL` 에는 비밀번호가 들어 있다 — 원문 노출은 사고다 |
+| 2026-07-31 | Claude(AI) | `lib/persistence.ts` | Supabase 클라이언트 호출 7종(loadMeeting·meetingExists·saveMeeting·upsertParticipant/s·setVote·clearVotes)을 Neon SQL(`insert … on conflict`)로 재작성. 쓰기 단위 3분리와 votes PK(code,target,participant_id)=1인 1표 upsert 의미 유지. timestamptz 가 Date 로 오는 차이는 `isoOf()` 로 흡수 | 저장 계층만 교체하고 도메인(store.ts 인터페이스)은 그대로 두기 위함 |
+| 2026-07-31 | Claude(AI) | `lib/store.ts` | `hasSupabase` → `hasDb` (import 를 `lib/db` 로), `storeInfo.backend` `"supabase"` → `"neon"`. 로직 변경 없음 | `lib/supabase.ts` 가 사라져 import 가 깨진다 — 이관에 필연적인 최소 수정 |
+| 2026-07-31 | Claude(AI) | `app/api/status/route.ts`, `app/api/diag/route.ts` | `store: "neon"` 표기, 실패 시에만 `db.url`(masked)+`urlHint` 노출 유지. diag 는 테이블 3종 개별 점검을 Neon 쿼리로, keyKind/RLS 안내 제거 | Neon 엔 anon/service_role 구분과 RLS 가 없다 |
+| 2026-07-31 | Claude(AI) | `supabase/` → `db/` (폴더명 변경), `db/schema.sql`, `db/migrations/README.md` | RLS 정책·role 참조 제거 — Neon SQL Editor 에 그대로 붙여 실행 가능. migrations `NNN_*.sql` 패턴 유지, 안내 문구 Neon 콘솔 기준으로 | Neon 은 서버만 접속하므로 RLS 가 무의미하고, 남겨두면 실행은 되지만 팀원이 잘못된 전제를 갖는다 |
+| 2026-07-31 | Claude(AI) | `.github/workflows/ci.yml` | changelog 잡 경로 패턴 `supabase/` → `db/` | 폴더명 변경 후에도 스키마 변경 PR 이 CHANGELOG 기입 검사를 받게 |
+| 2026-07-31 | Claude(AI) | `.env.example` | Supabase 3키 → `DATABASE_URL` 하나(서버 전용) | 환경변수 통일. 키 없으면 인메모리 폴백은 그대로 |
+| 2026-07-31 | Claude(AI) | `README.md`, `팀원_실행안내.md`, `docs/팀원_온보딩.md`, `docs/팀_개발환경.md`, `docs/노션_통합개발환경.md`, `docs/APK.md`, `CLAUDE.md`, `lib/CLAUDE.md`, `memory/status.md` | 스택·데이터 규칙·세팅 절차·소유권 표의 Supabase 서술을 Neon/`db/` 기준으로 정비. status.md §6 "멘토 확인 대기" → "팀 결정: Neon 확정", Neon 실접속은 **미검증** 으로 명기 | 문서가 코드와 어긋나면 다음 세션이 잘못된 전제로 시작한다(§4 에 기록된 실제 사고) |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.

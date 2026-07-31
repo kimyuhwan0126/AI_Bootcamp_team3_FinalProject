@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════
--- 모이머(Moimer) v8 — Supabase 스키마
+-- 모이머(Moimer) v8 — DB 스키마 (Neon Postgres)
 --
--- 실행 방법: Supabase 대시보드 → SQL Editor → 이 파일 전체를 붙여넣고 Run.
+-- 실행 방법: Neon 콘솔 → 프로젝트 → SQL Editor → 이 파일 전체를 붙여넣고 Run.
 --            (몇 번 다시 실행해도 안전하게 짜여 있다 — if not exists / add column if not exists)
 --
 -- 설계 원칙
@@ -10,6 +10,9 @@
 --   · 반대로 동시에 여러 사람이 각자 쓰는 것(참가자 정보·투표)은 별도 테이블로
 --     쪼개 행 단위로 쓴다. 한 행에 몰아넣으면 마지막 쓰기가 앞선 쓰기를
 --     덮어써서 표가 사라진다(4명이 동시에 투표하는 화면이라 실제로 발생한다).
+--   · 접속은 서버(Next.js API 라우트)만 한다. DATABASE_URL 은 서버 전용이고
+--     브라우저에 내려가지 않으므로, Supabase 시절의 RLS 같은 행 단위 보안은
+--     두지 않는다 (Neon 에는 anon 키 개념 자체가 없다).
 -- ═══════════════════════════════════════════════════════════════
 
 -- ── meetings : 모임 본체 ────────────────────────────────────────
@@ -53,7 +56,7 @@ create table if not exists participants (
 create index if not exists idx_participants_code on participants(code);
 
 -- ── votes : 거점/가게 투표 (1인 1표) ────────────────────────────
---  unique(code, target, participant_id) 로 "1인 1표"를 DB가 보장한다.
+--  primary key (code, target, participant_id) 로 "1인 1표"를 DB가 보장한다.
 --  같은 후보를 다시 누르면 행을 지우고(취소), 다른 후보면 upsert 로 옮긴다.
 create table if not exists votes (
   code           text not null references meetings(code) on delete cascade,
@@ -72,18 +75,6 @@ alter table meetings     add column if not exists reservation jsonb;
 alter table meetings     add column if not exists updated_at  timestamptz not null default now();
 alter table participants add column if not exists status      text;
 alter table participants add column if not exists eta_text    text;
-
--- ── RLS ─────────────────────────────────────────────────────────
---  브라우저는 DB에 직접 접근하지 않는다(모든 접근이 /api/* 서버 경유).
---  그래서 RLS를 켜 두고 정책을 만들지 않는다 = anon 키로는 아무것도 못 읽는다.
---  서버는 SUPABASE_SERVICE_ROLE_KEY 로 RLS를 우회한다.
---
---  ⚠️ service_role 키 없이 anon 키만 쓰려면 아래 3줄을 enable → disable 로
---     바꿔야 동작한다. 단, 그러면 초대 코드만 알면 누구나 DB를 직접 읽을 수
---     있으니 배포 환경에서는 권하지 않는다.
-alter table meetings     enable row level security;
-alter table participants enable row level security;
-alter table votes        enable row level security;
 
 -- ── updated_at 자동 갱신 ────────────────────────────────────────
 create or replace function moimer_touch_updated_at() returns trigger as $$

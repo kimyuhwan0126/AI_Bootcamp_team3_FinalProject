@@ -7,7 +7,7 @@
 
 | 파일 | 소유 | 수정 |
 |---|---|---|
-| `types.ts` · `store.ts` · `persistence.ts` · `supabase.ts` · `flags.ts` | 🔒 통합 담당자 | ❌ 멈추고 PR 설명에 이유를 쓴다 |
+| `types.ts` · `store.ts` · `persistence.ts` · `db.ts` · `flags.ts` | 🔒 통합 담당자 | ❌ 멈추고 PR 설명에 이유를 쓴다 |
 | `scoring/types.ts` · `scoring/index.ts` | 🔒 통합 담당자 | ⚠️ 등록 배열에 한 줄만 |
 | `ai.ts` · `parse.ts` | 👤 채팅·AI 파싱 담당 | ✅ |
 | `scoring/<이름>.ts` · `weather.ts` | 👤 각 담당자 | ✅ |
@@ -16,8 +16,8 @@
 ## 데이터 계층 — 어기면 표가 사라진다
 
 ```
-화면  →  app/api/meeting  →  lib/store.ts  →  lib/persistence.ts  →  lib/supabase.ts
-                              (도메인)          (행 매핑)             (클라이언트)
+화면  →  app/api/meeting  →  lib/store.ts  →  lib/persistence.ts  →  lib/db.ts
+                              (도메인)          (SQL 행 매핑)          (Neon 클라이언트)
 ```
 
 1. **화면은 `store.ts` 를 직접 부르지 않는다.** 항상 `app/api/meeting` 을 경유한다.
@@ -33,7 +33,7 @@
    표는 `setVote`. 참가자·투표를 모임 행에 함께 담으면 **동시 쓰기에 표가 사라진다**
    (4명이 동시에 투표하는 화면이라 실제로 발생한다).
 
-4. **Supabase 모드에서는 인메모리 캐시를 두지 않는다.** 서버리스는 인스턴스가
+4. **DB(Neon) 모드에서는 인메모리 캐시를 두지 않는다.** 서버리스는 인스턴스가
    여러 개라, 캐시를 들면 다른 인스턴스가 쓴 표가 폴링에 안 보인다.
 
 5. **DB 객체를 그 자리에서 고쳐도 저장되지 않는다.** 배열을 수정했으면
