@@ -47,6 +47,9 @@
 | 2026-07-30 | Claude(AI) | `.github/CODEOWNERS`, `docs/팀_개발환경.md` | 경로의 `[code]` → `*` (`/app/m/*/sections/ChatPanel.tsx`) + 함정 경고 | **CODEOWNERS 는 gitignore 문법이라 대괄호가 문자 클래스로 해석된다.** `[code]` 는 `c`·`o`·`d`·`e` 중 한 글자에 매칭되고 실제 폴더 `app/m/[code]/` 에는 절대 매칭되지 않는다 — 파일명을 고쳐도 그 줄은 여전히 무효였다. `git check-ignore` 로 재현 확인 |
 | 2026-07-30 | Claude(AI) | `app/m/[code]/CLAUDE.md` | "팀원이 만질 파일은 모두 400줄 미만" 주장 정정 — 실제로 `app/page.tsx` 1,118줄 · `lib/ai.ts` 590줄이 팀원 소유다 | 인계 문서의 거짓 주장은 다음 세션이 잘못된 전제로 작업하게 만든다(v8 에서 실제로 겪은 실패) |
 | 2026-07-30 | Claude(AI) | `docs/노션_통합개발환경.md` | 줄 수 `1,352` → `905` 최신화 · 아직 없는 스코어러 3종에 "앞으로 만들 파일" 표시 · Code Owners 설정이 `docs/팀_개발환경.md` 와 정반대이던 모순 제거 | 멘토님께 공유하는 문서라 사실관계가 어긋나면 안 된다 |
+| 2026-07-31 | Claude(AI) | `lib/weather.ts` (신규) | Open-Meteo 날씨 조회 래퍼 — 키 불필요 무료 API, 실패·예보범위(16일) 밖이면 계절 평균 기반 결정적 mock(`real: false`), 실 성공값만 캐시, 실패 후 60초 재시도 쿨다운 | 날씨 스코어러의 데이터 소스. mock 폴백·성공값만 캐시 규칙(CLAUDE.md §4·5) 준수 |
+| 2026-07-31 | Claude(AI) | `lib/scoring/weather.ts` (신규) | 날씨 스코어러 — 강수확률·체감온도(쾌적 18~23°C)를 `worstOf` 로 조합, `ctx.weather` 없으면 후보 좌표로 직접 조회(후보별 지역 날씨 차이 반영), mock 은 "(계절 추정)" 으로 표시 | 추천 알고리즘 보강(status.md §3-2). `FLAGS.weather` 꺼져 있으면 비활성이라 기본 동작 불변 |
+| 2026-07-31 | Claude(AI) | `lib/scoring/index.ts` | `REGISTRY` 에 `weather` 등록 (import 1줄 + 배열 1줄 — 허용된 예외 범위) | 스코어러 등록소 규칙(scoring/CLAUDE.md) |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.
