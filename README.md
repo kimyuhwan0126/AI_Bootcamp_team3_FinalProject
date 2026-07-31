@@ -28,9 +28,10 @@ npm run dev                    # http://localhost:3000
 
 | 순서 | 문서 | 내용 |
 |---|---|---|
-| 1 | [`docs/팀_개발환경.md`](docs/팀_개발환경.md) | **브랜치 · 내가 만질 파일 · PR 규칙** ← 제일 먼저 |
-| 2 | [`팀원_실행안내.md`](팀원_실행안내.md) | 실제 API 키 · Supabase 붙이기 |
-| 3 | [`CLAUDE.md`](CLAUDE.md) | AI 개발 규칙 (Claude Code · Ollama 공통) |
+| 1 | [`docs/팀원_온보딩.md`](docs/팀원_온보딩.md) | **⭐ 처음이면 이것 하나만** — 세팅부터 매일 지킬 규칙까지 |
+| 2 | [`docs/팀_개발환경.md`](docs/팀_개발환경.md) | 브랜치·소유권 상세 |
+| 3 | [`팀원_실행안내.md`](팀원_실행안내.md) | 실제 API 키 · Supabase 붙이기 |
+| 4 | [`CLAUDE.md`](CLAUDE.md) | AI 개발 규칙 (Claude Code · Ollama 공통) |
 
 **핵심 규칙 3줄**
 
