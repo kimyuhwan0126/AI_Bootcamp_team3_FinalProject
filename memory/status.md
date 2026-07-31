@@ -35,6 +35,17 @@ ai.ok false ← 의도된 상태 (Ollama 1순위가 팀 내부망 주소라 Verc
 > verify(브라우저 스모크 포함)로 확인돼 있다. Neon 스키마는 콘솔에서 3테이블
 > (`meetings`·`participants`·`votes`) 생성 확인.
 
+**카카오 로그인 — 프로덕션에서 동작 확인 완료.** 배포 도메인이 생기거나 바뀌면
+**두 곳을 같이** 고쳐야 한다. 한쪽만 하면 조용히 실패한다:
+
+| 고칠 곳 | 값 | 빠뜨리면 |
+|---|---|---|
+| Vercel 환경변수 `KAKAO_REDIRECT_URI` | `https://<도메인>/api/auth/kakao/callback` | 기본값(`lib/env.ts:8`)인 **localhost 로 튕긴다** — 배포 화면에서 로그인했는데 내 PC 로 돌아온다 |
+| developers.kakao.com → 카카오 로그인 → Redirect URI | 위와 **글자 단위로 같은 값** | 카카오가 **KOE006**(앱 관리자 설정 오류)으로 거부 |
+
+둘 다 실제로 겪었다. 카카오 콘솔 등록은 즉시 반영되지만 환경변수 변경은 **재배포가 필요**하다.
+로컬용 `localhost` 항목은 지우지 말 것(여러 개 등록 가능).
+
 | 구성 | 상태 |
 |---|---|
 | 브랜치 | `main`(배포) ← `develop`(통합) ← `feat/*` |

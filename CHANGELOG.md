@@ -61,6 +61,7 @@
 | 2026-07-31 | Claude(AI) | `app/api/status/route.ts` | 안전벨트 판정 반전 — "@ 가 있는가" → "스킴 뗀 나머지에 콜론/@ 가 있는데 마스킹 흔적(`:***@`)이 없는가" | **PR #15 재검토 지적(🔴 잔여 엣지)** — `@` 앞에서 잘린 값(개행으로 `postgresql://user:비밀번호` 까지만 읽힌 경우)이 기존 판정을 통과해 평문 노출됐다. 의심스러우면 안 싣는 쪽으로 넘어진다 |
 | 2026-07-31 | Claude(AI) | `.github/CODEOWNERS` | `/lib/supabase.ts` → `/lib/db.ts`, `/supabase/` → `/db/` 경로 갱신 | PR #15(Neon 이관) 머지로 두 줄이 없는 경로가 됐다 — CODEOWNERS 는 없는 경로를 **조용히 무시**하므로 그대로 두면 공용 파일 소유권이 안 걸린다(`ChatSection.tsx` 건과 같은 유형) |
 | 2026-07-31 | Claude(AI) | `memory/status.md` | §1 진행 중 현황(PR #15 머지 완료 · #14 승인 대기 · #17 열림 · Neon 검증 대기) · §3-2 를 PR #14 이후 사실로 갱신(weather.ts 는 머지 대기, routing.ts `ScoreContext` 채우기는 통합 세션 몫) · 날씨 weight 0.3 을 팀 결정 안건으로 기록 | 문서가 코드와 어긋나면 다음 세션이 잘못된 전제로 시작한다(§4 사고 기록). 리뷰(🟡1)에서 지적된 낡은 주장 정리 |
+| 2026-07-31 | Claude(AI) | `memory/status.md` | §1 에 카카오 로그인 프로덕션 동작 확인 + 도메인 바뀔 때 고칠 두 곳(Vercel `KAKAO_REDIRECT_URI` · 카카오 콘솔 Redirect URI) 표로 기록 | 한쪽만 고치면 조용히 실패한다 — 환경변수를 빠뜨리면 localhost 로 튕기고, 콘솔 등록을 빠뜨리면 KOE006 이 뜬다. 둘 다 실제로 겪었다 |
 | 2026-07-31 | Claude(AI) | `memory/status.md` | §1 을 릴리스 `f0a4235` 후 실측으로 교체 — "Neon 실접속 미검증" → **로컬·프로덕션 양쪽 `db.ready:true` 실측**, Vercel 배포 완료(Production←main / Preview←그 외), `odsay:false`·`ai.ok:false` 가 의도된 상태임을 명시, Preview 가 실 DB 를 공유하는 점 경고, 릴리스 리뷰 후속 2건(500 빈 본문 · postcss) 기록. §3-5 Vercel 항목 체크 | 릴리스 전 문서에는 미검증으로 적혀 있었다. 실측한 것만 적고 확인 안 된 건 미검증으로 남긴다는 원칙대로 교체 — 다음 세션이 낡은 전제로 시작하는 것을 막는다 |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
