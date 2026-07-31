@@ -3,7 +3,7 @@ import { env, has } from "@/lib/env";
 import { geocodeKakao } from "@/lib/kakao";
 import { transitRouteOdsay } from "@/lib/odsay";
 import { carRouteTmap } from "@/lib/tmap";
-import { supabase, supabaseKeyKind } from "@/lib/supabase";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -50,28 +50,28 @@ export async function GET(req: Request) {
 
   const out: any = { has };
 
-  // ── Supabase: 테이블 3개가 실제로 읽히는지 각각 확인 ──
-  //  키만 있고 schema.sql 을 안 돌렸거나 RLS에 막히면 여기서 드러난다.
-  if (!supabase) {
-    out.db = { configured: false, note: "Supabase 키 없음 — 인메모리 스토어로 동작 중" };
+  // ── Neon: 테이블 3개가 실제로 읽히는지 각각 확인 ──
+  //  URL만 있고 schema.sql 을 안 돌렸으면 여기서 드러난다.
+  if (!db) {
+    out.db = { configured: false, note: "DATABASE_URL 없음 — 인메모리 스토어로 동작 중" };
   } else {
     const tables = ["meetings", "participants", "votes"] as const;
     const checks: Record<string, { ok: boolean; error?: string }> = {};
     for (const t of tables) {
-      const { error } = await supabase.from(t).select("*").limit(1);
-      checks[t] = error ? { ok: false, error: error.message } : { ok: true };
+      try {
+        // 테이블명은 파라미터로 못 넘긴다 — 위 상수 목록만 돌므로 주입 위험 없음
+        await db.query(`select * from ${t} limit 1`);
+        checks[t] = { ok: true };
+      } catch (e) {
+        checks[t] = { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
     }
     const allOk = Object.values(checks).every((c) => c.ok);
     out.db = {
       configured: true,
-      keyKind: supabaseKeyKind,
       tables: checks,
       ready: allOk,
-      note: allOk
-        ? "정상"
-        : supabaseKeyKind === "anon"
-        ? "anon 키로는 RLS에 막힙니다 — SUPABASE_SERVICE_ROLE_KEY 를 넣거나 schema.sql 의 RLS를 disable 로 바꾸세요."
-        : "supabase/schema.sql 을 SQL Editor 에서 실행했는지 확인하세요.",
+      note: allOk ? "정상" : "db/schema.sql 을 Neon SQL Editor 에서 실행했는지 확인하세요.",
     };
   }
 

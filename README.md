@@ -3,7 +3,7 @@
 > **흩어진 우리, 딱 중간에서.**
 > 각자의 출발지에서 가장 공평한 중간 지점을 찾아, 투표로 함께 모임 장소를 정하는 서비스.
 
-Next.js 14 (App Router) + TypeScript + Supabase. **키가 하나도 없어도 바로 실행됩니다.**
+Next.js 14 (App Router) + TypeScript + Neon(Postgres). **키가 하나도 없어도 바로 실행됩니다.**
 
 ---
 
@@ -30,7 +30,7 @@ npm run dev                    # http://localhost:3000
 |---|---|---|
 | 1 | [`docs/팀원_온보딩.md`](docs/팀원_온보딩.md) | **⭐ 처음이면 이것 하나만** — 세팅부터 매일 지킬 규칙까지 |
 | 2 | [`docs/팀_개발환경.md`](docs/팀_개발환경.md) | 브랜치·소유권 상세 |
-| 3 | [`팀원_실행안내.md`](팀원_실행안내.md) | 실제 API 키 · Supabase 붙이기 |
+| 3 | [`팀원_실행안내.md`](팀원_실행안내.md) | 실제 API 키 · Neon DB 붙이기 |
 | 4 | [`CLAUDE.md`](CLAUDE.md) | AI 개발 규칙 (Claude Code · Ollama 공통) |
 
 > ⚠️ **시작하기 전에 커밋 이메일부터 가리세요.** 이 저장소는 **공개**라 커밋에 박힌
@@ -104,17 +104,17 @@ lib/
   parse.ts                규칙 기반 한국어 파싱 (LLM 없이 날짜·시간·예산 추출)
   calendar.ts             구글 캘린더 · .ics 내보내기
   format.ts               이동시간·거리·요금 표기 (82분 → 1시간 22분)
-  store.ts                데이터 계층 (Supabase ↔ 인메모리 폴백)
-  persistence.ts          Meeting 객체 ↔ Supabase 행 매핑
-  supabase.ts             서버 전용 Supabase 클라이언트
+  store.ts                데이터 계층 (Neon ↔ 인메모리 폴백)
+  persistence.ts          Meeting 객체 ↔ DB 행 매핑 (SQL)
+  db.ts                   서버 전용 Neon 클라이언트 (DATABASE_URL)
   routing.ts              실 이동시간 + 캐시 + mock 폴백 통합
   geo.ts                  거점 풀 · 거리 추정 · 도착 신호등 판정
   kakao.ts odsay.ts tmap.ts   외부 API 래퍼 (실패 시 null → 상위에서 폴백)
   ai.ts                   AI 파실리테이터 (v8 UI 비활성, 코드 보존)
   session.ts identity.ts  로그인 3단계 · 기기별 참가자 신원
   types.ts                공용 도메인 타입
-supabase/
-  schema.sql              DB 스키마 (SQL Editor 에 붙여 한 번 실행)  🔒 통합 담당자
+db/
+  schema.sql              DB 스키마 (Neon SQL Editor 에 붙여 한 번 실행)  🔒 통합 담당자
   migrations/             스키마 변경은 여기에 번호 붙인 파일을 **추가**한다
 tests/                    Playwright 스모크 (CI 가 실제 브라우저로 돌린다)
 docs/
@@ -138,7 +138,7 @@ docs/
 | 카카오 OAuth | 로그인 시트 | 임시 로그인(이름만) |
 | ODsay (`searchPubTransPathT`, `loadLane`) | 대중교통 이동시간·경로선 | 직선거리 추정 |
 | TMAP (`/tmap/routes`) | 자차 이동시간·통행료·경로선 | 직선거리 추정 |
-| Supabase | 모임·참가자·투표 저장 | 인메모리 (재시작 시 소멸) |
+| Neon Postgres | 모임·참가자·투표 저장 | 인메모리 (재시작 시 소멸) |
 | Google 캘린더 / .ics | 최종 확정 화면 | 키 불필요 |
 
 무료 한도를 아끼기 위해 지오코딩·경로는 **성공한 실 API 응답만** 캐시합니다
@@ -154,8 +154,8 @@ docs/
 | `participants` | 참가자·출발지·도착 신호등 | 각자 자기 행만 써야 서로 덮어쓰지 않는다 |
 | `votes` | 표 한 장 (PK로 1인 1표 보장) | 여러 명이 동시에 눌러도 표가 유실되지 않는다 |
 
-`supabase/schema.sql` 을 SQL Editor 에서 한 번 실행하면 만들어집니다.
-RLS는 켜 둔 채 서버가 `service_role` 로 우회합니다 — 브라우저는 DB에 직접 접근하지 않습니다.
+`db/schema.sql` 을 Neon SQL Editor 에서 한 번 실행하면 만들어집니다.
+DATABASE_URL 은 서버 전용이라 브라우저는 DB에 직접 접근하지 않습니다.
 
 ---
 

@@ -25,13 +25,13 @@
 /lib/types.ts            @kimyuhwan0126
 /lib/store.ts            @kimyuhwan0126
 /lib/persistence.ts      @kimyuhwan0126
-/lib/supabase.ts         @kimyuhwan0126
+/lib/db.ts               @kimyuhwan0126
 /lib/flags.ts            @kimyuhwan0126
 /lib/scoring/index.ts    @kimyuhwan0126
 /lib/scoring/types.ts    @kimyuhwan0126
 /app/globals.css         @kimyuhwan0126
 /app/api/meeting/route.ts @kimyuhwan0126
-/supabase/               @kimyuhwan0126
+/db/                     @kimyuhwan0126
 /.github/                @kimyuhwan0126
 /CLAUDE.md               @kimyuhwan0126
 /package.json            @kimyuhwan0126

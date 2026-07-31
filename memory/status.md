@@ -1,6 +1,6 @@
 # 모이머(Moimer) — 프로젝트 상태 (status.md)
 
-_최종 업데이트: 2026-07-30 · 작성: Claude(AI)_
+_최종 업데이트: 2026-07-31 · 작성: Claude(AI)_
 _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · 버전 `0.1.0`_
 
 > **새 세션은 이 파일을 가장 먼저 읽는다.**
@@ -19,8 +19,13 @@ _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · �
 **팀원 4명이 동시에 개발할 수 있는 상태.** 기능 개발은 이제부터다.
 
 ```
-/api/status → kakao·kakaoJs·odsay·tmap 전부 true · db.ready true · store "supabase"
+/api/status → kakao·kakaoJs·odsay·tmap 전부 true · store "neon"(DATABASE_URL 있을 때) / "memory"(없을 때)
 ```
+
+> DB 는 **Supabase → Neon 으로 이관됐다** (`lib/db.ts` · `db/schema.sql` · `DATABASE_URL`).
+> 키 없는 인메모리 경로는 verify(브라우저 스모크 포함)로 실측했다.
+> **Neon 실접속(`db.ready: true`)은 미검증** — 팀 `DATABASE_URL` 을 받은 뒤
+> `db/schema.sql` 실행 → `/api/status` 로 확인해야 한다. (Supabase 시절 실접속은 검증돼 있었다)
 
 | 구성 | 상태 |
 |---|---|
@@ -31,6 +36,12 @@ _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · �
 | 로컬 | 키 없이 `npm run dev` 로 전체 플로우 동작 |
 
 **아직 안 한 것**: 팀원 초대 · `CODEOWNERS` 아이디 채우기 · Vercel 연결 · APK 리허설
+
+**진행 중 (2026-07-31, 통합 세션)**:
+- PR #15(Neon 이관) — **머지 완료** (develop `3e6112c`, Squash)
+- PR #14(날씨 스코어러) — 리뷰 🟢(비차단 🟡 4건) · #15 머지로 생긴 CHANGELOG 충돌 해결·push 완료 · **머지는 CEO 승인 대기**
+- PR #17(CODEOWNERS 경로 `/lib/db.ts`·`/db/` 갱신) — 열림, 리뷰·머지 대기
+- Neon 실접속 검증 — **`DATABASE_URL` 수령 대기** (받으면 §1 의 미검증 문구를 실측으로 교체할 것)
 
 ---
 
@@ -44,7 +55,7 @@ _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · �
 | `lib/scoring/` 플러그인 | 관점 = 파일 하나 = 담당자 한 명. 등록은 배열에 한 줄 |
 | `app/m/[code]/sections/` (15파일) | 화면 조각을 담당자별로. 전부 400줄 미만(최대 `LeaderBar.tsx` 173줄) |
 | `lib/flags.ts` (`NEXT_PUBLIC_FF_*`) | 켜고 끄기를 코드가 아니라 `.env.local` 로 → 브랜치마다 값이 안 달라짐 |
-| `supabase/migrations/` | 스키마 변경을 파일 추가로 → 여러 명이 컬럼 추가해도 충돌 0 |
+| `db/migrations/` | 스키마 변경을 파일 추가로 → 여러 명이 컬럼 추가해도 충돌 0 |
 | `.github/CODEOWNERS` | 소유권을 사람 기억이 아니라 GitHub 이 지킴 |
 | CI 브라우저 스모크 | **빌드 통과 ≠ 화면 렌더.** 일부러 깨뜨려 잡히는 것 확인함 |
 
@@ -89,17 +100,23 @@ score = 최대이동시간 + 편차 × 0.8   → 낮은 순 3개
 `decayScore()` 가 0~1 정규화를, `worstOf()` 가 "평균이 아니라 최악 기준" 조합을 준다.
 방법은 `lib/scoring/CLAUDE.md`.
 
-> 현재 `lib/scoring/` 에 실제로 있는 것: `types.ts` · `index.ts` · `fairness.ts` · `CLAUDE.md`.
-> `commercial.ts` · `weather.ts` · `personal.ts` 는 **아직 없다**(앞으로 만들 파일).
+> develop 에 실제로 있는 것: `types.ts` · `index.ts` · `fairness.ts` · `CLAUDE.md`.
+> `weather.ts` 는 **PR #14 로 만들어져 머지 대기 중**(`lib/weather.ts` 데이터 소스 포함,
+> `NEXT_PUBLIC_FF_WEATHER` 플래그 뒤). `commercial.ts` · `personal.ts` 는 아직 없다.
 
-**⚠️ 먼저 고쳐야 할 것**: `lib/routing.ts` 가 `ScoreContext` 를 만들 때
-`{ participants }` 만 넘긴다. `when`(날짜·시간)과 `weather` 를 안 채우므로
-**날씨·개인선호 스코어러를 만들어도 데이터를 못 받는다.** 그 둘을 붙이기 전에
-`routing.ts` 의 `scoreCandidates()` 에서 `ScoreContext` 를 채워야 한다.
+**⚠️ `ScoreContext` 채우기 (통합 세션 몫)**: `lib/routing.ts` 가 `ScoreContext` 를 만들 때
+`{ participants }` 만 넘긴다 — `when`(날짜·시간)과 `weather` 가 빈 채로 온다.
+PR #14 의 날씨 스코어러는 `ctx.weather ?? getWeather(ctx.hub, ctx.when)` 자급식이라
+막히진 않지만, `when` 이 없어 **"오늘 저녁(19시)" 가정**으로 돈다. 통합 세션이
+`scoreCandidates()` 에서 채우면 그 값이 자동 우선된다. **개인선호 스코어러는
+여전히 `ScoreContext` 를 채워야 데이터를 받는다.**
 
 **되살릴 자산**: `docs/legacy-algo/` 에 알고리즘 8종(빌드 대상 아님).
 그대로 복사하지 말고 읽고 `lib/scoring/` 규격에 맞춰 옮긴다 — `docs/legacy-algo/README.md`.
 가중치 최종값은 **팀 결정 사항**(`CLAUDE.md` §5).
+
+**🗳️ 팀 결정 안건**: PR #14 날씨 스코어러의 `weight: 0.3` 은 `TODO(팀)` 표시된
+임시값이다 (fairness 는 1.0). 머지를 막을 사유는 아니고, 팀이 최종값을 정하면 된다.
 
 **제안한 3단계** (CEO 검토 대기):
 1. 수도권 밖 후보를 **역·터미널**에서 뽑기 — `searchByCategoryKakao("SW8")` 이미 있음
@@ -122,7 +139,7 @@ score = 최대이동시간 + 편차 × 0.8   → 낮은 순 3개
 
 ### 3-5. 그 외
 
-- [ ] 모임 비밀번호 **평문** — `supabase/schema.sql:20` `TODO(BE)`
+- [ ] 모임 비밀번호 **평문** — `db/schema.sql` 의 `TODO(BE)`
 - [ ] Vercel 배포. AI 를 되살릴 땐 `void runAiTurn()` 을 `waitUntil()` 로 감쌀 것
 - [ ] 폴링(`MeetingClient.tsx:118` `setInterval(load, 1800)`) → Realtime 검토
 - [ ] 알림(헤더 벨, `V8Header.tsx:52`) 실데이터 연결 — 현재 빈 상태
@@ -175,8 +192,11 @@ v8 에서 `CLAUDE.md` 에 쓰지도 않는 Tailwind·shadcn 이 적혀 있었다
 
 ---
 
-## 6. 멘토님 확인 대기
+## 6. 팀 결정 사항
 
-**DB — Supabase 유지 vs Neon.** 채팅을 실제로 만들 거라면 Neon 은 Realtime 이 없어
-**자체 WebSocket 서버가 필수**가 된다. `lib/persistence.ts` 가 격리돼 있어
-어느 쪽이든 저장 계층만 갈아끼우면 된다 — 다만 **팀원이 브랜치를 따기 전에** 정해야 한다.
+**DB — ✅ Neon 확정 (멘토님 추천 수용, Supabase 에서 이관 완료).**
+`lib/persistence.ts` 가 격리돼 있던 덕에 드라이버(`@neondatabase/serverless`)와
+스키마(`db/schema.sql`)만 갈아끼웠다. 접속은 `DATABASE_URL` 하나(서버 전용)다.
+
+기록해 둘 트레이드오프: Neon 은 Realtime 이 없다 — 채팅·실시간 투표를 실제로
+만들 거라면 **자체 WebSocket/SSE 서버가 필수**가 된다(현재는 1.8초 폴링이라 무관).
