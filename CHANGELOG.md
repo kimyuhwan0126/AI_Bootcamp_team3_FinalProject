@@ -34,6 +34,7 @@
 | 2026-07-30 | Claude(AI) | `package.json` | `pretest:smoke` 추가 (`playwright install chromium`) | **`npm run verify` 가 방금 clone 한 환경에서 스모크 3/4 실패**했다(`Executable doesn't exist`). 문서가 "PR 전에 npm run verify"라고 시키는데 팀원 전원이 첫 PR 에서 이걸 만났을 것이다 |
 | 2026-07-30 | Claude(AI) | `.gitignore` | `.env*.local` → `.env` · `.env.*` (+ `!.env.example`) | **공개 저장소인데 `.env` 와 `.env.production` 이 열려 있었다.** Next.js 는 그 둘도 읽으므로 키를 그 이름으로 만들면 그대로 커밋된다 |
 | 2026-07-30 | Claude(AI) | `.gitignore` | `/logs/` 차단 추가 | `lib/ai.ts` 가 **참가자들의 실제 대화**를 `logs/ai-trace.jsonl` 에 기록한다. AI 채팅 플래그를 켜고 개발하면 파일이 생기는데, 공개 저장소라 실수로 커밋되면 대화가 그대로 공개된다. 지금은 채팅이 꺼져 있어 파일이 없을 뿐이다 |
+| 2026-07-30 | Claude(AI) | `docs/팀_개발환경.md`, `docs/노션_통합개발환경.md`, `README.md` | **커밋 이메일 가리기** 안내 추가 (GitHub Emails 설정 2개 + `git config user.email` noreply) | 공개 저장소라 커밋에 박힌 이메일을 누구나 API 로 수집할 수 있다. 초기 커밋 9건에 개인 지메일이 남았고, **팀원 4명이 붙으면 4명 분이 더 노출된다.** 이미 올라간 것은 못 바꾸므로 앞으로를 막는다 |
 | 2026-07-30 | Claude(AI) | `.env.example`, `lib/ai.ts` | Ollama 1순위 기본값에서 **팀 내부망 사설 IP 제거** (빈 값 → 2순위 localhost 로 폴백) | 공개 저장소에 내부망 주소가 남고, `/api/status` 의 `ai.url` 로 응답에 실려 나갔다 |
 | 2026-07-30 | Claude(AI) | `app/api/diag/route.ts` | ODSAY 키의 앞 2자·뒤 2자 노출 제거 | 바로 위 주석이 "값 노출 X"라고 적어놓고 실제로는 키 조각 4자를 응답에 실었다 |
 | 2026-07-30 | Claude(AI) | `package.json`, `.eslintrc.json` | `eslint` + `eslint-config-next` 설치, extends 를 `next/core-web-vitals` 로 (에러 2건 수정) | `npm run lint` 스크립트가 있는데 eslint 가 없어 실행하면 죽었다. `next/typescript` 는 기존 `any` 46곳을 전부 에러로 띄워 제외 — **React 훅 규칙이 목적**이다(조건부 return 뒤 훅 배치 사고를 lint 가 잡는다) |
