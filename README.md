@@ -29,6 +29,7 @@ npm run dev                    # http://localhost:3000
 | 순서 | 문서 | 내용 |
 |---|---|---|
 | 1 | [`docs/팀_개발환경.md`](docs/팀_개발환경.md) | **브랜치 · 내가 만질 파일 · PR 규칙** ← 제일 먼저 |
+| 0 | 같은 문서 §0-2 | ⚠️ **커밋 이메일 가리기** — 이 저장소는 공개다. 처음 한 번 꼭 |
 | 2 | [`팀원_실행안내.md`](팀원_실행안내.md) | 실제 API 키 · Supabase 붙이기 |
 | 3 | [`CLAUDE.md`](CLAUDE.md) | AI 개발 규칙 (Claude Code · Ollama 공통) |
 
