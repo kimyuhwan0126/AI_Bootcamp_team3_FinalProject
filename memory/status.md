@@ -37,6 +37,12 @@ _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · �
 
 **아직 안 한 것**: 팀원 초대 · `CODEOWNERS` 아이디 채우기 · Vercel 연결 · APK 리허설
 
+**진행 중 (2026-07-31, 통합 세션)**:
+- PR #15(Neon 이관) — **머지 완료** (develop `3e6112c`, Squash)
+- PR #14(날씨 스코어러) — 리뷰 🟢(비차단 🟡 4건) · #15 머지로 생긴 CHANGELOG 충돌 해결·push 완료 · **머지는 CEO 승인 대기**
+- PR #17(CODEOWNERS 경로 `/lib/db.ts`·`/db/` 갱신) — 열림, 리뷰·머지 대기
+- Neon 실접속 검증 — **`DATABASE_URL` 수령 대기** (받으면 §1 의 미검증 문구를 실측으로 교체할 것)
+
 ---
 
 ## 2. 이 저장소의 설계 전제
@@ -94,17 +100,23 @@ score = 최대이동시간 + 편차 × 0.8   → 낮은 순 3개
 `decayScore()` 가 0~1 정규화를, `worstOf()` 가 "평균이 아니라 최악 기준" 조합을 준다.
 방법은 `lib/scoring/CLAUDE.md`.
 
-> 현재 `lib/scoring/` 에 실제로 있는 것: `types.ts` · `index.ts` · `fairness.ts` · `CLAUDE.md`.
-> `commercial.ts` · `weather.ts` · `personal.ts` 는 **아직 없다**(앞으로 만들 파일).
+> develop 에 실제로 있는 것: `types.ts` · `index.ts` · `fairness.ts` · `CLAUDE.md`.
+> `weather.ts` 는 **PR #14 로 만들어져 머지 대기 중**(`lib/weather.ts` 데이터 소스 포함,
+> `NEXT_PUBLIC_FF_WEATHER` 플래그 뒤). `commercial.ts` · `personal.ts` 는 아직 없다.
 
-**⚠️ 먼저 고쳐야 할 것**: `lib/routing.ts` 가 `ScoreContext` 를 만들 때
-`{ participants }` 만 넘긴다. `when`(날짜·시간)과 `weather` 를 안 채우므로
-**날씨·개인선호 스코어러를 만들어도 데이터를 못 받는다.** 그 둘을 붙이기 전에
-`routing.ts` 의 `scoreCandidates()` 에서 `ScoreContext` 를 채워야 한다.
+**⚠️ `ScoreContext` 채우기 (통합 세션 몫)**: `lib/routing.ts` 가 `ScoreContext` 를 만들 때
+`{ participants }` 만 넘긴다 — `when`(날짜·시간)과 `weather` 가 빈 채로 온다.
+PR #14 의 날씨 스코어러는 `ctx.weather ?? getWeather(ctx.hub, ctx.when)` 자급식이라
+막히진 않지만, `when` 이 없어 **"오늘 저녁(19시)" 가정**으로 돈다. 통합 세션이
+`scoreCandidates()` 에서 채우면 그 값이 자동 우선된다. **개인선호 스코어러는
+여전히 `ScoreContext` 를 채워야 데이터를 받는다.**
 
 **되살릴 자산**: `docs/legacy-algo/` 에 알고리즘 8종(빌드 대상 아님).
 그대로 복사하지 말고 읽고 `lib/scoring/` 규격에 맞춰 옮긴다 — `docs/legacy-algo/README.md`.
 가중치 최종값은 **팀 결정 사항**(`CLAUDE.md` §5).
+
+**🗳️ 팀 결정 안건**: PR #14 날씨 스코어러의 `weight: 0.3` 은 `TODO(팀)` 표시된
+임시값이다 (fairness 는 1.0). 머지를 막을 사유는 아니고, 팀이 최종값을 정하면 된다.
 
 **제안한 3단계** (CEO 검토 대기):
 1. 수도권 밖 후보를 **역·터미널**에서 뽑기 — `searchByCategoryKakao("SW8")` 이미 있음
