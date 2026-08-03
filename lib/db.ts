@@ -63,6 +63,24 @@ function maskPassword(u: string): string {
   return `${u.slice(0, colon + 1)}***${u.slice(at)}`;
 }
 
+/**
+ * 오류 메시지를 밖으로 내보내기 전에 자격증명을 가린다.
+ *
+ * 드라이버·런타임에 따라 접속 실패 메시지에 주소가 통째로 섞여 나온다.
+ * `DATABASE_URL` 에는 비밀번호가 들어 있으므로 그대로 응답에 실으면 사고다 —
+ * `/api/status` 의 masked 노출과 같은 원칙을 오류 경로에도 적용한다.
+ */
+export function sanitizeDbError(message: string): string {
+  let out = message;
+  // ① 설정된 주소가 원문 그대로 섞인 경우 — masked 로 통째 치환
+  if (url && out.includes(url)) out = out.split(url).join(dbUrlInfo.masked);
+  // ② 그 외 형태의 자격증명(scheme://user:pw@)도 가린다.
+  //    비밀번호 쪽은 `[^\s@]*` 로 잡으면 안 된다 — 첫 @ 에서 멈춰
+  //    `u:p@ssSECRET@host` 의 뒷부분이 그대로 남는다(PR #15 🟡2 와 같은 실수).
+  //    공백 전까지 greedy 로 마지막 @ 를 host 경계로 잡는다.
+  return out.replace(/[a-z+]+:\/\/[^\s/@]+:[^\s]*@/gi, (m) => maskPassword(m));
+}
+
 export const dbUrlInfo = {
   /** 비밀번호를 가린 주소 — 원문은 절대 내보내지 않는다 */
   masked: maskPassword(url),
