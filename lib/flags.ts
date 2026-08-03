@@ -28,6 +28,18 @@ export const FLAGS = {
 
   /** 개인별 선호 알고리즘. 끄면 참가자 prefs 를 점수에 쓰지 않는다. */
   personalPrefs: process.env.NEXT_PUBLIC_FF_PERSONAL === "1",
+
+  /**
+   * ODsay 진단 모드 — **로컬 실측 전용. 배포에서는 반드시 0.**
+   *
+   * 켜면 두 가지가 풀린다:
+   *  ① 껍데기 응답 가드 우회 — 탑승 구간이 없는 시외 응답도 그대로 내려온다
+   *     (단 `verified: false` 가 붙는다. 가짜를 실제처럼 그리지 않기 위함)
+   *  ② 경로 캐시 우회 — 같은 좌표를 반복 호출해 응답을 비교할 수 있다
+   *
+   * ⚠️ 켠 채로 두면 ODsay 무료 한도(1,000콜/일)를 빠르게 태운다.
+   */
+  odsayProbe: process.env.NEXT_PUBLIC_FF_ODSAY_PROBE === "1",
 } as const;
 
 export type FlagKey = keyof typeof FLAGS;
