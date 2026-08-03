@@ -21,6 +21,8 @@
 
 | 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
 |---|---|---|---|---|
+| 2026-08-03 | Claude(AI) | `app/api/debug/route.ts`, `app/api/diag/route.ts`, `app/api/ai-trace/route.ts`, `app/api/auth/kakao/route.ts` | 디버그 잠금 판정을 `!process.env.ENABLE_DEBUG` → `process.env.ENABLE_DEBUG !== "1"` 로 (4곳 동일) | **`ENABLE_DEBUG=0` 이 잠금을 푸는 버그.** 값이 아니라 존재만 봐서 문자열 `"0"`(truthy)에도 잠금이 풀렸다 — 끈 줄 알고 넣은 값이 운영에서 `/api/diag`(외부 API 상태·서버 공인 IP)와 `/api/debug`(모임 생성)를 외부에 열어준다. CEO 가 실제로 `0` 을 넣어 발견 |
+| 2026-08-03 | Claude(AI) | `.env.example` | `ENABLE_DEBUG` 안내 보강 — "끄려면 0 이 아니라 줄을 지우거나 주석 처리" · Vercel 에 넣지 말 것 · 로컬 dev 는 이 값과 무관 | 값으로 끄려는 시도가 반복될 자리다. 문서가 먼저 막는다 |
 | 2026-07-30 | Claude(AI) | `package.json` | `8.0.0` → **`0.1.0`** | 발표일 `1.0.0` 을 향한 SemVer 체계로 전환 |
 | 2026-07-30 | Claude(AI) | `schema.sql` (루트) | 삭제 | v7 시절 **Neon용** 잔재. 아무 코드도 참조하지 않는데 팀원이 `supabase/schema.sql` 대신 잘못 실행할 위험이 있었다 |
 | 2026-07-30 | Claude(AI) | `docs/legacy-algo/` (신규 8파일 + README) | 유실됐던 추천 알고리즘 8종 복원 | `memory/status.md` 가 `git show 5ff50ee:...` 로 꺼내라고 안내했는데, 그 커밋이 `main` 의 조상이 아닌 **별도 갈래**라 히스토리를 옮겨도 따라오지 않는다 |
