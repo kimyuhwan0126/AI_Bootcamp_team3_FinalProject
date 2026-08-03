@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { hasDb, sanitizeDbError } from "@/lib/db";
 import {
   createMeeting,
   joinMeeting,
@@ -28,17 +29,56 @@ import { runAiTurn } from "@/lib/ai";
 // 인메모리 스토어를 쓰므로 항상 동적 처리 (캐시 금지)
 export const dynamic = "force-dynamic";
 
+/**
+ * 예상 못 한 예외를 원인이 보이는 500 으로 바꾼다.
+ *
+ * `lib/persistence.ts` 는 쓰기 실패 시 throw 한다(`모임 저장 실패: …`).
+ * 그런데 여기서 잡지 않으면 Next.js 기본 500 이 나가는데 **본문이 비어 있어서**
+ * 화면에도 로그에도 원인이 안 남는다 — 릴리스 리뷰가 지적한 지점이다.
+ * `DATABASE_URL` 이 설정돼 있으면 인메모리 폴백을 타지 않는 설계라(의도됨),
+ * DB 가 끊기면 이 경로로 죽는다. 그때 "무엇이 왜 실패했는지"는 나와야 한다.
+ *
+ * ⚠️ 오류 메시지에 접속 주소가 섞일 수 있어 `sanitizeDbError` 로 비밀번호를 가린다.
+ */
+function serverError(e: unknown) {
+  const raw = e instanceof Error ? e.message : String(e);
+  const detail = sanitizeDbError(raw);
+  console.error("[api/meeting]", detail); // 로그 관점 — 서버에도 남긴다
+  return NextResponse.json(
+    {
+      error: "서버에서 처리하지 못했어요. 잠시 후 다시 시도해 주세요.",
+      detail,
+      hint: hasDb
+        ? "DB 접속 문제일 수 있어요 — /api/status 의 db.ready 를 확인하세요."
+        : undefined,
+    },
+    { status: 500 },
+  );
+}
+
 // GET /api/meeting?code=XXXXXX  → 모임 상태 (채팅 포함, 1.8초 폴링 대상)
 export async function GET(req: NextRequest) {
-  const code = req.nextUrl.searchParams.get("code");
-  if (!code) return NextResponse.json({ error: "code 필요" }, { status: 400 });
-  const state = await getState(code);
-  if (!state) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return NextResponse.json(state);
+  try {
+    const code = req.nextUrl.searchParams.get("code");
+    if (!code) return NextResponse.json({ error: "code 필요" }, { status: 400 });
+    const state = await getState(code);
+    if (!state) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    return NextResponse.json(state);
+  } catch (e) {
+    return serverError(e);
+  }
 }
 
 // POST /api/meeting  { action, ... }
 export async function POST(req: NextRequest) {
+  try {
+    return await handlePost(req);
+  } catch (e) {
+    return serverError(e);
+  }
+}
+
+async function handlePost(req: NextRequest) {
   let body: any;
   try {
     body = await req.json();

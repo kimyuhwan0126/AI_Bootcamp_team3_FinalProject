@@ -63,6 +63,8 @@
 | 2026-07-31 | Claude(AI) | `memory/status.md` | §1 진행 중 현황(PR #15 머지 완료 · #14 승인 대기 · #17 열림 · Neon 검증 대기) · §3-2 를 PR #14 이후 사실로 갱신(weather.ts 는 머지 대기, routing.ts `ScoreContext` 채우기는 통합 세션 몫) · 날씨 weight 0.3 을 팀 결정 안건으로 기록 | 문서가 코드와 어긋나면 다음 세션이 잘못된 전제로 시작한다(§4 사고 기록). 리뷰(🟡1)에서 지적된 낡은 주장 정리 |
 | 2026-07-31 | Claude(AI) | `memory/status.md` | §1 에 카카오 로그인 프로덕션 동작 확인 + 도메인 바뀔 때 고칠 두 곳(Vercel `KAKAO_REDIRECT_URI` · 카카오 콘솔 Redirect URI) 표로 기록 | 한쪽만 고치면 조용히 실패한다 — 환경변수를 빠뜨리면 localhost 로 튕기고, 콘솔 등록을 빠뜨리면 KOE006 이 뜬다. 둘 다 실제로 겪었다 |
 | 2026-07-31 | Claude(AI) | `memory/status.md` | §1 을 릴리스 `f0a4235` 후 실측으로 교체 — "Neon 실접속 미검증" → **로컬·프로덕션 양쪽 `db.ready:true` 실측**, Vercel 배포 완료(Production←main / Preview←그 외), `odsay:false`·`ai.ok:false` 가 의도된 상태임을 명시, Preview 가 실 DB 를 공유하는 점 경고, 릴리스 리뷰 후속 2건(500 빈 본문 · postcss) 기록. §3-5 Vercel 항목 체크 | 릴리스 전 문서에는 미검증으로 적혀 있었다. 실측한 것만 적고 확인 안 된 건 미검증으로 남긴다는 원칙대로 교체 — 다음 세션이 낡은 전제로 시작하는 것을 막는다 |
+| 2026-07-31 | Claude(AI) | `app/api/meeting/route.ts` | GET·POST 를 try/catch 로 감싸 예외를 `{ error, detail, hint }` 500 으로 바꾼다 | **릴리스 리뷰 후속 1번** — `lib/persistence.ts` 는 쓰기 실패 시 throw 하는데 여기서 안 잡아 Next.js 기본 500 이 **빈 본문**으로 나갔다. `DATABASE_URL` 이 있으면 인메모리 폴백을 타지 않는 설계라(의도됨) DB 가 끊기면 이 경로로 죽는데, 화면에도 로그에도 원인이 안 남았다 |
+| 2026-07-31 | Claude(AI) | `lib/db.ts` | `sanitizeDbError()` 추가 — 오류 메시지에 섞인 접속 주소의 비밀번호를 `***` 로 가린다 | 위 `detail` 을 응답에 실으려면 자격증명 노출부터 막아야 한다. 드라이버가 접속 실패 메시지에 주소를 통째로 넣는 경우가 있다. 비밀번호 쪽 패턴은 greedy 로 잡는다 — `[^\s@]*` 는 첫 `@` 에서 멈춰 `u:p@ssSECRET@host` 뒷부분이 남는다(PR #15 🟡2 와 같은 실수를 만들 뻔했고 실측에서 잡았다) |
 
 **아래 `v8.x` 기록은 옛 저장소(`kimyuhwan0126/Moimer`)에서 이어진 것이다.**
 저장소는 그대로 남아 있으니 그 이전 이력이 필요하면 거기서 본다.
