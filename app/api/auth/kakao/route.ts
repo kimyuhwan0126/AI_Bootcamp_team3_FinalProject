@@ -24,7 +24,9 @@ export async function GET(req: Request) {
   const origin = url.origin;
 
   if (url.searchParams.get("debug")) {
-    if (process.env.NODE_ENV === "production" && !process.env.ENABLE_DEBUG) {
+    // ⚠️ `!process.env.ENABLE_DEBUG` 는 값이 아니라 "존재"만 본다 —
+    //    `ENABLE_DEBUG=0` 도 truthy 문자열이라 잠금이 풀린다. 정확히 "1" 일 때만 연다.
+    if (process.env.NODE_ENV === "production" && process.env.ENABLE_DEBUG !== "1") {
       return NextResponse.json({ error: "disabled" }, { status: 403 });
     }
     const raw = kakaoAuthorizeUrl();

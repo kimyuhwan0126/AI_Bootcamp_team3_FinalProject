@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 
 // 운영(production) 빌드에서는 완전 비활성화
 function blocked() {
-  return process.env.NODE_ENV === "production" && !process.env.ENABLE_DEBUG;
+  // ⚠️ `!process.env.ENABLE_DEBUG` 로 쓰면 안 된다 — 값이 아니라 "존재"만 보므로
+  //    `ENABLE_DEBUG=0` 도 문자열 "0"(truthy)이라 잠금이 풀린다. 끈 줄 알았는데
+  //    열려 있는 상태가 되므로, 정확히 "1" 일 때만 연다.
+  return process.env.NODE_ENV === "production" && process.env.ENABLE_DEBUG !== "1";
 }
 
 // GET /api/debug → 시나리오 목록
