@@ -21,6 +21,11 @@
 
 | 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
 |---|---|---|---|---|
+| 2026-08-03 | Claude(AI) | `lib/flags.ts` 🔒 | `odsayProbe` 플래그 1개 추가 (`NEXT_PUBLIC_FF_ODSAY_PROBE`) | ODsay 시외 응답을 **로컬에서 실측**하려면 껍데기 가드와 경로 캐시를 우회해야 한다. 상수로 껐다 켜면 브랜치마다 값이 달라져 충돌나므로(CLAUDE.md §3) 플래그가 유일한 방법이다 |
+| 2026-08-03 | Claude(AI) | `lib/odsay.ts` | 진단 모드에서 껍데기 가드 우회(`verified: false` 부착) · `TransitLeg.rawTrafficType` 추가 · `TransitPathDetail.hasMapObj` 추가 · 0분 도보 구간 보존 | **시외에 ODsay 가 무엇을 주는지 관찰**하기 위함. 원시 `trafficType` 을 남기면 우리가 "도보"로 뭉개는 미매핑 수단(시외버스·열차 가능성)의 정체가 드러난다. ⚠️ `min <= 0` 은 진단 모드에서도 차단 — 이동시간 0 은 그 후보를 추천 1위로 만들어 결과를 통째로 왜곡한다 |
+| 2026-08-03 | Claude(AI) | `lib/routing.ts`, `app/api/route-path/route.ts`, `app/api/route-detail/route.ts` | 진단 모드에서 경로 캐시 3종 우회 (읽기·쓰기 모두) | `routeCache`·`pathCache` 는 **TTL 이 없어** 한 번 성공하면 서버 재시작 전까지 같은 값만 돌아온다. 실측 중 "코드를 고쳐도 값이 안 바뀌는" 착시의 원인이라 우회가 필요하다 |
+| 2026-08-03 | Claude(AI) | `app/components/RouteSheet.tsx` | 검증 안 된 응답에 `⚠ 검증 안 된 원시 응답` 칩 + 안내문 (기존 "ODsay 실시간" 칩 대체) | 가드를 풀면 **"ODsay 실시간 82분 · 0원 · 환승 0회"가 사실처럼 보이던 그 사고가 그대로 재현된다.** 가짜를 실제처럼 그리지 않는다(CLAUDE.md §6)를 지키려면 표시부도 함께 고쳐야 한다 |
+| 2026-08-03 | Claude(AI) | `.env.example` | `NEXT_PUBLIC_FF_ODSAY_PROBE=0` + 배포 금지·비용 경고 명시 | 켠 채로 배포하면 검증 안 된 값이 사용자에게 보이고 무료 한도(1,000콜/일)를 태운다 |
 | 2026-07-30 | Claude(AI) | `package.json` | `8.0.0` → **`0.1.0`** | 발표일 `1.0.0` 을 향한 SemVer 체계로 전환 |
 | 2026-07-30 | Claude(AI) | `schema.sql` (루트) | 삭제 | v7 시절 **Neon용** 잔재. 아무 코드도 참조하지 않는데 팀원이 `supabase/schema.sql` 대신 잘못 실행할 위험이 있었다 |
 | 2026-07-30 | Claude(AI) | `docs/legacy-algo/` (신규 8파일 + README) | 유실됐던 추천 알고리즘 8종 복원 | `memory/status.md` 가 `git show 5ff50ee:...` 로 꺼내라고 안내했는데, 그 커밋이 `main` 의 조상이 아닌 **별도 갈래**라 히스토리를 옮겨도 따라오지 않는다 |

@@ -4,6 +4,7 @@
 // 키 없거나 오류 시 null → 상위에서 mock 폴백.
 // ─────────────────────────────────────────────────────────────
 import { env } from "./env";
+import { FLAGS } from "./flags";
 import type { Coord } from "./kakao";
 
 export interface TransitResult {
@@ -11,6 +12,12 @@ export interface TransitResult {
   transfers: number; // 환승 횟수
   fare: number;      // 요금(원)
   walkM: number;     // 총 도보(m)
+  /**
+   * 껍데기 응답 가드를 통과한 값인지.
+   * `false` 는 진단 모드(FLAGS.odsayProbe)에서만 나오며 **믿을 수 없는 값**이라는 뜻이다.
+   * 표시하는 쪽은 이 값이 false 면 실제 경로처럼 그리지 않는다(CLAUDE.md §6).
+   */
+  verified?: boolean;
 }
 
 // ── 경로 후보 상세 (시안1: 경로 상세 바텀시트용) ──
@@ -22,6 +29,12 @@ export interface TransitLeg {
   stations: number;     // 정거장 수 (도보 0)
   min: number;          // 구간 소요(분)
   distanceM: number;    // 도보 거리(m), 그 외 0
+  /**
+   * ODsay 원시 `trafficType`. 1 지하철 · 2 버스 · 3 도보.
+   * **그 외 값은 우리가 매핑하지 않은 수단**(시외버스·열차 등일 수 있다)이며
+   * `kind` 에는 "walk" 로 떨어진다 — 시외 실측 때 이 원시값을 봐야 정체를 알 수 있다.
+   */
+  rawTrafficType?: number;
 }
 export interface TransitPathDetail {
   label: string;        // "지하철 직통" / "버스만" / "버스+지하철" 등
@@ -31,6 +44,14 @@ export interface TransitPathDetail {
   transfers: number;
   walkM: number;
   legs: TransitLeg[];
+  /** 껍데기 가드 통과 여부 — false 면 믿을 수 없는 값(진단 모드에서만 나온다) */
+  verified?: boolean;
+  /**
+   * 폴리라인 식별자(`info.mapObj`) 존재 여부.
+   * 껍데기 응답에도 이게 있으면 지도에는 실경로처럼 선이 그려질 수 있다
+   * (`transitPathOdsay` 에는 껍데기 가드가 없다) — 실측 확인 항목.
+   */
+  hasMapObj?: boolean;
 }
 
 const TRAFFIC_KIND: Record<number, TransitLeg["kind"]> = { 1: "subway", 2: "bus", 3: "walk" };
@@ -52,7 +73,8 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
     const parsed = paths.slice(0, limit).map((path: any): TransitPathDetail => {
       const info = path.info ?? {};
       const legs: TransitLeg[] = (path.subPath ?? [])
-        .filter((s: any) => !(s.trafficType === 3 && !(s.sectionTime > 0))) // 0분 도보 제거
+        // 0분 도보 제거 — 진단 모드에서는 원시 구간을 하나도 빼지 않는다
+        .filter((s: any) => FLAGS.odsayProbe || !(s.trafficType === 3 && !(s.sectionTime > 0)))
         .map((s: any): TransitLeg => ({
           kind: TRAFFIC_KIND[s.trafficType] ?? "walk",
           name: s.lane?.[0]?.name ?? s.lane?.[0]?.busNo ?? "",
@@ -61,6 +83,7 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
           stations: s.stationCount ?? 0,
           min: s.sectionTime ?? 0,
           distanceM: s.trafficType === 3 ? (s.distance ?? 0) : 0,
+          rawTrafficType: s.trafficType,
         }));
       const rides = legs.filter((l) => l.kind !== "walk");
       const transfers = Math.max(0, rides.length - 1);
@@ -79,6 +102,7 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
         transfers,
         walkM: info.totalWalk ?? 0,
         legs,
+        hasMapObj: !!info.mapObj,
       };
     });
 
@@ -89,7 +113,13 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
     //  다른 값이 사실처럼 보인다. 탑승 구간이 있고 시간이 잡힌 것만 남기고,
     //  하나도 못 건지면 null 을 돌려 상위에서 추정값으로 폴백하게 한다.
     const usable = parsed.filter((p) => p.min > 0 && p.legs.some((l) => l.kind !== "walk"));
-    return usable.length ? usable : null;
+    if (usable.length) return usable.map((p) => ({ ...p, verified: true }));
+
+    // 진단 모드(FLAGS.odsayProbe)에서는 걸러낸 껍데기도 그대로 돌려준다 —
+    // "시외에 뭐가 오는지"를 보려면 이 응답 자체가 관찰 대상이기 때문이다.
+    // 대신 verified:false 를 붙여, 표시하는 쪽이 실제 경로처럼 그리지 않게 한다.
+    if (FLAGS.odsayProbe && parsed.length) return parsed.map((p) => ({ ...p, verified: false }));
+    return null;
   } catch {
     return null;
   }
@@ -116,12 +146,25 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
     // 있다 — 이동시간 계산에 그 값이 들어가면 "서울→김천 82분" 같은 결과가 된다.
     // 쓸 수 없는 응답은 null 로 돌려 거리 기반 추정으로 폴백시킨다.
     const rides = (path.subPath ?? []).filter((s: { trafficType?: number }) => s.trafficType !== 3);
-    if (min <= 0 || rides.length === 0) return null;
+    if (min <= 0 || rides.length === 0) {
+      // 진단 모드에서도 **시간이 0 이하면 돌려주지 않는다.** 이동시간 0 은
+      // 그 후보를 추천 1위로 만들어 결과를 통째로 왜곡한다(관찰 이득보다 손해가 크다).
+      // "탑승 구간 없이 시간만 있는" 케이스(예: 82분·0원·환승 0회)는 실측 대상이라 통과시킨다.
+      if (!FLAGS.odsayProbe || min <= 0) return null;
+      return {
+        min,
+        transfers: Math.max(0, rides.length - 1),
+        fare: info.payment ?? 0,
+        walkM: info.totalWalk ?? 0,
+        verified: false,
+      };
+    }
     return {
       min,
       transfers: Math.max(0, rides.length - 1),
       fare: info.payment ?? 0,
       walkM: info.totalWalk ?? 0,
+      verified: true,
     };
   } catch {
     return null;

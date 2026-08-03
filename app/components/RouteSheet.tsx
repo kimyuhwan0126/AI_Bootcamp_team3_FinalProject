@@ -54,6 +54,15 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
     };
   }, [code, participantId, dest.lat, dest.lng, dest.name]);
 
+  // 진단 모드에서만 내려오는 "껍데기 가드를 통과 못 한" 경로.
+  // 평소(플래그 OFF)엔 서버가 이런 값을 아예 안 주므로 항상 false 다.
+  // ⚠️ 훅은 조건부 return 뒤에 두지 않는다 — 화면이 통째로 안 그려진 사고가 있었다.
+  const unverified: boolean =
+    data?.mode === "transit" &&
+    Array.isArray(data.transit) &&
+    data.transit.length > 0 &&
+    data.transit.every((t: { verified?: boolean }) => t.verified === false);
+
   return (
     <div className="backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: "82vh", overflowY: "auto" }}>
@@ -82,8 +91,12 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                 {data.participantName} · {data.origin} → {data.destName}{" "}
                 {data.mode === "car" && <span style={{ fontSize: 12 }}>🚗</span>}
               </b>
-              {data.live ? (
+              {data.live && !unverified ? (
                 <span className="chip ok">{data.mode === "car" ? "TMAP 실시간" : "ODsay 실시간"}</span>
+              ) : unverified ? (
+                // 진단 모드(NEXT_PUBLIC_FF_ODSAY_PROBE)에서만 나온다 —
+                // 껍데기 가드를 통과 못 한 값이라 "실시간"으로 표시하면 안 된다.
+                <span className="chip warn">⚠ 검증 안 된 원시 응답</span>
               ) : (
                 <span className="chip warn">추정값</span>
               )}
@@ -93,7 +106,11 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
             {data.mode === "transit" && (
               <>
                 <p className="faint" style={{ fontSize: 11, margin: "-4px 0 0" }}>
-                  {data.live ? `경로 후보 ${data.transit.length}개 · 시간표 기준` : "실시간 경로를 가져오지 못해 추정값으로 표시해요"}
+                  {unverified
+                    ? "진단 모드 — ODsay 가 돌려준 원시 응답입니다. 탑승 구간이 없어 평소엔 걸러지는 값이라 실제와 다를 수 있어요"
+                    : data.live
+                    ? `경로 후보 ${data.transit.length}개 · 시간표 기준`
+                    : "실시간 경로를 가져오지 못해 추정값으로 표시해요"}
                 </p>
                 {/* 실 경로를 못 가져온 경우엔 왜 그런지와 무엇을 보고 있는지 밝힌다.
                     시외 장거리는 대중교통 API 커버리지 밖이라 KTX·고속버스가 반영되지

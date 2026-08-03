@@ -21,6 +21,7 @@ import { geocodeKakao, coord2AddressKakao, searchPlacesKakao, type Coord } from 
 import { transitRouteOdsay } from "./odsay";
 import { carRouteTmap } from "./tmap";
 import type { Participant, RegionCandidate, PlaceCandidate } from "./types";
+import { FLAGS } from "./flags";
 import { rankCandidates } from "./scoring";
 import type { LocatedParticipant } from "./scoring/types";
 
@@ -49,7 +50,9 @@ export async function resolveGeocode(text: string): Promise<Coord> {
 // ── 이동시간(분) ──
 export async function travelMinutes(from: Coord, to: Coord, transport: string): Promise<number> {
   const key = `${from.lat.toFixed(4)},${from.lng.toFixed(4)}|${to.lat.toFixed(4)},${to.lng.toFixed(4)}|${transport}`;
-  const hit = routeCache.get(key);
+  // 진단 모드에서는 캐시를 건너뛴다 — 이 캐시엔 TTL 이 없어서, 실측 중에
+  // 같은 좌표를 반복 호출해도 첫 응답만 계속 돌아온다(값이 안 바뀌는 것처럼 보인다).
+  const hit = FLAGS.odsayProbe ? undefined : routeCache.get(key);
   if (hit != null) return hit;
 
   let real: number | null = null;
@@ -62,7 +65,7 @@ export async function travelMinutes(from: Coord, to: Coord, transport: string): 
   }
   // 실 API 성공값만 캐시. 폴백(haversine 추정)은 캐시하지 않음.
   if (real != null) {
-    routeCache.set(key, real);
+    if (!FLAGS.odsayProbe) routeCache.set(key, real);
     return real;
   }
   return estMinutes(haversineKm(from, to), transport);
