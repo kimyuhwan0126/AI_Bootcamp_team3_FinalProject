@@ -22,23 +22,43 @@ export interface TransitResult {
 
 // ── 경로 후보 상세 (시안1: 경로 상세 바텀시트용) ──
 export interface TransitLeg {
-  kind: "walk" | "subway" | "bus";
-  name: string;         // 노선명/버스번호, 도보는 ""
+  /**
+   * 이동 수단. `"other"` 는 **ODsay 가 우리가 모르는 `trafficType` 을 준 경우**다.
+   *
+   * ⚠️ 미지 타입을 `"walk"` 로 떨어뜨리지 않는다. 예전에는 `?? "walk"` 였는데,
+   * 철도(`trafficType: 4`)가 전부 "도보"로 뭉개져 **"탑승 구간이 없는 응답"으로 보였고**
+   * 껍데기 가드에 걸려 KTX·SRT 경로가 통째로 버려졌다(2026-08-03 실측).
+   * `"other"` 로 두면 탑승 구간으로는 인정되되 수단명만 모르는 상태가 된다.
+   */
+  kind: "walk" | "subway" | "bus" | "train" | "other";
+  name: string;         // 노선명/버스번호/열차명, 도보는 ""
   from: string;         // 승차 지점 (도보는 "")
   to: string;
   stations: number;     // 정거장 수 (도보 0)
   min: number;          // 구간 소요(분)
   distanceM: number;    // 도보 거리(m), 그 외 0
   /**
-   * ODsay 원시 `trafficType`. 1 지하철 · 2 버스 · 3 도보.
-   * **그 외 값은 우리가 매핑하지 않은 수단**(시외버스·열차 등일 수 있다)이며
-   * `kind` 에는 "walk" 로 떨어진다 — 시외 실측 때 이 원시값을 봐야 정체를 알 수 있다.
+   * ODsay 원시 `trafficType`. **1 지하철 · 2 버스 · 3 도보 · 4 철도(KTX·SRT·무궁화)**.
+   * 그 밖의 값이 오면 `kind` 가 `"other"` 가 된다 — 이 원시값으로 정체를 확인한다.
    */
   rawTrafficType?: number;
+  /**
+   * 수단명을 못 뽑았을 때의 원시 `lane[0]` (진단 모드에서만 채운다).
+   *
+   * 철도 구간은 `lane[0].name`·`busNo` 가 비어 열차명이 `""` 로 나온다(실측).
+   * 어느 필드에 들어 있는지 확정되지 않아, **추측해서 넣는 대신 원본을 노출**해
+   * 다음 실측 때 필드를 특정할 수 있게 한다.
+   */
+  rawLane?: unknown;
 }
 export interface TransitPathDetail {
-  label: string;        // "지하철 직통" / "버스만" / "버스+지하철" 등
-  pathType: 1 | 2 | 3;  // 1 지하철 2 버스 3 혼합
+  label: string;        // "지하철 직통" / "버스만" / "열차 직통" 등
+  /**
+   * ODsay 경로 분류. 1 지하철 · 2 버스 · 3 혼합 · **11 시외**(실측).
+   * 값 종류를 다 알지 못하므로 `number` 로 둔다 — 좁게 선언했다가 시외(11)가
+   * 타입과 어긋난 적이 있다. 화면은 이 값을 직접 쓰지 않고 `label` 을 쓴다.
+   */
+  pathType: number;
   min: number;
   fare: number;
   transfers: number;
@@ -54,7 +74,60 @@ export interface TransitPathDetail {
   hasMapObj?: boolean;
 }
 
-const TRAFFIC_KIND: Record<number, TransitLeg["kind"]> = { 1: "subway", 2: "bus", 3: "walk" };
+/** ODsay 가 도보 구간에 쓰는 `trafficType`. 이 값만 "안 탄 구간"이다. */
+const WALK_TRAFFIC_TYPE = 3;
+
+const TRAFFIC_KIND: Record<number, TransitLeg["kind"]> = {
+  1: "subway",
+  2: "bus",
+  3: "walk",
+  4: "train", // KTX·SRT·무궁화 (2026-08-03 실측: 수서→부산 130분, 영등포→김천 145분)
+};
+
+/**
+ * 이 구간이 "탑승"인가 — 두 함수가 **같은 기준**을 쓰도록 여기 하나로 모은다.
+ *
+ * 예전에는 판정이 갈려 있었다:
+ *   · `transitRouteOdsay`(추천 이동시간): `trafficType !== 3` → 철도를 통과시킴
+ *   · `transitRoutesDetail`(경로 상세):  `kind !== "walk"` → 철도가 "도보"라 탈락
+ * 같은 응답을 한쪽은 쓰고 한쪽은 버려서, **추천 시간과 화면이 어긋났다.**
+ */
+function isRideType(trafficType: unknown): boolean {
+  return typeof trafficType === "number" && trafficType !== WALK_TRAFFIC_TYPE;
+}
+
+// ── 원시 응답 조각 (any 금지 — 필요한 필드만 unknown 으로 받고 가드로 좁힌다) ──
+interface RawSubPath {
+  trafficType?: unknown;
+  sectionTime?: unknown;
+  distance?: unknown;
+  stationCount?: unknown;
+  startName?: unknown;
+  endName?: unknown;
+  lane?: unknown;
+}
+const num = (v: unknown, fallback = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** 수단명이 비어 있을 때 쓰는 기본 라벨 — 빈 문자열로 두면 화면에 이름 없는 구간이 뜬다. */
+const KIND_LABEL: Record<TransitLeg["kind"], string> = {
+  walk: "",
+  subway: "지하철",
+  bus: "버스",
+  train: "열차",
+  other: "대중교통",
+};
+
+/**
+ * 구간의 수단명. 지하철은 `lane[0].name`, 버스는 `lane[0].busNo` 에 있다.
+ * **철도는 둘 다 비어 있는 것이 실측으로 확인됐고 어느 필드인지는 미확정**이라,
+ * 없으면 추측하지 않고 수단 기본 라벨("열차")로 떨어뜨린다.
+ */
+function laneName(sub: RawSubPath, kind: TransitLeg["kind"]): string {
+  const lane = Array.isArray(sub.lane) ? (sub.lane[0] as Record<string, unknown> | undefined) : undefined;
+  const name = str(lane?.name) || str(lane?.busNo);
+  return name || KIND_LABEL[kind];
+}
 
 export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Promise<TransitPathDetail[] | null> {
   if (!env.odsay) return null;
@@ -72,27 +145,43 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
 
     const parsed = paths.slice(0, limit).map((path: any): TransitPathDetail => {
       const info = path.info ?? {};
-      const legs: TransitLeg[] = (path.subPath ?? [])
+      const subPaths: RawSubPath[] = Array.isArray(path.subPath) ? path.subPath : [];
+      const legs: TransitLeg[] = subPaths
         // 0분 도보 제거 — 진단 모드에서는 원시 구간을 하나도 빼지 않는다
-        .filter((s: any) => FLAGS.odsayProbe || !(s.trafficType === 3 && !(s.sectionTime > 0)))
-        .map((s: any): TransitLeg => ({
-          kind: TRAFFIC_KIND[s.trafficType] ?? "walk",
-          name: s.lane?.[0]?.name ?? s.lane?.[0]?.busNo ?? "",
-          from: s.startName ?? "",
-          to: s.endName ?? "",
-          stations: s.stationCount ?? 0,
-          min: s.sectionTime ?? 0,
-          distanceM: s.trafficType === 3 ? (s.distance ?? 0) : 0,
-          rawTrafficType: s.trafficType,
-        }));
+        .filter((s) => FLAGS.odsayProbe || !(s.trafficType === WALK_TRAFFIC_TYPE && !(num(s.sectionTime) > 0)))
+        .map((s): TransitLeg => {
+          // ⚠️ 모르는 trafficType 을 "walk" 로 떨어뜨리지 않는다 — 철도가 그렇게
+          //    사라졌다. 모르면 "other" 로 두어 탑승 구간으로는 남긴다.
+          const kind: TransitLeg["kind"] =
+            typeof s.trafficType === "number" ? TRAFFIC_KIND[s.trafficType] ?? "other" : "other";
+          const name = laneName(s, kind);
+          return {
+            kind,
+            name,
+            from: str(s.startName),
+            to: str(s.endName),
+            stations: num(s.stationCount),
+            min: num(s.sectionTime),
+            distanceM: s.trafficType === WALK_TRAFFIC_TYPE ? num(s.distance) : 0,
+            rawTrafficType: typeof s.trafficType === "number" ? s.trafficType : undefined,
+            // 수단명을 못 뽑았을 때만, 그것도 진단 모드에서만 원본을 실어 보낸다
+            ...(FLAGS.odsayProbe && name === KIND_LABEL[kind] ? { rawLane: s.lane } : {}),
+          };
+        });
+      // 탑승 판정은 `isRideType` 과 같은 기준이어야 한다(도보만 제외).
       const rides = legs.filter((l) => l.kind !== "walk");
       const transfers = Math.max(0, rides.length - 1);
       // 라벨은 pathType(ODsay 분류)이 아니라 "실제로 파싱된 구간"으로 만든다.
       // pathType 3 을 그대로 믿고 "버스+지하철"이라 썼더니, 구간이 하나도
       // 안 잡힌 응답에도 그 문구가 붙어 사실과 달랐다(CEO 보고: 시외 경로).
-      const hasBus = rides.some((l) => l.kind === "bus");
-      const hasSub = rides.some((l) => l.kind === "subway");
-      const modeName = hasBus && hasSub ? "버스+지하철" : hasSub ? "지하철" : hasBus ? "버스" : "대중교통";
+      const kinds = new Set(rides.map((l) => l.kind));
+      const modeName =
+        kinds.size === 0
+          ? "대중교통"
+          : (["train", "subway", "bus", "other"] as const)
+              .filter((k) => kinds.has(k))
+              .map((k) => KIND_LABEL[k])
+              .join("+");
       const label = transfers === 0 ? `${modeName} 직통` : `${modeName} 환승 ${transfers}회`;
       return {
         label,
@@ -145,7 +234,10 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
     // 시외 장거리에서 ODsay 가 시간 0(또는 탑승 구간 없음)인 껍데기를 주는 경우가
     // 있다 — 이동시간 계산에 그 값이 들어가면 "서울→김천 82분" 같은 결과가 된다.
     // 쓸 수 없는 응답은 null 로 돌려 거리 기반 추정으로 폴백시킨다.
-    const rides = (path.subPath ?? []).filter((s: { trafficType?: number }) => s.trafficType !== 3);
+    // 탑승 판정은 transitRoutesDetail 과 **같은 기준**을 쓴다(isRideType).
+    // 예전엔 이쪽만 철도를 통과시켜, 추천에 쓰는 시간과 화면에 뜨는 경로가 어긋났다.
+    const subPaths: RawSubPath[] = Array.isArray(path.subPath) ? path.subPath : [];
+    const rides = subPaths.filter((s) => isRideType(s.trafficType));
     if (min <= 0 || rides.length === 0) {
       // 진단 모드에서도 **시간이 0 이하면 돌려주지 않는다.** 이동시간 0 은
       // 그 후보를 추천 1위로 만들어 결과를 통째로 왜곡한다(관찰 이득보다 손해가 크다).

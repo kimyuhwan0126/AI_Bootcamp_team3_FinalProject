@@ -35,9 +35,32 @@ export function formatDistance(meters: number | null | undefined): string {
   return `${(meters / 1000).toFixed(1)}km`;
 }
 
-/** 요금·금액 — 0이면 "무료", 그 외 천단위 콤마 + 원 */
+/**
+ * 금액 표기 — 0이면 "무료", 그 외 천단위 콤마 + 원.
+ *
+ * ⚠️ **음수는 "무료"가 아니라 "—"다.** 음수 금액은 어떤 화면에서도 실재하지 않고,
+ * 외부 API 가 "정보 없음"을 `-1` 로 보내는 경우가 있다(ODsay `payment: -1`).
+ * 예전에는 `won <= 0` 을 전부 "무료"로 묶어서, **요금을 모르는 4시간짜리 경로가
+ * "무료"로 표시**됐다 — 가짜를 실제처럼 그리지 않는다(CLAUDE.md §6).
+ *
+ * `0` 은 호출부에 따라 뜻이 갈린다. 통행료 0원은 진짜 "무료"지만, 대중교통 요금
+ * 0원은 대개 "제공 안 함"이다. **0 도 모름으로 봐야 하는 화면은 `formatFare()`** 를 쓴다.
+ */
 export function formatWon(won: number | null | undefined): string {
   if (won == null || !Number.isFinite(won)) return "—";
-  if (won <= 0) return "무료";
+  if (won < 0) return "—";
+  if (won === 0) return "무료";
+  return `${won.toLocaleString("ko-KR")}원`;
+}
+
+/**
+ * 요금 표기 — **0 이하를 "정보 없음"으로 본다.** 대중교통 요금처럼
+ * "0원짜리 탑승"이 존재하지 않는 값에 쓴다.
+ *
+ * ODsay 실측(2026-08-03): 철도(KTX·SRT) 경로는 `payment: 0`, 시외버스 경로는
+ * `payment: -1` 로 온다. 둘 다 요금을 안 주는 것이지 공짜가 아니다.
+ */
+export function formatFare(won: number | null | undefined): string {
+  if (won == null || !Number.isFinite(won) || won <= 0) return "요금 정보 없음";
   return `${won.toLocaleString("ko-KR")}원`;
 }
