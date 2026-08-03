@@ -21,6 +21,7 @@
 
 | 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
 |---|---|---|---|---|
+| 2026-08-03 | Claude(AI) | `memory/status.md` | §3-3 을 **실측 결과로 전면 교체** — "시외는 근본적으로 답을 못 낸다 · ODsay 시외 전용 엔드포인트 필요"는 **틀린 주장이었다**. `rawTrafficType 4 = 철도` 확정(부산·김천 실측), 대전은 이미 정상, 고칠 것 4가지(매핑 추가 · `fare -1/0` 이 "무료"로 표시되는 버그 · 이동시간/상세 판정 비대칭 · 열차명 누락) 정리. §1 진행 현황과 `odsay:false` 설명도 갱신 | PR #21 진단 플래그로 CEO 로컬에서 4콜 실측한 결과 전제가 뒤집혔다. 낡은 주장을 그대로 두면 다음 세션이 **불필요한 API 교체 작업**을 시작한다 — 실측한 것만 적는다는 원칙대로 교체했다 |
 | 2026-08-03 | Claude(AI) | `app/api/debug/route.ts`, `app/api/diag/route.ts`, `app/api/ai-trace/route.ts`, `app/api/auth/kakao/route.ts` | 디버그 잠금 판정을 `!process.env.ENABLE_DEBUG` → `process.env.ENABLE_DEBUG !== "1"` 로 (4곳 동일) | **`ENABLE_DEBUG=0` 이 잠금을 푸는 버그.** 값이 아니라 존재만 봐서 문자열 `"0"`(truthy)에도 잠금이 풀렸다 — 끈 줄 알고 넣은 값이 운영에서 `/api/diag`(외부 API 상태·서버 공인 IP)와 `/api/debug`(모임 생성)를 외부에 열어준다. CEO 가 실제로 `0` 을 넣어 발견 |
 | 2026-08-03 | Claude(AI) | `.env.example` | `ENABLE_DEBUG` 안내 보강 — "끄려면 0 이 아니라 줄을 지우거나 주석 처리" · Vercel 에 넣지 말 것 · 로컬 dev 는 이 값과 무관 | 값으로 끄려는 시도가 반복될 자리다. 문서가 먼저 막는다 |
 | 2026-08-03 | Claude(AI) | `lib/flags.ts` 🔒 | `odsayProbe` 플래그 1개 추가 (`NEXT_PUBLIC_FF_ODSAY_PROBE`) | ODsay 시외 응답을 **로컬에서 실측**하려면 껍데기 가드와 경로 캐시를 우회해야 한다. 상수로 껐다 켜면 브랜치마다 값이 달라져 충돌나므로(CLAUDE.md §3) 플래그가 유일한 방법이다 |
