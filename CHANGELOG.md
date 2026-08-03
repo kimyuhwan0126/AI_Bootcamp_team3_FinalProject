@@ -21,6 +21,8 @@
 
 | 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
 |---|---|---|---|---|
+| 2026-08-03 | Claude(AI) | `app/api/debug/route.ts`, `app/api/diag/route.ts`, `app/api/ai-trace/route.ts`, `app/api/auth/kakao/route.ts` | 디버그 잠금 판정을 `!process.env.ENABLE_DEBUG` → `process.env.ENABLE_DEBUG !== "1"` 로 (4곳 동일) | **`ENABLE_DEBUG=0` 이 잠금을 푸는 버그.** 값이 아니라 존재만 봐서 문자열 `"0"`(truthy)에도 잠금이 풀렸다 — 끈 줄 알고 넣은 값이 운영에서 `/api/diag`(외부 API 상태·서버 공인 IP)와 `/api/debug`(모임 생성)를 외부에 열어준다. CEO 가 실제로 `0` 을 넣어 발견 |
+| 2026-08-03 | Claude(AI) | `.env.example` | `ENABLE_DEBUG` 안내 보강 — "끄려면 0 이 아니라 줄을 지우거나 주석 처리" · Vercel 에 넣지 말 것 · 로컬 dev 는 이 값과 무관 | 값으로 끄려는 시도가 반복될 자리다. 문서가 먼저 막는다 |
 | 2026-08-03 | Claude(AI) | `lib/flags.ts` 🔒 | `odsayProbe` 플래그 1개 추가 (`NEXT_PUBLIC_FF_ODSAY_PROBE`) | ODsay 시외 응답을 **로컬에서 실측**하려면 껍데기 가드와 경로 캐시를 우회해야 한다. 상수로 껐다 켜면 브랜치마다 값이 달라져 충돌나므로(CLAUDE.md §3) 플래그가 유일한 방법이다 |
 | 2026-08-03 | Claude(AI) | `lib/odsay.ts` | 진단 모드에서 껍데기 가드 우회(`verified: false` 부착) · `TransitLeg.rawTrafficType` 추가 · `TransitPathDetail.hasMapObj` 추가 · 0분 도보 구간 보존 | **시외에 ODsay 가 무엇을 주는지 관찰**하기 위함. 원시 `trafficType` 을 남기면 우리가 "도보"로 뭉개는 미매핑 수단(시외버스·열차 가능성)의 정체가 드러난다. ⚠️ `min <= 0` 은 진단 모드에서도 차단 — 이동시간 0 은 그 후보를 추천 1위로 만들어 결과를 통째로 왜곡한다 |
 | 2026-08-03 | Claude(AI) | `lib/routing.ts`, `app/api/route-path/route.ts`, `app/api/route-detail/route.ts` | 진단 모드에서 경로 캐시 3종 우회 (읽기·쓰기 모두) | `routeCache`·`pathCache` 는 **TTL 이 없어** 한 번 성공하면 서버 재시작 전까지 같은 값만 돌아온다. 실측 중 "코드를 고쳐도 값이 안 바뀌는" 착시의 원인이라 우회가 필요하다 |
