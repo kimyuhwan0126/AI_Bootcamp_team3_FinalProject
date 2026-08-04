@@ -114,7 +114,16 @@ export async function travelMinutesEx(
     if (!FLAGS.odsayProbe) routeCache.set(key, real);
     return { min: real, real: true };
   }
-  return { min: estMinutes(haversineKm(from, to), transport), real: false };
+  // ── 폴백 지점 — 앱의 모든 추정값이 여기서 태어난다 ──
+  //  odsay.ts 의 warn(#29)은 "왜"(HTTP·빈 경로)를 남기고, 여기는 "어디"(좌표)를
+  //  남긴다. 둘을 짝지으면 어느 구간이 안 풀리는지 로그만으로 확정된다.
+  //  (좌표는 비밀이 아니고, URL·키는 찍지 않는다)
+  const km = haversineKm(from, to);
+  console.warn(
+    `[routing] 추정 폴백 ${km.toFixed(2)}km ${transport} ` +
+      `(${from.lat.toFixed(4)},${from.lng.toFixed(4)})→(${to.lat.toFixed(4)},${to.lng.toFixed(4)})`
+  );
+  return { min: estMinutes(km, transport), real: false };
 }
 
 /**
