@@ -21,6 +21,7 @@
 
 | 날짜 | 작업자 | 대상 파일/폴더 | 변경 내용 | 사유 |
 |---|---|---|---|---|
+| 2026-08-04 | Claude(AI) | `.gitignore` | 루트 로그 파일(`dev-*.log` · `*.log`)을 무시 목록에 추가 | 기존 규칙은 `/logs/` 와 `npm/yarn-debug.log*` 뿐이라 **루트에 떨어지는 `dev-3000.log` 가 안 걸렸다.** 개발 서버를 파일로 돌리면 요청 경로·좌표·오류가 그대로 쌓이는데, 공개 저장소라 커밋되면 그 내용이 공개된다. 실제로 추적되지 않은 채 작업 트리에 있었다 |
 | 2026-08-04 | Claude(AI) | `lib/ai.ts` · `.env.example` | `chatCompletion` 에 `apiKey` 파라미터 추가 · 하드코딩된 `Authorization: "Bearer ollama"` 를 `OLLAMA_{PRIMARY,FALLBACK}_API_KEY` 로 · 기본값 `"ollama"` 유지 | **Ollama Cloud 를 쓸 통로가 아예 없었다.** 로컬 Ollama 는 토큰을 검사하지 않아 더미 문자열로 충분했지만, `ollama.com` 은 진짜 키를 요구해 401 이 난다. 기본값을 `"ollama"` 로 둬서 키를 안 넣은 팀원의 로컬 동작은 그대로다. ⚠️ 클라우드 모델 ID 에 `:cloud` 를 붙이면 안 된다 — 그건 로컬 ollama 의 중계 표기이고 클라우드엔 `glm-5.2` 로 존재한다(실측). ⚠️ `glm-5.2` 는 추론 모델이라 `max_tokens` 를 낮게 걸면 사고 토큰만 쓰고 `content` 가 빈 문자열로 온다(64 로 실측) — 현재 `lib/ai.ts` 는 `max_tokens` 를 안 보내므로 무해하지만 넣을 때 주의 |
 | 2026-08-03 | Claude(AI) | `lib/env.ts`, `lib/odsay.ts`, `.env.example` | ODsay 호출 주소를 `ODSAY_BASE_URL` 로 빼고, `ODSAY_PROXY_SECRET` 이 있으면 `x-proxy-secret` 헤더로 보낸다 (fetch 4곳). 끝 슬래시·공백 자동 제거 | ODsay 서버 키는 **호출 IP 화이트리스트**가 필요한데 Vercel 서버리스는 나가는 IP 가 유동이라 등록이 불가능하다. 고정 IP 프록시를 거칠 수 있게 한다. **환경변수가 비면 기본값이 `api.odsay.com` + 헤더 없음이라 기존과 100% 동일** — 팀원 로컬이 안 깨진다 |
 | 2026-08-03 | Claude(AI) | `lib/odsay.ts` | ODsay 의 **"HTTP 200 + `error` 본문"** 을 명시적으로 잡고 `console.warn` 으로 사유를 남긴다 | ODsay 는 인증 실패에도 200 을 준다(`[ApiKeyAuthFailed]`). `if (!r.ok)` 로는 못 잡고 뒤에서 우연히 걸러질 뿐이었다. 로그가 있어야 Vercel 에서 **"터널 장애"와 "키 문제"를 구분**할 수 있다 |
