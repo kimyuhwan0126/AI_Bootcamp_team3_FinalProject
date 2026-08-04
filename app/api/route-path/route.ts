@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { carPathTmap } from "@/lib/tmap";
 import { transitPathOdsay } from "@/lib/odsay";
+import { FLAGS } from "@/lib/flags";
 import type { Coord } from "@/lib/kakao";
 
 export const dynamic = "force-dynamic";
@@ -48,12 +49,14 @@ export async function POST(req: NextRequest) {
       const t = o.transport === "car" ? "car" : "transit";
       const k = key(from, dest, t);
 
-      const hit = pathCache.get(k);
+      // 진단 모드에서는 캐시를 건너뛴다 — 이 캐시엔 TTL 이 없어서 한 번 성공하면
+      // 서버 재시작 전까지 같은 좌표열만 돌아온다(실측 중 값이 안 바뀌어 보인다).
+      const hit = FLAGS.odsayProbe ? undefined : pathCache.get(k);
       if (hit) return { id: o.id, points: hit, real: true };
 
       const pts = t === "car" ? await carPathTmap(from, dest) : await transitPathOdsay(from, dest);
       if (pts) {
-        pathCache.set(k, pts);
+        if (!FLAGS.odsayProbe) pathCache.set(k, pts);
         return { id: o.id, points: pts, real: true };
       }
       // 키 없음 / API 실패 — 직선 근사임을 real=false 로 알린다 (캐시하지 않음)

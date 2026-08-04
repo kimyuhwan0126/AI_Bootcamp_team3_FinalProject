@@ -6,7 +6,7 @@
 //   자차:     TMAP 옵션 비교 + 택시요금 + 카풀 정산 미리보기
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
-import { formatMinutes, formatDistance, formatWon } from "@/lib/format";
+import { formatMinutes, formatDistance, formatWon, formatFare } from "@/lib/format";
 
 interface Props {
   code: string;
@@ -25,9 +25,21 @@ const LINE_COLORS: [RegExp, string][] = [
 ];
 function lineColor(name: string, kind: string): string {
   if (kind === "bus") return "#4c8df6";
+  // 철도(KTX·SRT·무궁화)는 수도권 노선색 규칙과 무관하므로 따로 둔다
+  if (kind === "train") return "#3b4a6b";
+  if (kind === "other") return "var(--hair2)";
   for (const [re, c] of LINE_COLORS) if (re.test(name)) return c;
   return "var(--ac)";
 }
+
+/** 구간 아이콘. `other` 는 우리가 모르는 수단이라 중립 기호를 쓴다. */
+const KIND_ICON: Record<string, string> = {
+  walk: "🚶",
+  subway: "🚇",
+  bus: "🚌",
+  train: "🚄",
+  other: "🚏",
+};
 
 export default function RouteSheet({ code, participantId, dest, onClose }: Props) {
   const [data, setData] = useState<any | null>(null);
@@ -53,6 +65,15 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
       alive = false;
     };
   }, [code, participantId, dest.lat, dest.lng, dest.name]);
+
+  // 진단 모드에서만 내려오는 "껍데기 가드를 통과 못 한" 경로.
+  // 평소(플래그 OFF)엔 서버가 이런 값을 아예 안 주므로 항상 false 다.
+  // ⚠️ 훅은 조건부 return 뒤에 두지 않는다 — 화면이 통째로 안 그려진 사고가 있었다.
+  const unverified: boolean =
+    data?.mode === "transit" &&
+    Array.isArray(data.transit) &&
+    data.transit.length > 0 &&
+    data.transit.every((t: { verified?: boolean }) => t.verified === false);
 
   return (
     <div className="backdrop" onClick={onClose}>
@@ -82,8 +103,12 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                 {data.participantName} · {data.origin} → {data.destName}{" "}
                 {data.mode === "car" && <span style={{ fontSize: 12 }}>🚗</span>}
               </b>
-              {data.live ? (
+              {data.live && !unverified ? (
                 <span className="chip ok">{data.mode === "car" ? "TMAP 실시간" : "ODsay 실시간"}</span>
+              ) : unverified ? (
+                // 진단 모드(NEXT_PUBLIC_FF_ODSAY_PROBE)에서만 나온다 —
+                // 껍데기 가드를 통과 못 한 값이라 "실시간"으로 표시하면 안 된다.
+                <span className="chip warn">⚠ 검증 안 된 원시 응답</span>
               ) : (
                 <span className="chip warn">추정값</span>
               )}
@@ -93,11 +118,17 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
             {data.mode === "transit" && (
               <>
                 <p className="faint" style={{ fontSize: 11, margin: "-4px 0 0" }}>
-                  {data.live ? `경로 후보 ${data.transit.length}개 · 시간표 기준` : "실시간 경로를 가져오지 못해 추정값으로 표시해요"}
+                  {unverified
+                    ? "진단 모드 — ODsay 가 돌려준 원시 응답입니다. 탑승 구간이 없어 평소엔 걸러지는 값이라 실제와 다를 수 있어요"
+                    : data.live
+                    ? `경로 후보 ${data.transit.length}개 · 시간표 기준`
+                    : "실시간 경로를 가져오지 못해 추정값으로 표시해요"}
                 </p>
                 {/* 실 경로를 못 가져온 경우엔 왜 그런지와 무엇을 보고 있는지 밝힌다.
-                    시외 장거리는 대중교통 API 커버리지 밖이라 KTX·고속버스가 반영되지
-                    않는다 — 값이 실제보다 크게 어긋날 수 있음을 숨기지 않는다. */}
+                    ⚠️ 예전엔 "시외는 API 커버리지 밖"이라고 안내했는데 **사실이 아니었다** —
+                    2026-08-03 실측에서 ODsay 는 KTX·SRT(`trafficType: 4`)를 제대로 돌려줬고,
+                    우리 매핑이 그걸 "도보"로 뭉개 버린 것이었다. 원인을 오해하게 만드는
+                    문구라 지웠다. 지금 이 자리는 "키 없음/호출 실패"일 때만 뜬다. */}
                 {!data.live && (
                   <div
                     style={{
@@ -110,8 +141,8 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                       color: "var(--warn)",
                     }}
                   >
-                    <b>직선거리로 추정한 값이에요.</b> 대중교통 경로 API는 수도권·광역시
-                    중심이라, 시외 장거리(KTX·고속버스)는 실제 소요시간과 크게 다를 수 있어요.
+                    <b>직선거리로 추정한 값이에요.</b> 실시간 경로를 가져오지 못해
+                    거리로만 계산했어요 — 실제 소요시간과 크게 다를 수 있습니다.
                     정확한 시간은 카카오맵·네이버지도에서 확인해주세요.
                   </div>
                 )}
@@ -135,7 +166,7 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                             </span>
                           ) : (
                             <span key={j} className="row" style={{ gap: 2, flex: l.min, minWidth: 24 }}>
-                              <span style={{ fontSize: 10 }}>{l.kind === "subway" ? "🚇" : "🚌"}</span>
+                              <span style={{ fontSize: 10 }}>{KIND_ICON[l.kind] ?? "🚏"}</span>
                               <i style={{ display: "block", flex: 1, height: 6, borderRadius: 99, background: lineColor(l.name, l.kind) }} />
                             </span>
                           )
@@ -144,10 +175,18 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                       <div className="faint" style={{ fontSize: 10.5, lineHeight: 1.5 }}>
                         {t.legs
                           .filter((l: any) => l.kind !== "walk")
-                          .map((l: any) => `${l.name} ${l.from}→${l.to} (${l.stations}정거장 ${formatMinutes(l.min)})`)
+                          .map((l: any) =>
+                            // 철도는 정거장 수가 의미 없거나 0으로 오므로 붙이지 않는다
+                            l.stations > 0
+                              ? `${l.name} ${l.from}→${l.to} (${l.stations}정거장 ${formatMinutes(l.min)})`
+                              : `${l.name} ${l.from}→${l.to} (${formatMinutes(l.min)})`
+                          )
                           .join(" · ")}
                         {" · "}
-                        <b style={{ color: "var(--ink-soft)" }}>{formatWon(t.fare)}</b>
+                        {/* 대중교통 요금은 0·-1 이 "무료"가 아니라 "정보 없음"이다
+                            (철도 0 · 시외버스 -1 — 2026-08-03 실측). formatWon 이 아니라
+                            formatFare 를 쓴다 — 4시간짜리 경로가 "무료"로 표시되던 버그. */}
+                        <b style={{ color: "var(--ink-soft)" }}>{formatFare(t.fare)}</b>
                         {" · 도보 "}{formatDistance(t.walkM)} · 환승 {t.transfers}회
                       </div>
                     </div>

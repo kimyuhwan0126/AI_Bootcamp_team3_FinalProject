@@ -62,9 +62,28 @@ export async function GET() {
     // 대조하면 된다. URL이라 비밀이 아니며, 키 값은 여기 노출되지 않는다.
     kakaoRedirect: env.kakaoRedirect,
     odsay: has.odsay,
+    // ODsay 프록시 경유 설정 여부. **주소·비밀값은 싣지 않는다** — 터널 주소는
+    // 반쯤 비밀이고, 공유 비밀은 완전한 비밀이다. 켜졌는지만 불리언으로 밝힌다.
+    //
+    // 이게 없으면 `odsay: true` 인데 실패할 때 "키 문제"인지 "프록시 미설정"인지
+    // 밖에서 구분할 방법이 없다 — 2026-08-04 종단 확인에서 실제로 막혔다.
+    odsayProxy: env.odsayBase !== "https://api.odsay.com",
+    odsayProxyAuth: !!env.odsayProxySecret,
     tmap: has.tmap,
     db: dbStatus, // { configured, ready, error?, url?, urlHint? }
     store: db ? "neon" : "memory",
+    // **지금 보고 있는 배포가 어느 것인지.** Vercel 이 심어 주는 시스템 환경변수라
+    // 우리가 설정할 것은 없고, 로컬에서는 전부 없으므로 "local" 로 떨어진다.
+    //
+    // 없으면 Preview 와 Production 응답이 **글자 하나 다르지 않아** 어느 배포를
+    // 보고 있는지 알 수가 없다(`kakaoRedirect` 는 두 스코프가 같은 값이다).
+    // 2026-08-04 ODsay 종단 확인에서 이것 때문에 한 라운드를 헛돌았다.
+    // 공개 저장소라 브랜치명·커밋 해시는 비밀이 아니다.
+    deploy: {
+      env: process.env.VERCEL_ENV || "local", // production | preview | development
+      branch: process.env.VERCEL_GIT_COMMIT_REF || null,
+      commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
+    },
     ai, // { ok, active: "primary"|"fallback"|"none", model, url }
   });
 }

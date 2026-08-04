@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getState } from "@/lib/store";
 import { transitRoutesDetail, type TransitPathDetail } from "@/lib/odsay";
 import { carRoutesDetail, type CarOptionDetail } from "@/lib/tmap";
+import { FLAGS } from "@/lib/flags";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,9 @@ export async function GET(req: NextRequest) {
   }
 
   const key = `${p.lat.toFixed(4)},${p.lng.toFixed(4)}|${toLat.toFixed(4)},${toLng.toFixed(4)}|${p.transport}`;
-  const hit = cache.get(key);
+  // 진단 모드에서는 10분 캐시를 건너뛴다 — 실측 중 같은 좌표를 다시 물어도
+  // 10분 동안 첫 응답만 돌아와, 코드를 고쳐도 안 바뀌는 것처럼 보인다.
+  const hit = FLAGS.odsayProbe ? undefined : cache.get(key);
   if (hit && Date.now() - hit.at < TTL) {
     return NextResponse.json({ ...hit.data, participantName: p.name, origin: p.origin, destName: toName });
   }
@@ -93,6 +96,6 @@ export async function GET(req: NextRequest) {
   }
 
   // 실 API 성공값만 캐시 (폴백 캐시 오염 방지 — routing.ts와 동일 원칙)
-  if (data.live) cache.set(key, { at: Date.now(), data });
+  if (data.live && !FLAGS.odsayProbe) cache.set(key, { at: Date.now(), data });
   return NextResponse.json(data);
 }

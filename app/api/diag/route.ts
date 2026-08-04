@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 
 // 개발 전용: 각 외부 API를 실제 호출해 상태코드/응답 앞부분을 그대로 반환(키는 노출 안 함)
 function blocked() {
-  return process.env.NODE_ENV === "production" && !process.env.ENABLE_DEBUG;
+  // ⚠️ `!process.env.ENABLE_DEBUG` 는 값이 아니라 "존재"만 본다 —
+  //    `ENABLE_DEBUG=0` 도 truthy 문자열이라 잠금이 풀린다. 정확히 "1" 일 때만 연다.
+  return process.env.NODE_ENV === "production" && process.env.ENABLE_DEBUG !== "1";
 }
 
 async function probe(label: string, url: string, opts?: RequestInit) {
