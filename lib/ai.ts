@@ -29,6 +29,11 @@ const PRIMARY_URL = process.env.OLLAMA_PRIMARY_URL || "";
 const PRIMARY_MODEL = process.env.OLLAMA_PRIMARY_MODEL || "glm-5.2:cloud";
 const FALLBACK_URL = process.env.OLLAMA_FALLBACK_URL || "http://localhost:11434/v1";
 const FALLBACK_MODEL = process.env.OLLAMA_FALLBACK_MODEL || "qwen2.5-coder:7b";
+// Ollama Cloud(ollama.com)는 진짜 API 키를 요구한다. 로컬 Ollama 는 아무 값이나 받으므로
+// 기본값 "ollama" 를 그대로 둔다 — 키를 안 넣으면 기존 동작이 그대로 유지된다.
+// ⚠️ 키는 .env.local 에만 둔다(공개 저장소). /api/status 응답에 실리지 않게 노출도 하지 않는다.
+const PRIMARY_KEY = process.env.OLLAMA_PRIMARY_API_KEY || "ollama";
+const FALLBACK_KEY = process.env.OLLAMA_FALLBACK_API_KEY || "ollama";
 
 const SILENT = "[SILENT]";
 const MAX_TOOL_LOOPS = 5;
@@ -77,14 +82,15 @@ async function chatCompletion(
   base: string,
   model: string,
   body: any,
-  timeoutMs: number
+  timeoutMs: number,
+  apiKey: string
 ): Promise<any> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const r = await fetch(`${base}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer ollama" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, ...body }),
       signal: ctrl.signal,
     });
@@ -123,7 +129,7 @@ async function llm(body: any, ctx?: Record<string, unknown>): Promise<any> {
 
   if (S.active === "primary") {
     try {
-      const r = await chatCompletion(PRIMARY_URL, PRIMARY_MODEL, body, GEN_TIMEOUT_MS);
+      const r = await chatCompletion(PRIMARY_URL, PRIMARY_MODEL, body, GEN_TIMEOUT_MS, PRIMARY_KEY);
       return finish(r, PRIMARY_MODEL, PRIMARY_URL);
     } catch (e: any) {
       console.warn(`[ai] primary(${PRIMARY_MODEL}) 실패 → fallback(${FALLBACK_MODEL}) 전환:`, e?.message);
@@ -131,7 +137,7 @@ async function llm(body: any, ctx?: Record<string, unknown>): Promise<any> {
       S.active = "fallback";
     }
   }
-  const r = await chatCompletion(FALLBACK_URL, FALLBACK_MODEL, body, GEN_TIMEOUT_MS);
+  const r = await chatCompletion(FALLBACK_URL, FALLBACK_MODEL, body, GEN_TIMEOUT_MS, FALLBACK_KEY);
   return finish(r, FALLBACK_MODEL, FALLBACK_URL);
 }
 
