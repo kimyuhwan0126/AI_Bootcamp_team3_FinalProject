@@ -154,6 +154,40 @@ function odsayError(d: unknown): boolean {
   return true;
 }
 
+/**
+ * 로그에 실을 호출 대상. **호스트만** 쓴다 — 전체 URL 에는 `apiKey` 가 들어 있어
+ * 그대로 찍으면 Vercel 로그에 키가 평문으로 남는다.
+ */
+function odsayHost(): string {
+  try {
+    return new URL(env.odsayBase).host;
+  } catch {
+    return `(ODSAY_BASE_URL 형식 오류: ${env.odsayBase.slice(0, 30)})`;
+  }
+}
+
+/**
+ * 2xx 가 아닌 응답. **프록시·터널 장애가 여기로 온다** — Cloudflare 502/1033(터널
+ * 다운) · 프록시 401/403(공유 비밀 불일치)이 전부 이 경로다.
+ *
+ * ⚠️ 예전에는 `if (!r.ok) return null` 이라 **로그 한 줄 없이 사라졌다.**
+ *    #28 이 "로그로 터널 장애와 키 문제를 구분한다"고 했지만 실제로는 구분이
+ *    안 됐다 — 2026-08-04 종단 확인에서 `live:false` 의 원인을 좁히지 못해 드러났다.
+ */
+function warnHttp(label: string, status: number): void {
+  console.warn(`[odsay] ${label} HTTP ${status} (via ${odsayHost()}) — 프록시/터널 응답으로 보인다`);
+}
+
+/** fetch 가 던진 경우. 터널 주소가 죽었거나 DNS 가 안 풀린다. */
+function warnThrown(label: string, e: unknown): void {
+  console.warn(`[odsay] ${label} 요청 실패 (via ${odsayHost()}): ${e instanceof Error ? e.message : String(e)}`);
+}
+
+/** HTTP 200 · 에러본문도 없는데 경로가 비어 있는 경우 — ODsay 가 못 푸는 구간이다. */
+function warnEmpty(label: string): void {
+  console.warn(`[odsay] ${label} 200 인데 경로가 비어 있다 (via ${odsayHost()}) — 구간을 못 푸는 것으로 보인다`);
+}
+
 export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Promise<TransitPathDetail[] | null> {
   if (!env.odsay) return null;
   try {
@@ -163,11 +197,11 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
       apiKey: env.odsay,
     });
     const r = await fetch(`${env.odsayBase}/v1/api/searchPubTransPathT?${p.toString()}`, PROXY_INIT);
-    if (!r.ok) return null;
+    if (!r.ok) { warnHttp("경로상세", r.status); return null; }
     const d = await r.json();
     if (odsayError(d)) return null;
     const paths = d?.result?.path;
-    if (!Array.isArray(paths) || paths.length === 0) return null;
+    if (!Array.isArray(paths) || paths.length === 0) { warnEmpty("경로상세"); return null; }
 
     const parsed = paths.slice(0, limit).map((path: any): TransitPathDetail => {
       const info = path.info ?? {};
@@ -235,7 +269,8 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
     // 대신 verified:false 를 붙여, 표시하는 쪽이 실제 경로처럼 그리지 않게 한다.
     if (FLAGS.odsayProbe && parsed.length) return parsed.map((p) => ({ ...p, verified: false }));
     return null;
-  } catch {
+  } catch (e) {
+    warnThrown("경로상세", e);
     return null;
   }
 }
@@ -251,12 +286,12 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
       apiKey: env.odsay, // URLSearchParams가 인코딩 처리
     });
     const r = await fetch(`${env.odsayBase}/v1/api/searchPubTransPathT?${p.toString()}`, PROXY_INIT);
-    if (!r.ok) return null;
+    if (!r.ok) { warnHttp("이동시간", r.status); return null; }
     const d = await r.json();
     if (odsayError(d)) return null;
     const path = d?.result?.path?.[0];
     const info = path?.info;
-    if (!info) return null;
+    if (!info) { warnEmpty("이동시간"); return null; }
     const min = Math.round(info.totalTime ?? 0);
     // 시외 장거리에서 ODsay 가 시간 0(또는 탑승 구간 없음)인 껍데기를 주는 경우가
     // 있다 — 이동시간 계산에 그 값이 들어가면 "서울→김천 82분" 같은 결과가 된다.
@@ -285,7 +320,8 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
       walkM: info.totalWalk ?? 0,
       verified: true,
     };
-  } catch {
+  } catch (e) {
+    warnThrown("이동시간", e);
     return null;
   }
 }
@@ -307,7 +343,7 @@ export async function transitPathOdsay(from: Coord, to: Coord): Promise<Coord[] 
       apiKey: env.odsay,
     });
     const r = await fetch(`${env.odsayBase}/v1/api/searchPubTransPathT?${p.toString()}`, PROXY_INIT);
-    if (!r.ok) return null;
+    if (!r.ok) { warnHttp("폴리라인", r.status); return null; }
     const d = await r.json();
     if (odsayError(d)) return null;
     const mapObj: string | undefined = d?.result?.path?.[0]?.info?.mapObj;
@@ -315,7 +351,7 @@ export async function transitPathOdsay(from: Coord, to: Coord): Promise<Coord[] 
 
     const lp = new URLSearchParams({ mapObject: `0:0@${mapObj}`, apiKey: env.odsay });
     const lr = await fetch(`${env.odsayBase}/v1/api/loadLane?${lp.toString()}`, PROXY_INIT);
-    if (!lr.ok) return null;
+    if (!lr.ok) { warnHttp("폴리라인(loadLane)", lr.status); return null; }
     const ld = await lr.json();
     if (odsayError(ld)) return null;
 
@@ -327,7 +363,8 @@ export async function transitPathOdsay(from: Coord, to: Coord): Promise<Coord[] 
       }
     }
     return pts.length >= 2 ? pts : null;
-  } catch {
+  } catch (e) {
+    warnThrown("폴리라인", e);
     return null;
   }
 }
