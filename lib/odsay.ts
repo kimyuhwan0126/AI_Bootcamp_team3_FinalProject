@@ -129,6 +129,31 @@ function laneName(sub: RawSubPath, kind: TransitLeg["kind"]): string {
   return name || KIND_LABEL[kind];
 }
 
+// ── 프록시 경유 ────────────────────────────────────────────────
+// ODsay 서버 키는 호출 IP 화이트리스트가 필요한데 Vercel 은 나가는 IP 가 유동이다.
+// `ODSAY_BASE_URL` 로 고정 IP 프록시를 가리키게 하고, 공유 비밀이 있으면 헤더로 보낸다.
+// ⚠️ 둘 다 비어 있으면 base 는 api.odsay.com, init 은 undefined 라 **기존과 동일**하다.
+const PROXY_INIT: RequestInit | undefined = env.odsayProxySecret
+  ? { headers: { "x-proxy-secret": env.odsayProxySecret } }
+  : undefined;
+
+/**
+ * ODsay 는 **인증 실패에도 HTTP 200** 을 준다:
+ *   `{"error":[{"code":"500","message":"[ApiKeyAuthFailed] ..."}]}`
+ * `if (!r.ok)` 로는 못 잡고 뒤에서 우연히 걸러질 뿐이라, 여기서 명시적으로 본다.
+ *
+ * `console.warn` 을 남기는 게 핵심이다 — Vercel 로그에서 **"터널 장애"와 "키 문제"를
+ * 구분**할 수 있어야 프록시를 붙인 의미가 있다.
+ */
+function odsayError(d: unknown): boolean {
+  if (typeof d !== "object" || d === null) return false;
+  const err = (d as { error?: unknown }).error;
+  if (!Array.isArray(err) || err.length === 0) return false;
+  const first = err[0] as { message?: unknown; code?: unknown } | undefined;
+  console.warn("[odsay]", str(first?.message) || `code ${str(first?.code) || "unknown"}`);
+  return true;
+}
+
 export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Promise<TransitPathDetail[] | null> {
   if (!env.odsay) return null;
   try {
@@ -137,9 +162,10 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
       EX: String(to.lng), EY: String(to.lat),
       apiKey: env.odsay,
     });
-    const r = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${p.toString()}`);
+    const r = await fetch(`${env.odsayBase}/v1/api/searchPubTransPathT?${p.toString()}`, PROXY_INIT);
     if (!r.ok) return null;
     const d = await r.json();
+    if (odsayError(d)) return null;
     const paths = d?.result?.path;
     if (!Array.isArray(paths) || paths.length === 0) return null;
 
@@ -224,9 +250,10 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
       EY: String(to.lat),
       apiKey: env.odsay, // URLSearchParams가 인코딩 처리
     });
-    const r = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${p.toString()}`);
+    const r = await fetch(`${env.odsayBase}/v1/api/searchPubTransPathT?${p.toString()}`, PROXY_INIT);
     if (!r.ok) return null;
     const d = await r.json();
+    if (odsayError(d)) return null;
     const path = d?.result?.path?.[0];
     const info = path?.info;
     if (!info) return null;
@@ -279,16 +306,18 @@ export async function transitPathOdsay(from: Coord, to: Coord): Promise<Coord[] 
       EX: String(to.lng), EY: String(to.lat),
       apiKey: env.odsay,
     });
-    const r = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${p.toString()}`);
+    const r = await fetch(`${env.odsayBase}/v1/api/searchPubTransPathT?${p.toString()}`, PROXY_INIT);
     if (!r.ok) return null;
     const d = await r.json();
+    if (odsayError(d)) return null;
     const mapObj: string | undefined = d?.result?.path?.[0]?.info?.mapObj;
     if (!mapObj) return null;
 
     const lp = new URLSearchParams({ mapObject: `0:0@${mapObj}`, apiKey: env.odsay });
-    const lr = await fetch(`https://api.odsay.com/v1/api/loadLane?${lp.toString()}`);
+    const lr = await fetch(`${env.odsayBase}/v1/api/loadLane?${lp.toString()}`, PROXY_INIT);
     if (!lr.ok) return null;
     const ld = await lr.json();
+    if (odsayError(ld)) return null;
 
     const lanes: { section?: { graphPos?: { x: number; y: number }[] }[] }[] = ld?.result?.lane ?? [];
     const pts: Coord[] = [];
