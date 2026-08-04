@@ -59,6 +59,17 @@ export async function resolveGeocode(text: string): Promise<Coord> {
  * 캐시 히트는 `real: true` 다 — **실 API 성공값만 캐시에 넣기 때문**이고,
  * 아래에서 폴백을 절대 캐시하지 않는 것이 그 전제를 지킨다.
  */
+/**
+ * ODsay 가 경로를 거부하는 근거리 임계값(km).
+ *
+ * 실측: 출발-도착 700m 이내는 `-98 "출, 도착지가 700m이내입니다."` 를 돌려준다
+ * (2026-08-04 홍대입구역→홍대입구 거점 70m 재현). 이 구간은 호출해 봐야 실패가
+ * 확정이므로 부르지 않고 도보 시간으로 환산한다.
+ */
+const ODSAY_MIN_KM = 0.7;
+/** 보행 환산 속도: 시속 4km ≈ 분당 67m (통상 보행 기준) */
+const WALK_MIN_PER_KM = 15;
+
 export async function travelMinutesEx(
   from: Coord,
   to: Coord,
@@ -69,6 +80,26 @@ export async function travelMinutesEx(
   // 같은 좌표를 반복 호출해도 첫 응답만 계속 돌아온다(값이 안 바뀌는 것처럼 보인다).
   const hit = FLAGS.odsayProbe ? undefined : routeCache.get(key);
   if (hit != null) return { min: hit, real: true };
+
+  // ── 근거리는 ODsay 를 부르지 않는다 (대중교통일 때만) ──
+  //
+  //  왜: 참가자가 후보 거점의 700m 안에 있으면(역 이름으로 검색하는 UX 특성상
+  //  역세권 참가자는 거의 항상 해당) ODsay 가 -98 로 거부 → 그 구간만 추정
+  //  폴백 → live 정의("한 구간이라도 추정이면 false")에 걸려 **전체 목록이
+  //  "거리 추정으로 계산" 배지**를 달았다 (2026-08-04 강남·홍대 2인 실측).
+  //
+  //  이 도보 환산을 `real: true` 로 치는 근거: ODsay 스스로 "이 거리는 경로
+  //  없음(걸어가라)"이라 판정하는 구간이라, 도보 환산이 추측이 아니라 그 판정을
+  //  따르는 것이다. estMinutes(환승·대기 6분 가정)를 쓰면 70m 에 6분이 나오므로
+  //  쓰지 않는다. 자차는 -98 대상이 아니므로 기존대로 TMAP 을 부른다.
+  if (transport !== "car") {
+    const km = haversineKm(from, to);
+    if (km <= ODSAY_MIN_KM) {
+      const walkMin = Math.max(1, Math.round(km * WALK_MIN_PER_KM));
+      if (!FLAGS.odsayProbe) routeCache.set(key, walkMin);
+      return { min: walkMin, real: true };
+    }
+  }
 
   let real: number | null = null;
   if (transport === "car") {
