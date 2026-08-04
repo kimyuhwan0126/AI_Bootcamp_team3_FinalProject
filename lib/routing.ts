@@ -48,12 +48,27 @@ export async function resolveGeocode(text: string): Promise<Coord> {
 }
 
 // ── 이동시간(분) ──
-export async function travelMinutes(from: Coord, to: Coord, transport: string): Promise<number> {
+/**
+ * 이동시간 + **그게 실 API 값인지**(`real`).
+ *
+ * 왜 필요한가: 화면의 "실 이동시간 기준" 배지가 `has.odsay || has.tmap`, 즉
+ * **키가 있는지**만 봤다. 그래서 키를 넣는 순간 무조건 true 가 되고,
+ * 같은 후보 목록에 **실측 40분과 추정 894분이 섞여 있어도 전부 "실시간"** 으로 떴다
+ * (2026-08-03 프로덕션 실측). 프록시가 죽어도 화면으로는 알 수가 없다.
+ *
+ * 캐시 히트는 `real: true` 다 — **실 API 성공값만 캐시에 넣기 때문**이고,
+ * 아래에서 폴백을 절대 캐시하지 않는 것이 그 전제를 지킨다.
+ */
+export async function travelMinutesEx(
+  from: Coord,
+  to: Coord,
+  transport: string
+): Promise<{ min: number; real: boolean }> {
   const key = `${from.lat.toFixed(4)},${from.lng.toFixed(4)}|${to.lat.toFixed(4)},${to.lng.toFixed(4)}|${transport}`;
   // 진단 모드에서는 캐시를 건너뛴다 — 이 캐시엔 TTL 이 없어서, 실측 중에
   // 같은 좌표를 반복 호출해도 첫 응답만 계속 돌아온다(값이 안 바뀌는 것처럼 보인다).
   const hit = FLAGS.odsayProbe ? undefined : routeCache.get(key);
-  if (hit != null) return hit;
+  if (hit != null) return { min: hit, real: true };
 
   let real: number | null = null;
   if (transport === "car") {
@@ -66,12 +81,32 @@ export async function travelMinutes(from: Coord, to: Coord, transport: string): 
   // 실 API 성공값만 캐시. 폴백(haversine 추정)은 캐시하지 않음.
   if (real != null) {
     if (!FLAGS.odsayProbe) routeCache.set(key, real);
-    return real;
+    return { min: real, real: true };
   }
-  return estMinutes(haversineKm(from, to), transport);
+  return { min: estMinutes(haversineKm(from, to), transport), real: false };
+}
+
+/**
+ * 기존 시그니처 유지용 래퍼 — `lib/ai.ts`(👤 담당자 소유)가 이 형태로 쓴다.
+ * 새 코드는 `travelMinutesEx` 를 쓰고, 이 함수는 건드리지 않는다.
+ */
+export async function travelMinutes(from: Coord, to: Coord, transport: string): Promise<number> {
+  return (await travelMinutesEx(from, to, transport)).min;
 }
 
 type Located = LocatedParticipant;
+
+/**
+ * 후보 목록 + 그 숫자들이 전부 실 API 값이었는지.
+ *
+ * `live` 를 별도 타입으로 둔 이유: `RegionCandidate` 는 `lib/types.ts`(🔒 통합 담당자
+ * 소유)에 있어 필드를 못 늘린다. 감싸는 형태로 두면 도메인 타입을 안 건드려도 된다.
+ */
+export interface RegionsWithMeta {
+  items: RegionCandidate[];
+  /** 하나라도 거리 추정 폴백이 섞였으면 false */
+  live: boolean;
+}
 
 // 후보들을 스코어러 등록소(lib/scoring)에 넘겨 평가한다.
 //
@@ -81,7 +116,14 @@ type Located = LocatedParticipant;
 async function scoreCandidates(
   candidates: { name: string; hub: { lat: number; lng: number } }[],
   located: Located[]
-): Promise<RegionCandidate[]> {
+): Promise<RegionsWithMeta> {
+  // 하나라도 추정 폴백이 섞였는지 — 화면의 "실 이동시간 기준" 배지 판정에 쓴다.
+  //
+  // 🗳️ 정의: **한 명이라도 폴백이면 `live: false`.** "과반이 실값이면 true" 도
+  //    가능하지만, 이 앱은 "가짜를 실제처럼 그리지 않는다"(CLAUDE.md §6)를 지켜온
+  //    쪽이라 보수적인 정의를 택했다. 894분(추정)과 40분(실측)이 한 목록에 섞여
+  //    있는데 "실시간"이라 적는 것이 정확히 그 사고였다.
+  let allReal = true;
   const ranked = await rankCandidates(
     candidates,
     { participants: located },
@@ -89,15 +131,15 @@ async function scoreCandidates(
     // 유료 API를 (후보 수 × 스코어러 수)만큼 때린다 (CLAUDE.md §4).
     (hub) =>
       Promise.all(
-        located.map(async (p) => ({
-          pid: p.id,
-          name: p.name,
-          min: await travelMinutes({ lat: p.lat, lng: p.lng }, hub, p.transport),
-        }))
+        located.map(async (p) => {
+          const t = await travelMinutesEx({ lat: p.lat, lng: p.lng }, hub, p.transport);
+          if (!t.real) allReal = false;
+          return { pid: p.id, name: p.name, min: t.min };
+        })
       )
   );
 
-  return ranked.slice(0, 3).map((s, i) => {
+  const items = ranked.slice(0, 3).map((s, i) => {
     // 스코어러가 남긴 근거를 그대로 이어붙인다. 지금은 공평성 하나뿐이라
     // "최대 N분 · 편차 M분" 이고, 상권·날씨가 붙으면 자동으로 늘어난다.
     const detail = s.breakdown
@@ -115,6 +157,8 @@ async function scoreCandidates(
       perParticipant: s.travel,
     };
   });
+
+  return { items, live: allReal };
 }
 
 // 참가자가 수도권 밖(예: 안동·대구)이면 고정 후보 12곳(서울 지하철역)은 전부
@@ -122,7 +166,7 @@ async function scoreCandidates(
 // 곳(예: 잠실)을 그대로 추천해, 실제로는 중간이 아닌 곳이 1위로 뜨는 문제가
 // 있었다. 이럴 때는 이름 있는 서울 후보 대신 참가자 좌표로 직접 계산한 지점을
 // 쓰고, 실 좌표 → 지명은 카카오 역지오코딩으로 채운다(키 없으면 "중간지점 N").
-async function recommendDynamicRegions(located: Located[]): Promise<RegionCandidate[]> {
+async function recommendDynamicRegions(located: Located[]): Promise<RegionsWithMeta> {
   const points = geometricCandidates(located);
   const named = await Promise.all(
     points.map(async (hub, i) => ({ hub, name: (await coord2AddressKakao(hub)) || `중간지점 ${i + 1}` }))
@@ -154,15 +198,30 @@ export async function scoreRegionForParticipants(
 }
 
 // ── 중간지역 추천(실 이동시간 기반) ──
-export async function recommendRegions(participants: Participant[]): Promise<RegionCandidate[]> {
+/**
+ * 후보 + **이동시간이 전부 실 API 값이었는지**(`live`).
+ *
+ * `live: false` 는 "키가 없다"가 아니라 **"이 목록의 숫자 중 추정이 섞였다"** 는 뜻이다.
+ * 키를 넣어도 프록시·터널이 죽으면 false 가 되므로, 화면이 장애를 감지할 수 있다.
+ */
+export async function recommendRegionsWithMeta(participants: Participant[]): Promise<RegionsWithMeta> {
   const located = participants.filter((p) => p.lat != null && p.lng != null) as Located[];
-  if (located.length === 0) return [];
+  if (located.length === 0) return { items: [], live: false };
 
   if (isOutsideHubCoverage(located)) return recommendDynamicRegions(located);
 
   // 거리 기반과 동일하게 후보를 참가자 중심 근처로 좁힌다
   const pool = nearCentroidHubs(located).map((name) => ({ name, hub: HUBS[name] }));
   return scoreCandidates(pool, located);
+}
+
+/**
+ * 기존 시그니처 유지용 래퍼 — `app/api/meeting/route.ts`(🔒 통합 담당자 소유)가
+ * 이 형태로 3곳에서 쓴다. 그 파일을 건드리지 않으려고 남겨 둔다.
+ * `live` 가 필요하면 `recommendRegionsWithMeta` 를 쓴다.
+ */
+export async function recommendRegions(participants: Participant[]): Promise<RegionCandidate[]> {
+  return (await recommendRegionsWithMeta(participants)).items;
 }
 
 // ── 추천장소(2차 논의 후보): 카카오 로컬 실검색 → 실패 시 mock ──

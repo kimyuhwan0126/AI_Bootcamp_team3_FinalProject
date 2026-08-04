@@ -835,7 +835,10 @@ export default function Home() {
             {criteria === "time" && (
               <span className="faint">
                 {" · "}
-                {midLive ? "실 이동시간 기준" : "경로 API 키 없음 — 거리 추정으로 계산"}
+                {/* "키 없음"은 이제 원인 중 하나일 뿐이다 — 키가 있어도 프록시·터널이
+                    죽거나 ODsay 가 못 푸는 구간이면 거리 추정으로 떨어진다.
+                    원인을 단정하지 않고 "무엇을 보고 있는지"만 밝힌다. */}
+                {midLive ? "실 이동시간 기준" : "거리 추정으로 계산"}
               </span>
             )}
           </div>
