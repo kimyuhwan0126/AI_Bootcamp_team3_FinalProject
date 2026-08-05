@@ -234,7 +234,10 @@ async function scoreCandidates(
         located.map(async (p) => {
           const t = await travelMinutesEx({ lat: p.lat, lng: p.lng }, hub, p.transport);
           if (!t.real) allReal = false;
-          return { pid: p.id, name: p.name, min: t.min };
+          // `real` 을 사람 단위로 같이 내려보낸다 — 목록 하나에 실값과 추정이
+          // 섞이기 때문이다(자월도 참가자만 ODsay 실패 · 2026-08-05 실측).
+          // 화면의 `실시간` 칩이 행마다 붙으므로 판정도 행 단위여야 한다.
+          return { pid: p.id, name: p.name, min: t.min, real: t.real };
         })
       )
   );
@@ -282,14 +285,20 @@ async function recommendDynamicRegions(located: Located[]): Promise<RegionsWithM
 export async function scoreRegionForParticipants(
   hub: Coord,
   participants: Participant[]
-): Promise<{ maxMin: number; devMin: number; perParticipant: { pid: string; name: string; min: number }[] }> {
+): Promise<{
+  maxMin: number;
+  devMin: number;
+  perParticipant: { pid: string; name: string; min: number; real?: boolean }[];
+}> {
   const located = participants.filter((p) => p.lat != null && p.lng != null);
   const perParticipant = await Promise.all(
-    located.map(async (p) => ({
-      pid: p.id,
-      name: p.name,
-      min: await travelMinutes({ lat: p.lat!, lng: p.lng! }, hub, p.transport),
-    }))
+    // ⚠️ `travelMinutes`(분만 주는 래퍼)가 아니라 `travelMinutesEx` 를 쓴다.
+    //    래퍼는 `real` 을 버려서, 참가자가 직접 등록한 후보만 출처를 알 수 없게 된다
+    //    — 그러면 그 후보 화면에서만 `실시간` 칩 판정이 되살아난다.
+    located.map(async (p) => {
+      const t = await travelMinutesEx({ lat: p.lat!, lng: p.lng! }, hub, p.transport);
+      return { pid: p.id, name: p.name, min: t.min, real: t.real };
+    })
   );
   const mins = perParticipant.map((x) => x.min);
   const maxMin = mins.length ? Math.max(...mins) : 0;

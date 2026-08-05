@@ -14,7 +14,16 @@ const activeKey = (code: string) => `moimer:${code.toUpperCase()}:active`;
 export function getIdentities(code: string): Identity[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(key(code)) || "[]");
+    // ⚠️ JSON 파싱 성공 ≠ 우리가 기대한 모양. 이 값이 배열이 아니면 호출부의
+    //    `.filter`/`.find` 에서 터지고, /m/[code]·/votes·/members 세 화면이
+    //    통째로 `Application error` 가 된다 — UI 로 복구할 방법이 없다
+    //    (2026-08-05 검증에서 재현). 저장 형식이 바뀌는 앱 업데이트에서도 같은 일이 난다.
+    const raw: unknown = JSON.parse(localStorage.getItem(key(code)) || "[]");
+    if (!Array.isArray(raw)) return [];
+    // 항목 모양까지 본다 — 배열이어도 안이 문자열이면 `x.id` 에서 같은 사고가 난다
+    return raw.filter(
+      (x): x is Identity => !!x && typeof x === "object" && typeof (x as Identity).id === "string"
+    );
   } catch {
     return [];
   }
