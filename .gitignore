@@ -34,6 +34,10 @@ yarn-error.log*
 dev-*.log
 *.log
 
+# API 응답 캐시 (자체 서버 디스크) — lib/cache-store.ts
+#  기기마다 내용이 다르고 TTL 로 만료되는 임시 데이터다. 커밋 대상이 아니다.
+/.cache/
+
 # local env files
 #  ⚠️ `.env*.local` 만으로는 부족하다 — Next.js 는 `.env` 와 `.env.production` 도 읽는다.
 #     공개 저장소라 이 둘이 열려 있으면 키가 그대로 커밋될 수 있다.
