@@ -175,6 +175,7 @@ memory/         작업 상태·인계 메모
 | `docs/버전관리.md` | SemVer 규칙 · 릴리스 절차 |
 | `docs/APK.md` | PWA → 안드로이드 APK |
 | `docs/노션_통합개발환경.md` | 노션에 붙여넣을 정리본 (멘토님·팀원 공유용) |
+| `docs/ODsay_프록시_시도기록.md` | ⚠️ **실패 기록** — 배포에서 ODsay 를 못 쓰는 이유(서버리스 유동 IP)와 Cloudflare 터널 우회 시도가 실패한 경위. 재개 절차와 대안 포함 |
 | `CHANGELOG.md` | 모든 변경 기록 (수정 시 필수 기입) |
 | `memory/status.md` | 현재 진행 상태와 다음 할 일 |
 | `mds/AI-GUIDE.md` | 초기 가이드 원본 (역할별 AI 활용 · 팀 운영 원칙) |
