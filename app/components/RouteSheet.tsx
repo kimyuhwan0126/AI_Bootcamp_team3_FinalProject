@@ -82,6 +82,12 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
     data.transit.length > 0 &&
     data.transit.every((t: { verified?: boolean }) => t.verified === false);
 
+  // 도시간 경로는 ODsay 가 역↔역만 답해서, 출발지↔역 구간을 우리가 추정해 더한다.
+  // 추정이 섞였으면 그 사실을 반드시 밝힌다 (CLAUDE.md §6).
+  const estOf = (t: { estimatedMin?: number }) => t.estimatedMin ?? 0;
+  const hasEstimate: boolean =
+    data?.mode === "transit" && Array.isArray(data.transit) && data.transit.some((t: never) => estOf(t) > 0);
+
   return (
     <div className="backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: "82vh", overflowY: "auto" }}>
@@ -131,6 +137,26 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                     ? `경로 후보 ${data.transit.length}개 · 시간표 기준`
                     : "실시간 경로를 가져오지 못해 추정값으로 표시해요"}
                 </p>
+                {/* 도시간 경로(KTX·고속버스·항공)는 ODsay 가 역·터미널·공항 사이만 답한다.
+                    표시 시간에 우리가 더한 추정치가 섞여 있으므로 그대로 밝힌다 —
+                    안 밝히면 "강남역에서 제주까지 75분"처럼 사실과 다른 값이 실시간으로 보인다. */}
+                {data.live && hasEstimate && (
+                  <div
+                    style={{
+                      background: "var(--warn-soft)",
+                      border: "1px solid color-mix(in srgb,var(--warn) 30%,transparent)",
+                      borderRadius: 12,
+                      padding: "9px 11px",
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                      color: "var(--warn)",
+                    }}
+                  >
+                    <b>역까지 가는 시간은 추정이에요.</b> ODsay 는 역·터미널·공항 <b>사이 구간만</b>
+                    알려줘서, 출발지에서 역까지·환승 지점 사이·역에서 목적지까지는 직선거리로
+                    계산해 더했어요 — 실제보다 넉넉하게 잡히는 편입니다.
+                  </div>
+                )}
                 {/* 실 경로를 못 가져온 경우엔 왜 그런지와 무엇을 보고 있는지 밝힌다.
                     ⚠️ 예전엔 "시외는 API 커버리지 밖"이라고 안내했는데 **사실이 아니었다** —
                     2026-08-03 실측에서 ODsay 는 KTX·SRT(`trafficType: 4`)를 제대로 돌려줬고,
@@ -194,7 +220,16 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                             (철도 0 · 시외버스 -1 — 2026-08-03 실측). formatWon 이 아니라
                             formatFare 를 쓴다 — 4시간짜리 경로가 "무료"로 표시되던 버그. */}
                         <b style={{ color: "var(--ink-soft)" }}>{formatFare(t.fare)}</b>
-                        {" · 도보 "}{formatDistance(t.walkM)} · 환승 {t.transfers}회
+                        {/* 도시간 응답에는 `totalWalk` 가 없어 0 으로 온다 —
+                            "도보 0m" 라고 쓰면 안 걷는다는 뜻이 되므로 아예 생략한다 */}
+                        {t.walkM > 0 && <>{" · 도보 "}{formatDistance(t.walkM)}</>}
+                        {" · 환승 "}{t.transfers}회
+                        {estOf(t) > 0 && (
+                          <>
+                            {" · "}
+                            <b style={{ color: "var(--warn)" }}>역까지·환승 이동 추정 {formatMinutes(estOf(t))} 포함</b>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
