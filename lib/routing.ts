@@ -3,7 +3,9 @@
 //
 //  · resolveGeocode(text)         : 주소/역명 → 좌표 (카카오 → mock)
 //  · travelMinutes(from,to,mode)  : 이동시간(분) (ODsay/TMAP → mock)
-//  · recommendRegions(participants): 공평한 중간지역 후보 3 (실시간 기반)
+//  · recommendRegions(participants): 공평한 중간지역 후보 3 (실 경로 기반)
+//    ⚠️ "실시간"이 아니다 — ODsay·TMAP 요청에 시각을 보내지 않는다. 실 API 값은
+//       "지금"이 아니라 "실제 노선을 계산한 값"이다. 화면 문구도 `경로 기준` 이다.
 //
 //  캐시로 중복 호출을 막아 무료 한도(일 1,000콜)를 아낍니다.
 // ─────────────────────────────────────────────────────────────
@@ -164,7 +166,12 @@ export async function travelMinutesEx(
     real = r?.min ?? null;
   } else {
     const r = await transitRouteOdsay(from, to);
-    real = r?.min ?? null;
+    // ⚠️ `verified === false` 는 진단 모드에서만 나오는 **껍데기 응답**이다
+    //    (탑승 구간이 하나도 없는데 시간만 있는 값 — `odsay.ts` 껍데기 가드 참고).
+    //    이걸 `real: true` 로 올리면 화면에 `경로 기준` 칩이 붙어, 경로 상세 시트가
+    //    같은 값을 "⚠ 검증 안 된 원시 응답"이라 경고하는 것과 정면으로 어긋난다.
+    //    믿을 수 없는 값은 실값으로 세지 않는다(CLAUDE.md §6).
+    real = r && r.verified !== false ? r.min : null;
   }
   // 실 API 성공값만 캐시. 폴백(haversine 추정)은 캐시하지 않음.
   if (real != null) {

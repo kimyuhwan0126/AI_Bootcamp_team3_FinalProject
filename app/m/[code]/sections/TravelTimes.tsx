@@ -85,12 +85,35 @@ export default function TravelTimes({
                   {/* 🔴 예전엔 이 칩에 조건이 없어 추정값에도 `실시간` 이 붙었다.
                       2026-08-05 실키 검증에서 한 목록 안에 ODsay 실값 3건과 추정 1건이
                       섞였는데 넷 다 `실시간` 이었다(자월도 참가자만 ODsay `code 3` 실패).
-                      같은 화면의 경로 상세 시트는 같은 숫자를 `추정값` 이라 밝혀 모순이었다. */}
+                      같은 화면의 경로 상세 시트는 같은 숫자를 정직하게 밝혀 모순이었다.
+
+                      ⚠️ 이름을 `실시간` → `경로 기준` 으로 바꾼 것은 별개의 이유다:
+                      우리는 ODsay·TMAP 어디에도 **시각을 보내지 않는다.** 그러니 실 API 값도
+                      "지금"이 아니라 "실제 노선을 계산한 값"이다. 게다가 이 앱은 며칠 뒤 모임을
+                      잡는 도구라 "지금 막히는 정도"가 애초에 필요 없다(2026-08-05 CEO 지적).
+                      문구는 앱 4곳에서 `경로 기준` / `거리 추정` 두 단어로 통일했다. */}
+                  {/* ⚠️ 툴팁은 **수단별로 다르다.** 이 목록은 대중교통·자차를 함께 그리는데
+                      `isReal` 은 수단을 안 가린다 — 자차 실값은 TMAP 이고, 그 값은 노선이 아니라
+                      **호출한 순간의 도로 상황**이다. 같은 행을 탭해 열리는 경로 상세 시트가
+                      이미 그렇게 밝히고 있어(`RouteSheet.tsx` 자차 안내) 여기서 다르게 말하면
+                      이번에 고친 "목록과 상세가 같은 숫자를 다르게 설명한다"를 그대로 되풀이한다.
+                      ⚠️ 대중교통에 "시간표 기준"이라고 단정하지 않는다 — 응답에 기준시점 표기가
+                      없어 우리가 말할 수 있는 건 "실제 노선으로 계산했다"까지다(CLAUDE.md §6). */}
                   {isReal ? (
-                    <span className="chip ok" style={{ fontSize: 8.5, padding: "2px 7px" }}>실시간</span>
+                    <span
+                      className="chip ok"
+                      style={{ fontSize: 8.5, padding: "2px 7px" }}
+                      title={
+                        p.transport === "car"
+                          ? "실제 도로를 계산한 값이에요 — 지금 출발 기준이라 모임 시각의 도로 상황과는 다를 수 있어요"
+                          : "실제 노선(지하철·버스·열차)으로 계산한 값이에요"
+                      }
+                    >
+                      경로 기준
+                    </span>
                   ) : (
-                    <span className="chip warn" style={{ fontSize: 8.5, padding: "2px 7px" }} title="실시간 경로를 가져오지 못해 직선거리로 추정한 값이에요">
-                      추정값
+                    <span className="chip warn" style={{ fontSize: 8.5, padding: "2px 7px" }} title="실제 경로를 계산하지 못해 직선거리로 추정한 값이에요">
+                      거리 추정
                     </span>
                   )}
                   <b className="tnum" style={{ fontSize: 11.5, color: statusColor }}>{formatMinutes(m)}</b>
