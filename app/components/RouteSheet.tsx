@@ -25,8 +25,12 @@ const LINE_COLORS: [RegExp, string][] = [
 ];
 function lineColor(name: string, kind: string): string {
   if (kind === "bus") return "#4c8df6";
-  // 철도(KTX·SRT·무궁화)는 수도권 노선색 규칙과 무관하므로 따로 둔다
-  if (kind === "train") return "#3b4a6b";
+  // 아래 셋은 수도권 노선색 규칙과 무관하므로 따로 둔다.
+  // 고속·시외버스는 시내버스(파랑)와 한눈에 갈려야 해서 계열을 다르게 잡았다.
+  if (kind === "train") return "#3b4a6b";      // KTX·SRT 등
+  if (kind === "expressBus") return "#7c3aed";  // 고속버스 (trafficType 5)
+  if (kind === "intercityBus") return "#0d9488"; // 시외버스 (trafficType 6)
+  if (kind === "air") return "#06b6d4";         // 항공 (trafficType 7)
   if (kind === "other") return "var(--hair2)";
   for (const [re, c] of LINE_COLORS) if (re.test(name)) return c;
   return "var(--ac)";
@@ -37,7 +41,10 @@ const KIND_ICON: Record<string, string> = {
   walk: "🚶",
   subway: "🚇",
   bus: "🚌",
+  expressBus: "🚍",
+  intercityBus: "🚐",
   train: "🚄",
+  air: "✈️",
   other: "🚏",
 };
 
