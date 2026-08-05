@@ -9,7 +9,7 @@ import type { Coord } from "./kakao";
 // 수단 매핑표(trafficType·trainType)는 별도 파일이다 — 근거가 되는 실측 기록이 길고,
 // 이 파일이 400줄 제한에 걸려 있었다.
 import {
-  KIND_LABEL, MODE_ORDER, WALK_TRAFFIC_TYPE,
+  AIR_TRAFFIC_TYPE, KIND_LABEL, MODE_ORDER, WALK_TRAFFIC_TYPE,
   isRideType, kindOf, trainTypeLabel, type TransitKind,
 } from "./odsay-modes";
 
@@ -117,8 +117,16 @@ function laneName(sub: RawSubPath, kind: TransitKind): string {
  *
  * ⚠️ 도시내의 `payment: -1`(시외 정보없음)은 그대로 -1 로 남긴다 —
  *    `formatFare()` 가 0 이하를 "요금 정보 없음"으로 그리는 계약이다.
+ *
+ * 🔴 **항공이 섞이면 요금을 내리지 않는다(0).** ODsay 는 날짜·시간과 무관하게
+ *    김포→제주에 **고정 146,700원**을 주는데, 실제 편도는 평균 3만원대·최저 1만원대다
+ *    (2026-08-04 대조). 동적 요금인 항공에 고정값이 오는 것 자체가 구조적으로 맞지 않고,
+ *    **응답에 등급·기준시점 표기가 없어 이 숫자가 무엇인지 우리가 말할 수 없다.**
+ *    말할 수 없는 값은 그리지 않는다(CLAUDE.md §6). 열차·버스는 현행 운임과 일치해 그대로 쓴다.
+ *    원시값이 필요하면 `subPath[].payment` 를 직접 본다.
  */
-function fareOf(info: { payment?: unknown; totalPayment?: unknown }): number {
+function fareOf(info: { payment?: unknown; totalPayment?: unknown }, subPaths: RawSubPath[]): number {
+  if (subPaths.some((s) => s.trafficType === AIR_TRAFFIC_TYPE)) return 0;
   return typeof info.payment === "number" ? info.payment : num(info.totalPayment, 0);
 }
 
@@ -239,7 +247,7 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
         label,
         pathType: path.pathType,
         min: Math.round(info.totalTime ?? 0),
-        fare: fareOf(info),
+        fare: fareOf(info, subPaths),
         transfers,
         walkM: info.totalWalk ?? 0,
         legs,
@@ -300,7 +308,7 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
       return {
         min,
         transfers: Math.max(0, rides.length - 1),
-        fare: fareOf(info),
+        fare: fareOf(info, subPaths),
         walkM: info.totalWalk ?? 0,
         verified: false,
       };
@@ -308,7 +316,7 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
     return {
       min,
       transfers: Math.max(0, rides.length - 1),
-      fare: fareOf(info),
+      fare: fareOf(info, subPaths),
       walkM: info.totalWalk ?? 0,
       verified: true,
     };

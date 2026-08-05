@@ -26,6 +26,11 @@ export type TransitKind =
 export const WALK_TRAFFIC_TYPE = 3;
 
 /**
+ * 항공. **요금을 표시하지 않는 유일한 수단**이다 — 이유는 `odsay.ts` 의 `fareOf()` 참고.
+ */
+export const AIR_TRAFFIC_TYPE = 7;
+
+/**
  * `subPath.trafficType` → 수단.
  *
  * **5·6 의 순서가 외부 자료마다 엇갈렸다**(고속↔시외). 2026-08-04 실측으로 확정했고,
