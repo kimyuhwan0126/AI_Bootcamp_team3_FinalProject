@@ -18,6 +18,7 @@ import {
   geometricCandidates,
 } from "./geo";
 import { geocodeKakao, coord2AddressKakao, searchPlacesKakao, type Coord } from "./kakao";
+import { geoCacheGet, geoCacheSet, routeCacheGet, routeCacheSet } from "./cache-store";
 import { transitRouteOdsay } from "./odsay";
 import { carRouteTmap } from "./tmap";
 import type { Participant, RegionCandidate, PlaceCandidate } from "./types";
@@ -36,12 +37,24 @@ const routeCache = g.__moimerRoute ?? (g.__moimerRoute = new Map());
 // ── 지오코딩 ──
 export async function resolveGeocode(text: string): Promise<Coord> {
   const key = text.replace(/\s/g, "");
+
+  // L1 메모리 — 같은 프로세스 안에서 즉시
   const hit = geoCache.get(key);
   if (hit) return hit;
+
+  // L2 DB — 재시작해도 살아남는다. DB 가 없으면(팀원 로컬) null 이라 그냥 넘어간다.
+  const stored = await geoCacheGet(key);
+  if (stored) {
+    geoCache.set(key, stored); // 다음 호출부터는 L1 에서 끝난다
+    return stored;
+  }
+
+  // L3 외부 API
   const real = await geocodeKakao(text);
   // 실 지오코딩 성공값만 캐시(폴백은 캐시 안 함 → API 복구 시 자동 실값 전환)
   if (real) {
     geoCache.set(key, real);
+    void geoCacheSet(key, real); // DB 쓰기는 응답을 막지 않는다
     return real;
   }
   return mockGeocode(text);
@@ -59,6 +72,47 @@ export async function resolveGeocode(text: string): Promise<Coord> {
  * 캐시 히트는 `real: true` 다 — **실 API 성공값만 캐시에 넣기 때문**이고,
  * 아래에서 폴백을 절대 캐시하지 않는 것이 그 전제를 지킨다.
  */
+/**
+ * ODsay 가 경로를 거부하는 근거리 임계값(km).
+ *
+ * 실측: 출발-도착 700m 이내는 `-98 "출, 도착지가 700m이내입니다."` 를 돌려준다
+ * (2026-08-04 홍대입구역→홍대입구 거점 70m 재현). 이 구간은 호출해 봐야 실패가
+ * 확정이므로 부르지 않고 도보 시간으로 환산한다.
+ */
+const ODSAY_MIN_KM = 0.7;
+/** 보행 환산 속도: 시속 4km ≈ 분당 67m (통상 보행 기준) */
+const WALK_MIN_PER_KM = 15;
+
+// ── 외부 API 속도 게이트 ──────────────────────────────────────
+//
+//  ODsay 는 초당 호출 한도가 있고(공식 안내: 수치는 비공개),
+//  넘으면 `{"error":{"code":"429","message":"Too Many Requests"}}` 를 준다.
+//
+//  실측(2026-08-05, 동일 14구간):
+//    동시 14건 발사 → OK 4 · 429 9      (0.6초에 몰림)
+//    순차 250ms 간격 → OK 14 · 429 0     (같은 구간이 전부 성공)
+//  즉 구간이 안 풀리는 게 아니라 **너무 빨리 불러서** 거절당한 것이었다.
+//
+//  왜 여기(travelMinutesEx 안)에 두는가: 실제 팬아웃은 두 겹이다 —
+//  lib/scoring/index.ts 가 거점 N개를 동시에, 그 안에서 참가자 M명을 동시에.
+//  바깥 겹은 🔒 통합 담당자 소유라 못 건드리므로, **호출 지점 자체를 막는다.**
+//  이러면 어느 호출부(추천·상세·AI)로 들어와도 자동으로 보호된다.
+//
+//  방식: 요청 "시작 시각"만 RATE_GAP_MS 간격으로 벌린다. 응답을 기다리지
+//  않으므로 여러 건이 겹쳐 날아가되 초당 유입은 일정하다
+//  (14건 × 250ms ≈ 3.5초. 완전 순차였다면 9.4초였다).
+//
+//  ⚠️ 대기는 무한정 쌓일 수 있다. 캐시가 빈 상태에서 수십 건이 한꺼번에 오면
+//     뒤쪽은 몇 초씩 기다린다. 지금 규모(후보 8 × 참가자 8 = 최대 64)에서는
+//     최악 16초라 감수하지만, 후보를 더 늘리면 재검토가 필요하다.
+const RATE_GAP_MS = 250;
+let rateChain: Promise<void> = Promise.resolve();
+function rateGate(): Promise<void> {
+  const myTurn = rateChain;
+  rateChain = myTurn.then(() => new Promise<void>((r) => setTimeout(r, RATE_GAP_MS)));
+  return myTurn;
+}
+
 export async function travelMinutesEx(
   from: Coord,
   to: Coord,
@@ -70,6 +124,40 @@ export async function travelMinutesEx(
   const hit = FLAGS.odsayProbe ? undefined : routeCache.get(key);
   if (hit != null) return { min: hit, real: true };
 
+  // ── 근거리는 ODsay 를 부르지 않는다 (대중교통일 때만) ──
+  //
+  //  왜: 참가자가 후보 거점의 700m 안에 있으면(역 이름으로 검색하는 UX 특성상
+  //  역세권 참가자는 거의 항상 해당) ODsay 가 -98 로 거부 → 그 구간만 추정
+  //  폴백 → live 정의("한 구간이라도 추정이면 false")에 걸려 **전체 목록이
+  //  "거리 추정으로 계산" 배지**를 달았다 (2026-08-04 강남·홍대 2인 실측).
+  //
+  //  이 도보 환산을 `real: true` 로 치는 근거: ODsay 스스로 "이 거리는 경로
+  //  없음(걸어가라)"이라 판정하는 구간이라, 도보 환산이 추측이 아니라 그 판정을
+  //  따르는 것이다. estMinutes(환승·대기 6분 가정)를 쓰면 70m 에 6분이 나오므로
+  //  쓰지 않는다. 자차는 -98 대상이 아니므로 기존대로 TMAP 을 부른다.
+  if (transport !== "car") {
+    const km = haversineKm(from, to);
+    if (km <= ODSAY_MIN_KM) {
+      const walkMin = Math.max(1, Math.round(km * WALK_MIN_PER_KM));
+      if (!FLAGS.odsayProbe) routeCache.set(key, walkMin);
+      return { min: walkMin, real: true };
+    }
+  }
+
+  // L2 DB — 서버를 재시작해도 남아 있어 유료 호출을 다시 하지 않는다.
+  //  근거리 단락보다 뒤에 둔다: 도보 환산은 계산이 공짜라 DB 를 왕복할 이유가 없다.
+  //  진단 모드에서는 L1 과 마찬가지로 건너뛴다(실측 중 값이 안 바뀌면 곤란하다).
+  if (!FLAGS.odsayProbe) {
+    const stored = await routeCacheGet(key);
+    if (stored != null) {
+      routeCache.set(key, stored); // 다음 호출부터는 L1 에서 끝난다
+      return { min: stored, real: true };
+    }
+  }
+
+  // 캐시(L1·L2)·근거리로 못 끝낸 것만 실제 API 로 간다 — 게이트는 여기서부터.
+  await rateGate();
+
   let real: number | null = null;
   if (transport === "car") {
     const r = await carRouteTmap(from, to);
@@ -80,10 +168,22 @@ export async function travelMinutesEx(
   }
   // 실 API 성공값만 캐시. 폴백(haversine 추정)은 캐시하지 않음.
   if (real != null) {
-    if (!FLAGS.odsayProbe) routeCache.set(key, real);
+    if (!FLAGS.odsayProbe) {
+      routeCache.set(key, real);
+      void routeCacheSet(key, real); // DB 쓰기는 응답을 막지 않는다
+    }
     return { min: real, real: true };
   }
-  return { min: estMinutes(haversineKm(from, to), transport), real: false };
+  // ── 폴백 지점 — 앱의 모든 추정값이 여기서 태어난다 ──
+  //  odsay.ts 의 warn(#29)은 "왜"(HTTP·빈 경로)를 남기고, 여기는 "어디"(좌표)를
+  //  남긴다. 둘을 짝지으면 어느 구간이 안 풀리는지 로그만으로 확정된다.
+  //  (좌표는 비밀이 아니고, URL·키는 찍지 않는다)
+  const km = haversineKm(from, to);
+  console.warn(
+    `[routing] 추정 폴백 ${km.toFixed(2)}km ${transport} ` +
+      `(${from.lat.toFixed(4)},${from.lng.toFixed(4)})→(${to.lat.toFixed(4)},${to.lng.toFixed(4)})`
+  );
+  return { min: estMinutes(km, transport), real: false };
 }
 
 /**

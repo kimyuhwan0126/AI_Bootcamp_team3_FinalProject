@@ -148,9 +148,31 @@ const PROXY_INIT: RequestInit | undefined = env.odsayProxySecret
 function odsayError(d: unknown): boolean {
   if (typeof d !== "object" || d === null) return false;
   const err = (d as { error?: unknown }).error;
-  if (!Array.isArray(err) || err.length === 0) return false;
-  const first = err[0] as { message?: unknown; code?: unknown } | undefined;
-  console.warn("[odsay]", str(first?.message) || `code ${str(first?.code) || "unknown"}`);
+  if (err === null || err === undefined) return false;
+
+  // ⚠️ ODsay 는 error 를 **두 가지 형태**로 보낸다 — 배열만 보면 절반을 놓친다.
+  //    배열: {"error":[{"code":"500","message":"[ApiKeyAuthFailed] ..."}]}   인증 실패
+  //    객체: {"error":{"code":"429","message":"Too Many Requests"}}          속도 제한
+  //          {"error":{"code":"-98","msg":"출, 도착지가 700m이내입니다."}}   근거리
+  //
+  //    예전엔 `!Array.isArray(err) → return false` 라 **객체형이 통과**했고,
+  //    뒤에서 `result.path` 가 없다는 이유로 warnEmpty 가 찍혀
+  //    **"구간을 못 푸는 것으로 보인다"** 는 사실과 다른 진단이 남았다.
+  //    실제 사유는 429(호출 과다)였다 — 같은 구간이 순차 호출에선 전부 성공한다
+  //    (2026-08-05 동시 14건 vs 순차 14건 실측: 429 9건 → 0건).
+  //
+  //    ⚠️ `msg` 키도 함께 본다. -98 은 `message` 가 아니라 `msg` 로 온다.
+  const first = (Array.isArray(err) ? err[0] : err) as
+    | { message?: unknown; msg?: unknown; code?: unknown }
+    | undefined;
+  if (!first) return false;
+
+  // code 는 실측상 전부 문자열이었지만("429"·"-98"·"500"), 숫자로 와도
+  // 진단이 "unknown" 으로 죽지 않게 둘 다 받는다.
+  const code =
+    typeof first.code === "number" ? String(first.code) : str(first.code);
+  const text = str(first.message) || str(first.msg);
+  console.warn("[odsay]", text || "(메시지 없음)", code ? `(code ${code})` : "");
   return true;
 }
 
