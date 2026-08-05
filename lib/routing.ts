@@ -70,6 +70,36 @@ const ODSAY_MIN_KM = 0.7;
 /** 보행 환산 속도: 시속 4km ≈ 분당 67m (통상 보행 기준) */
 const WALK_MIN_PER_KM = 15;
 
+// ── 외부 API 속도 게이트 ──────────────────────────────────────
+//
+//  ODsay 는 초당 호출 한도가 있고(공식 안내: 수치는 비공개),
+//  넘으면 `{"error":{"code":"429","message":"Too Many Requests"}}` 를 준다.
+//
+//  실측(2026-08-05, 동일 14구간):
+//    동시 14건 발사 → OK 4 · 429 9      (0.6초에 몰림)
+//    순차 250ms 간격 → OK 14 · 429 0     (같은 구간이 전부 성공)
+//  즉 구간이 안 풀리는 게 아니라 **너무 빨리 불러서** 거절당한 것이었다.
+//
+//  왜 여기(travelMinutesEx 안)에 두는가: 실제 팬아웃은 두 겹이다 —
+//  lib/scoring/index.ts 가 거점 N개를 동시에, 그 안에서 참가자 M명을 동시에.
+//  바깥 겹은 🔒 통합 담당자 소유라 못 건드리므로, **호출 지점 자체를 막는다.**
+//  이러면 어느 호출부(추천·상세·AI)로 들어와도 자동으로 보호된다.
+//
+//  방식: 요청 "시작 시각"만 RATE_GAP_MS 간격으로 벌린다. 응답을 기다리지
+//  않으므로 여러 건이 겹쳐 날아가되 초당 유입은 일정하다
+//  (14건 × 250ms ≈ 3.5초. 완전 순차였다면 9.4초였다).
+//
+//  ⚠️ 대기는 무한정 쌓일 수 있다. 캐시가 빈 상태에서 수십 건이 한꺼번에 오면
+//     뒤쪽은 몇 초씩 기다린다. 지금 규모(후보 8 × 참가자 8 = 최대 64)에서는
+//     최악 16초라 감수하지만, 후보를 더 늘리면 재검토가 필요하다.
+const RATE_GAP_MS = 250;
+let rateChain: Promise<void> = Promise.resolve();
+function rateGate(): Promise<void> {
+  const myTurn = rateChain;
+  rateChain = myTurn.then(() => new Promise<void>((r) => setTimeout(r, RATE_GAP_MS)));
+  return myTurn;
+}
+
 export async function travelMinutesEx(
   from: Coord,
   to: Coord,
@@ -100,6 +130,9 @@ export async function travelMinutesEx(
       return { min: walkMin, real: true };
     }
   }
+
+  // 캐시·근거리로 못 끝낸 것만 실제 API 로 간다 — 게이트는 여기서부터.
+  await rateGate();
 
   let real: number | null = null;
   if (transport === "car") {
