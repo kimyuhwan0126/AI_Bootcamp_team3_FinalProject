@@ -12,9 +12,20 @@ import {
   AIR_TRAFFIC_TYPE, KIND_LABEL, MODE_ORDER, WALK_TRAFFIC_TYPE,
   isRideType, kindOf, trainTypeLabel, type TransitKind,
 } from "./odsay-modes";
+// 도시간 응답은 역↔역만 답한다 — 출발지↔역·연계·역↔목적지를 여기서 추정해 더한다.
+import { intercityGapMinutes } from "./odsay-access";
+// 호출 껍데기(프록시)와 실패 진단 로그. 이 파일은 "응답 해석"만 맡는다.
+import { PROXY_INIT, odsayError, warnEmpty, warnHttp, warnThrown } from "./odsay-client";
 
 export interface TransitResult {
-  min: number;       // 총 이동시간(분)
+  /**
+   * 총 이동시간(분). **도시간 경로에서는 ODsay 값 + 접근·연계·도착 추정치**다
+   * (ODsay 는 역↔역만 답한다 — `odsay-access.ts` 참고). 순수 ODsay 값이 필요하면
+   * `min - estimatedMin` 으로 되돌린다.
+   */
+  min: number;
+  /** 위 `min` 에 포함된 **추정** 시간(분). 0 이면 전부 ODsay 실측이다. */
+  estimatedMin?: number;
   transfers: number; // 환승 횟수
   fare: number;      // 요금(원)
   walkM: number;     // 총 도보(m)
@@ -69,6 +80,12 @@ export interface TransitPathDetail {
   transfers: number;
   walkM: number;
   legs: TransitLeg[];
+  /**
+   * `min` 에 포함된 **추정** 시간(분) — 출발지→첫 탑승지 · 구간 사이 연계 ·
+   * 마지막 하차지→목적지의 합. 도시간 경로에서만 0 보다 크다.
+   * 화면은 이 값이 있으면 "추정이 섞였다"고 반드시 밝힌다(CLAUDE.md §6).
+   */
+  estimatedMin?: number;
   /** 껍데기 가드 통과 여부 — false 면 믿을 수 없는 값(진단 모드에서만 나온다) */
   verified?: boolean;
   /**
@@ -89,6 +106,11 @@ interface RawSubPath {
   startName?: unknown;
   endName?: unknown;
   lane?: unknown;
+  // 승·하차 지점 좌표. **X 가 경도, Y 가 위도**다 (접근시간 보정에 쓴다)
+  startX?: unknown;
+  startY?: unknown;
+  endX?: unknown;
+  endY?: unknown;
 }
 const num = (v: unknown, fallback = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -128,87 +150,6 @@ function laneName(sub: RawSubPath, kind: TransitKind): string {
 function fareOf(info: { payment?: unknown; totalPayment?: unknown }, subPaths: RawSubPath[]): number {
   if (subPaths.some((s) => s.trafficType === AIR_TRAFFIC_TYPE)) return 0;
   return typeof info.payment === "number" ? info.payment : num(info.totalPayment, 0);
-}
-
-// ── 프록시 경유 ────────────────────────────────────────────────
-// ODsay 서버 키는 호출 IP 화이트리스트가 필요한데 Vercel 은 나가는 IP 가 유동이다.
-// `ODSAY_BASE_URL` 로 고정 IP 프록시를 가리키게 하고, 공유 비밀이 있으면 헤더로 보낸다.
-// ⚠️ 둘 다 비어 있으면 base 는 api.odsay.com, init 은 undefined 라 **기존과 동일**하다.
-const PROXY_INIT: RequestInit | undefined = env.odsayProxySecret
-  ? { headers: { "x-proxy-secret": env.odsayProxySecret } }
-  : undefined;
-
-/**
- * ODsay 는 **인증 실패에도 HTTP 200** 을 준다:
- *   `{"error":[{"code":"500","message":"[ApiKeyAuthFailed] ..."}]}`
- * `if (!r.ok)` 로는 못 잡고 뒤에서 우연히 걸러질 뿐이라, 여기서 명시적으로 본다.
- *
- * `console.warn` 을 남기는 게 핵심이다 — Vercel 로그에서 **"터널 장애"와 "키 문제"를
- * 구분**할 수 있어야 프록시를 붙인 의미가 있다.
- */
-function odsayError(d: unknown): boolean {
-  if (typeof d !== "object" || d === null) return false;
-  const err = (d as { error?: unknown }).error;
-  if (err === null || err === undefined) return false;
-
-  // ⚠️ ODsay 는 error 를 **두 가지 형태**로 보낸다 — 배열만 보면 절반을 놓친다.
-  //    배열: {"error":[{"code":"500","message":"[ApiKeyAuthFailed] ..."}]}   인증 실패
-  //    객체: {"error":{"code":"429","message":"Too Many Requests"}}          속도 제한
-  //          {"error":{"code":"-98","msg":"출, 도착지가 700m이내입니다."}}   근거리
-  //
-  //    예전엔 `!Array.isArray(err) → return false` 라 **객체형이 통과**했고,
-  //    뒤에서 `result.path` 가 없다는 이유로 warnEmpty 가 찍혀
-  //    **"구간을 못 푸는 것으로 보인다"** 는 사실과 다른 진단이 남았다.
-  //    실제 사유는 429(호출 과다)였다 — 같은 구간이 순차 호출에선 전부 성공한다
-  //    (2026-08-05 동시 14건 vs 순차 14건 실측: 429 9건 → 0건).
-  //
-  //    ⚠️ `msg` 키도 함께 본다. -98 은 `message` 가 아니라 `msg` 로 온다.
-  const first = (Array.isArray(err) ? err[0] : err) as
-    | { message?: unknown; msg?: unknown; code?: unknown }
-    | undefined;
-  if (!first) return false;
-
-  // code 는 실측상 전부 문자열이었지만("429"·"-98"·"500"), 숫자로 와도
-  // 진단이 "unknown" 으로 죽지 않게 둘 다 받는다.
-  const code =
-    typeof first.code === "number" ? String(first.code) : str(first.code);
-  const text = str(first.message) || str(first.msg);
-  console.warn("[odsay]", text || "(메시지 없음)", code ? `(code ${code})` : "");
-  return true;
-}
-
-/**
- * 로그에 실을 호출 대상. **호스트만** 쓴다 — 전체 URL 에는 `apiKey` 가 들어 있어
- * 그대로 찍으면 Vercel 로그에 키가 평문으로 남는다.
- */
-function odsayHost(): string {
-  try {
-    return new URL(env.odsayBase).host;
-  } catch {
-    return `(ODSAY_BASE_URL 형식 오류: ${env.odsayBase.slice(0, 30)})`;
-  }
-}
-
-/**
- * 2xx 가 아닌 응답. **프록시·터널 장애가 여기로 온다** — Cloudflare 502/1033(터널
- * 다운) · 프록시 401/403(공유 비밀 불일치)이 전부 이 경로다.
- *
- * ⚠️ 예전에는 `if (!r.ok) return null` 이라 **로그 한 줄 없이 사라졌다.**
- *    #28 이 "로그로 터널 장애와 키 문제를 구분한다"고 했지만 실제로는 구분이
- *    안 됐다 — 2026-08-04 종단 확인에서 `live:false` 의 원인을 좁히지 못해 드러났다.
- */
-function warnHttp(label: string, status: number): void {
-  console.warn(`[odsay] ${label} HTTP ${status} (via ${odsayHost()}) — 프록시/터널 응답으로 보인다`);
-}
-
-/** fetch 가 던진 경우. 터널 주소가 죽었거나 DNS 가 안 풀린다. */
-function warnThrown(label: string, e: unknown): void {
-  console.warn(`[odsay] ${label} 요청 실패 (via ${odsayHost()}): ${e instanceof Error ? e.message : String(e)}`);
-}
-
-/** HTTP 200 · 에러본문도 없는데 경로가 비어 있는 경우 — ODsay 가 못 푸는 구간이다. */
-function warnEmpty(label: string): void {
-  console.warn(`[odsay] ${label} 200 인데 경로가 비어 있다 (via ${odsayHost()}) — 구간을 못 푸는 것으로 보인다`);
 }
 
 export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Promise<TransitPathDetail[] | null> {
@@ -265,10 +206,13 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
               .map((k) => KIND_LABEL[k])
               .join("+");
       const label = transfers === 0 ? `${modeName} 직통` : `${modeName} 환승 ${transfers}회`;
+      // 도시간 응답은 역↔역만 답한다 — 빠진 이동을 추정해 더한다.
+      const estimatedMin = intercityGapMinutes(from, to, path.pathType, subPaths);
       return {
         label,
         pathType: path.pathType,
-        min: Math.round(info.totalTime ?? 0),
+        min: Math.round(info.totalTime ?? 0) + estimatedMin,
+        estimatedMin,
         fare: fareOf(info, subPaths),
         transfers,
         walkM: info.totalWalk ?? 0,
@@ -283,7 +227,11 @@ export async function transitRoutesDetail(from: Coord, to: Coord, limit = 3): Pr
     //  그걸 그대로 그리면 "ODsay 실시간 82분 · 0원 · 환승 0회" 처럼 실제와 전혀
     //  다른 값이 사실처럼 보인다. 탑승 구간이 있고 시간이 잡힌 것만 남기고,
     //  하나도 못 건지면 null 을 돌려 상위에서 추정값으로 폴백하게 한다.
-    const usable = parsed.filter((p) => p.min > 0 && p.legs.some((l) => l.kind !== "walk"));
+    // ⚠️ 가드는 **ODsay 가 준 시간**으로 판정한다. `min` 에는 우리가 더한 접근 추정치가
+    //    섞여 있어서, 그걸로 보면 "시간 0인 껍데기"가 추정치 덕에 통과해 버린다.
+    const usable = parsed.filter(
+      (p) => p.min - (p.estimatedMin ?? 0) > 0 && p.legs.some((l) => l.kind !== "walk")
+    );
     if (usable.length) return usable.map((p) => ({ ...p, verified: true }));
 
     // 진단 모드(FLAGS.odsayProbe)에서는 걸러낸 껍데기도 그대로 돌려준다 —
@@ -335,8 +283,12 @@ export async function transitRouteOdsay(from: Coord, to: Coord): Promise<Transit
         verified: false,
       };
     }
+    // 껍데기 가드를 통과한 뒤에 보정한다 — 위 `min <= 0` 판정은 **ODsay 가 준 시간**으로
+    // 해야 한다. 먼저 더하면 시간 0인 껍데기가 접근 추정치 덕에 살아난다.
+    const estimatedMin = intercityGapMinutes(from, to, path.pathType, subPaths);
     return {
-      min,
+      min: min + estimatedMin,
+      estimatedMin,
       transfers: Math.max(0, rides.length - 1),
       fare: fareOf(info, subPaths),
       walkM: info.totalWalk ?? 0,
