@@ -18,6 +18,7 @@ import {
   geometricCandidates,
 } from "./geo";
 import { geocodeKakao, coord2AddressKakao, searchPlacesKakao, type Coord } from "./kakao";
+import { geoCacheGet, geoCacheSet, routeCacheGet, routeCacheSet } from "./cache-store";
 import { transitRouteOdsay } from "./odsay";
 import { carRouteTmap } from "./tmap";
 import type { Participant, RegionCandidate, PlaceCandidate } from "./types";
@@ -36,12 +37,24 @@ const routeCache = g.__moimerRoute ?? (g.__moimerRoute = new Map());
 // ── 지오코딩 ──
 export async function resolveGeocode(text: string): Promise<Coord> {
   const key = text.replace(/\s/g, "");
+
+  // L1 메모리 — 같은 프로세스 안에서 즉시
   const hit = geoCache.get(key);
   if (hit) return hit;
+
+  // L2 DB — 재시작해도 살아남는다. DB 가 없으면(팀원 로컬) null 이라 그냥 넘어간다.
+  const stored = await geoCacheGet(key);
+  if (stored) {
+    geoCache.set(key, stored); // 다음 호출부터는 L1 에서 끝난다
+    return stored;
+  }
+
+  // L3 외부 API
   const real = await geocodeKakao(text);
   // 실 지오코딩 성공값만 캐시(폴백은 캐시 안 함 → API 복구 시 자동 실값 전환)
   if (real) {
     geoCache.set(key, real);
+    void geoCacheSet(key, real); // DB 쓰기는 응답을 막지 않는다
     return real;
   }
   return mockGeocode(text);
@@ -131,7 +144,18 @@ export async function travelMinutesEx(
     }
   }
 
-  // 캐시·근거리로 못 끝낸 것만 실제 API 로 간다 — 게이트는 여기서부터.
+  // L2 DB — 서버를 재시작해도 남아 있어 유료 호출을 다시 하지 않는다.
+  //  근거리 단락보다 뒤에 둔다: 도보 환산은 계산이 공짜라 DB 를 왕복할 이유가 없다.
+  //  진단 모드에서는 L1 과 마찬가지로 건너뛴다(실측 중 값이 안 바뀌면 곤란하다).
+  if (!FLAGS.odsayProbe) {
+    const stored = await routeCacheGet(key);
+    if (stored != null) {
+      routeCache.set(key, stored); // 다음 호출부터는 L1 에서 끝난다
+      return { min: stored, real: true };
+    }
+  }
+
+  // 캐시(L1·L2)·근거리로 못 끝낸 것만 실제 API 로 간다 — 게이트는 여기서부터.
   await rateGate();
 
   let real: number | null = null;
@@ -144,7 +168,10 @@ export async function travelMinutesEx(
   }
   // 실 API 성공값만 캐시. 폴백(haversine 추정)은 캐시하지 않음.
   if (real != null) {
-    if (!FLAGS.odsayProbe) routeCache.set(key, real);
+    if (!FLAGS.odsayProbe) {
+      routeCache.set(key, real);
+      void routeCacheSet(key, real); // DB 쓰기는 응답을 막지 않는다
+    }
     return { min: real, real: true };
   }
   // ── 폴백 지점 — 앱의 모든 추정값이 여기서 태어난다 ──
