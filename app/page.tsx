@@ -835,6 +835,26 @@ export default function Home() {
           selectedMeeting.winnerRegion ? (
             <div className="v8-mapnote">
               📍 중간 추천 지역: <b>{selectedMeeting.winnerRegion.name}</b> · {selectedMeeting.winnerRegion.reason}
+              {/* ⚠️ 이 줄도 `reason` 안에 "최대 52분 · 편차 3분"처럼 **분 단위를 그대로**
+                  보여준다. 그런데 출처를 한 글자도 말하지 않았다 — 바로 아래 `midpoint`
+                  분기(모임 미선택)에는 붙어 있는데 **모임을 고른 이 분기에만 빠져 있었다**
+                  (2026-08-06 실측: 홈 지도 아래는 출처 없음 · 바로 밑 확정 장소 카드는
+                  `거리 추정 52분`). 아래 주석이 세운 원칙이 여기 적용이 안 된 것이다.
+
+                  ⚠️ 접는 규칙은 `lib/types.ts` 가 정한 그대로다 —
+                     `perParticipant.every(x => x.real === true)`.
+                     `undefined`(이 필드가 생기기 전에 저장된 모임)는 **참으로 치지 않는다.**
+                     모르면 실값이라고 주장하지 않는다(CLAUDE.md §6). 옛 모임이 `거리 추정`
+                     으로 뜨는 건 그래서이고, 과소평가 방향이라 안전하다.
+                  ⚠️ 후보가 비어 있으면 `every` 가 참이라 빈 목록에 `전원 경로 기준` 이
+                     붙는다 — 길이를 함께 본다. */}
+              <span className="faint">
+                {" · "}
+                {selectedMeeting.winnerRegion.perParticipant.length > 0 &&
+                selectedMeeting.winnerRegion.perParticipant.every((x) => x.real === true)
+                  ? "전원 경로 기준"
+                  : "일부 거리 추정"}
+              </span>
             </div>
           ) : null
         ) : midLoading ? (
