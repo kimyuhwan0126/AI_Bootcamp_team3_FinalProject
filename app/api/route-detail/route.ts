@@ -19,6 +19,15 @@ export interface RouteDetailResponse {
   participantName: string;
   origin: string;
   destName: string;
+  /**
+   * 목적지 좌표. **화면이 카카오맵 길찾기 링크를 만들 때 쓴다.**
+   *
+   * 왜 이름만으로는 안 되나: 카카오맵의 공식 URL 스킴은
+   * `map.kakao.com/link/to/{이름},{위도},{경도}` 로 **좌표를 요구**한다.
+   * 2026-08-06 에 `?sName=&eName=`(이름만) 형식으로 붙였다가 **카카오맵이 그대로
+   * 무시해서 출발지·도착지가 빈 채로 열렸다** — 링크가 있으나 마나였다.
+   */
+  to: { lat: number; lng: number };
   live: boolean;                       // 실 API 성공 여부
   transit?: TransitPathDetail[];       // mode=transit
   car?: CarOptionDetail[];             // mode=car
@@ -54,7 +63,10 @@ export async function GET(req: NextRequest) {
   // 10분 동안 첫 응답만 돌아와, 코드를 고쳐도 안 바뀌는 것처럼 보인다.
   const hit = FLAGS.odsayProbe ? undefined : cache.get(key);
   if (hit && Date.now() - hit.at < TTL) {
-    return NextResponse.json({ ...hit.data, participantName: p.name, origin: p.origin, destName: toName });
+    // ⚠️ `to` 도 함께 덮는다. 캐시 키는 좌표를 **소수 4자리로 반올림**해서 만들므로
+    //    같은 키라도 원래 요청 좌표와 미세하게 다를 수 있다 — 링크에 실릴 값이라
+    //    캐시에 남은 값이 아니라 **이번 요청 값**을 쓴다.
+    return NextResponse.json({ ...hit.data, participantName: p.name, origin: p.origin, destName: toName, to: { lat: toLat, lng: toLng } });
   }
 
   const from = { lat: p.lat, lng: p.lng };
@@ -79,6 +91,7 @@ export async function GET(req: NextRequest) {
       participantName: p.name,
       origin: p.origin ?? "",
       destName: toName,
+      to,
       live: !!car,
       car: car ?? undefined,
       carpool,
@@ -90,6 +103,7 @@ export async function GET(req: NextRequest) {
       participantName: p.name,
       origin: p.origin ?? "",
       destName: toName,
+      to,
       live: !!transit,
       transit: transit ?? undefined,
     };

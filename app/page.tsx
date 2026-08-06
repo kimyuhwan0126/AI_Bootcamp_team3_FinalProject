@@ -1074,7 +1074,20 @@ export default function Home() {
                           {per.real === true ? "경로 기준" : "거리 추정"} {formatMinutes(per.min)}
                         </span>
                       ) : (
-                        <span className="chip line" style={{ fontSize: 10 }}>상태 미입력</span>
+                        // 🔴 예전엔 `상태 미입력` 이었는데 **뜻이 다른 말**이다 — 그건
+                        //    "본인이 도착 상태를 안 남겼다"(`p.status`)는 뜻이고, 여기 오는
+                        //    경우는 **이동시간 자체가 없는** 것이다(2026-08-06 실측).
+                        //    거점 후보를 계산한 뒤에 출발지를 등록하면 `perParticipant` 에
+                        //    안 들어가고, 확정 후에는 다시 계산하지 않아 영영 빈다.
+                        //    모임 상세의 `TravelTimes` 도 같은 문구를 쓴다 — 두 화면이
+                        //    같은 상태를 다르게 부르면 안 된다.
+                        <span
+                          className="chip line"
+                          style={{ fontSize: 10 }}
+                          title="이 거점 후보를 계산한 뒤에 출발지가 등록돼서 이동시간이 빠져 있어요"
+                        >
+                          이동시간 없음
+                        </span>
                       )}
                     </div>
                   );
