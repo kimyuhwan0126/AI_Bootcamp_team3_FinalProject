@@ -44,12 +44,12 @@ export interface RegionCandidate {
    *   · `false`     직선거리(haversine) 추정값 — `estMinutes()`
    *   · `undefined` 이 필드가 생기기 전에 저장된 후보라 **알 수 없다**
    *
-   * ⚠️ 목록 전체가 아니라 **사람 단위**로 둔 이유: 화면의 `실시간` 칩이 참가자
+   * ⚠️ 목록 전체가 아니라 **사람 단위**로 둔 이유: 화면의 출처 칩(`경로 기준` / `거리 추정`)이 참가자
    *    행마다 붙는데, 실제로 한 목록 안에 실값과 추정이 섞인다(2026-08-05 실측 —
    *    서울 3인은 ODsay 실값, 자월도 1인은 ODsay `code 3` 실패로 추정값이었다).
    *    목록 단위 `live` 하나로는 그 행이 어느 쪽인지 말할 수 없다.
    *    목록 전체 판정이 필요하면 `perParticipant.every(x => x.real === true)` 로 접는다
-   *    (`undefined` 는 참으로 치지 않는다 — 모르면 실시간이라고 주장하지 않는다).
+   *    (`undefined` 는 참으로 치지 않는다 — 모르면 실값이라고 주장하지 않는다).
    */
   perParticipant: { pid: string; name: string; min: number; real?: boolean }[];
 }

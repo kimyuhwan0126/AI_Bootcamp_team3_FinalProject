@@ -224,7 +224,7 @@ async function scoreCandidates(
   candidates: { name: string; hub: { lat: number; lng: number } }[],
   located: Located[]
 ): Promise<RegionsWithMeta> {
-  // 하나라도 추정 폴백이 섞였는지 — 화면의 "실 이동시간 기준" 배지 판정에 쓴다.
+  // 하나라도 추정 폴백이 섞였는지 — 홈 화면의 `전원 경로 기준` / `일부 거리 추정` 판정에 쓴다.
   //
   // 🗳️ 정의: **한 명이라도 폴백이면 `live: false`.** "과반이 실값이면 true" 도
   //    가능하지만, 이 앱은 "가짜를 실제처럼 그리지 않는다"(CLAUDE.md §6)를 지켜온
@@ -243,7 +243,7 @@ async function scoreCandidates(
           if (!t.real) allReal = false;
           // `real` 을 사람 단위로 같이 내려보낸다 — 목록 하나에 실값과 추정이
           // 섞이기 때문이다(자월도 참가자만 ODsay 실패 · 2026-08-05 실측).
-          // 화면의 `실시간` 칩이 행마다 붙으므로 판정도 행 단위여야 한다.
+          // 화면의 출처 칩(`경로 기준` / `거리 추정`)이 행마다 붙으므로 판정도 행 단위여야 한다.
           return { pid: p.id, name: p.name, min: t.min, real: t.real };
         })
       )
@@ -301,7 +301,7 @@ export async function scoreRegionForParticipants(
   const perParticipant = await Promise.all(
     // ⚠️ `travelMinutes`(분만 주는 래퍼)가 아니라 `travelMinutesEx` 를 쓴다.
     //    래퍼는 `real` 을 버려서, 참가자가 직접 등록한 후보만 출처를 알 수 없게 된다
-    //    — 그러면 그 후보 화면에서만 `실시간` 칩 판정이 되살아난다.
+    //    — 그러면 그 후보 화면에서만 출처 칩(`경로 기준`) 판정이 되살아난다.
     located.map(async (p) => {
       const t = await travelMinutesEx({ lat: p.lat!, lng: p.lng! }, hub, p.transport);
       return { pid: p.id, name: p.name, min: t.min, real: t.real };

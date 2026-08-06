@@ -464,7 +464,7 @@ export async function addRegionCandidate(input: {
   lng: number;
   maxMin: number;
   devMin: number;
-  // `real` 은 그 사람 숫자가 실 API 값인지다 — 화면의 `실시간` 칩 판정에 쓰므로
+  // `real` 은 그 사람 숫자가 실 API 값인지다 — 화면의 출처 칩(`경로 기준`) 판정에 쓰므로
   // 여기서 떨어뜨리면 참가자 제안 후보만 출처를 잃는다 (lib/types.ts 참고)
   perParticipant: { pid: string; name: string; min: number; real?: boolean }[];
   proposedBy: string;

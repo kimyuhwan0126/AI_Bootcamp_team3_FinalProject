@@ -29,7 +29,7 @@ export interface TravelEntry {
   min: number;
   /**
    * 위 `min` 이 **실 API 값인지**. `false` 면 직선거리 추정, `undefined` 면 알 수 없다.
-   * 화면이 `실시간` 이라고 말해도 되는지를 이 값 하나로 가른다 —
+   * 화면이 `경로 기준`(실값) 이라고 말해도 되는지를 이 값 하나로 가른다 —
    * `WeatherSnapshot.real` 과 같은 계약이다(CLAUDE.md §6).
    */
   real?: boolean;

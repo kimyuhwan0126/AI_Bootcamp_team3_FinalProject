@@ -277,7 +277,7 @@ function scoreAndPick(
       const per = located.map((p) => {
         const km = haversineKm({ lat: p.lat!, lng: p.lng! }, hub);
         // 이 경로는 외부 API 를 아예 부르지 않는 직선거리 추정이다 —
-        // `real: false` 를 붙여야 화면이 `실시간` 이라고 말하지 않는다(CLAUDE.md §6).
+        // `real: false` 를 붙여야 화면이 `경로 기준` 이라 말하지 않고 `거리 추정` 으로 뜬다(CLAUDE.md §6).
         return { pid: p.id, name: p.name, min: estMinutes(km, p.transport), real: false };
       });
       const mins = per.map((x) => x.min);
