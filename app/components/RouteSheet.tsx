@@ -184,7 +184,28 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                   >
                     <b>직선거리로 추정한 값이에요.</b> 실제 경로를 계산하지 못해
                     거리로만 계산했어요 — 실제 소요시간과 크게 다를 수 있습니다.
-                    정확한 시간은 카카오맵·네이버지도에서 확인해주세요.
+                    {/* ⚠️ 예전엔 "카카오맵·네이버지도에서 확인해주세요"라고만 하고
+                        **링크가 없었다.** 사용자는 앱을 따로 열어 출발지·도착지를 다시
+                        타이핑해야 했는데, 그 두 값은 우리가 이미 갖고 있다
+                        (2026-08-06 CEO 지적 — 경로 구간이 하나도 안 나와서 "고장난 듯"
+                        하게 보이는 자리다. 실제로는 ODsay 키가 없어 보여줄 게 없는 것).
+
+                        ⚠️ 둘 다 있을 때만 건다. `origin` 은 `p.origin ?? ""` 라 빌 수 있고,
+                           빈 값으로 길찾기를 열면 엉뚱한 화면이 뜬다.
+                        ⚠️ 수단(대중교통/자차)은 지정하지 않는다 — 이 링크는 길찾기 화면을
+                           열어줄 뿐이고, 우리가 고른 수단으로 열린다고 **말할 수 없다.**
+                           그래서 문구도 "길찾기 열기"까지만 한다. */}
+                    {data.origin && data.destName && (
+                      <a
+                        href={`https://map.kakao.com/?sName=${encodeURIComponent(data.origin)}&eName=${encodeURIComponent(data.destName)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="chip line"
+                        style={{ display: "inline-flex", marginTop: 8, textDecoration: "none", fontSize: 10.5 }}
+                      >
+                        🗺 카카오맵에서 길찾기 열기
+                      </a>
+                    )}
                   </div>
                 )}
                 {data.live &&
