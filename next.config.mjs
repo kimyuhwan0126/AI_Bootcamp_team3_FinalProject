@@ -16,7 +16,6 @@ const SELF_HOST_URL = (process.env.SELF_HOST_URL || "").trim().replace(/\/+$/, "
 const nextConfig = {
   reactStrictMode: true,
 
-
   async rewrites() {
     if (!SELF_HOST_URL) return [];
     return {
