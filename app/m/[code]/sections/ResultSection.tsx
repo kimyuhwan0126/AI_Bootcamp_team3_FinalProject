@@ -52,6 +52,16 @@ export default function ResultSection({
             )}
             <div className="row" style={{ gap: 6, justifyContent: "center" }}>
               <span className="chip ac" style={{ fontSize: 10.5 }}>{aiChatEnabled ? "💬 AI 대화로 함께 정했어요" : "🗳️ 투표로 함께 정했어요"}</span>
+              {/* 링크 자체는 그대로 카카오맵 장소 페이지다. **이름만** 사람들이 실제로
+                  찾는 것으로 바꿨다 — "카카오맵에서 보기"는 무엇이 있는지 안 말해줘서
+                  잘 안 눌린다(2026-08-06 CEO 지적: "메뉴만 보고 싶은 사람들이 있을 텐데").
+
+                  ⚠️ **"예약하기"로는 만들지 않는다.** 카카오 로컬 응답에는 예약 가능
+                     여부도 메뉴도 전화번호도 없다(`lib/kakao.ts` 반환 타입은
+                     name·category·path·distanceM·lat·lng·url 뿐). 예약을 안 받는 가게에
+                     `예약하기` 를 달면 **확인 안 된 것을 확인된 것처럼 말하는** 셈이라,
+                     방금 고친 `실시간` 배지와 같은 문제를 새로 만든다(CLAUDE.md §6).
+                     메뉴·사진·리뷰는 그 페이지에 실제로 있는 것들이라 이름으로 써도 된다. */}
               {state.winnerPlace.url && (
                 <a
                   className="chip line"
@@ -60,7 +70,7 @@ export default function ResultSection({
                   target="_blank"
                   rel="noreferrer"
                 >
-                  🗺️ 카카오맵에서 보기
+                  🍽 메뉴 · 사진 · 리뷰 보기
                 </a>
               )}
             </div>
