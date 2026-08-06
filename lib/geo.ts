@@ -339,11 +339,21 @@ export function recommendRegions(
 
 // ── 추천장소 생성: 선정된 지역 인근 가게 후보(2차 투표 대상) ──
 const PLACE_SETS: { emoji: string; category: string; suffix: string; deposit: number; rating: number }[] = [
-  { emoji: "🍺", category: "술집", suffix: "역전할머니맥주", deposit: 10000, rating: 4.5 },
-  { emoji: "🍽️", category: "일식", suffix: "스시노메", deposit: 15000, rating: 4.7 },
-  { emoji: "🍲", category: "한식", suffix: "더진국", deposit: 8000, rating: 4.3 },
-  { emoji: "☕", category: "카페", suffix: "블루보틀", deposit: 5000, rating: 4.6 },
-  { emoji: "🥩", category: "고기", suffix: "새마을식당", deposit: 12000, rating: 4.4 },
+  // ⚠️ rating 은 전부 **0(= 정보 없음)** 이다. 그럴듯한 별점을 넣지 마라.
+  //
+  //  `lib/types.ts` 의 규약이 `0 = 정보 없음(실 데이터엔 평점이 없어 미표시)` 인데,
+  //  실 경로(카카오 로컬·AI·ai-vote)는 전부 0 을 주는 반면 여기 mock 만 4.3~4.7 을
+  //  넣고 있었다. 그래서 **키를 넣으면 별점이 사라지고, 키가 없으면 그럴듯한 별점이
+  //  뜨는 역전**이 생겼다 — 존재하지도 않는 가게가 실제 가게보다 더 실제처럼 보였다
+  //  (CLAUDE.md §3-6 "가짜 데이터를 실제인 것처럼 그리지 않는다" 위반).
+  //
+  //  UI 3곳(MeetingClient·ResultSection·ManualPickModal)이 `rating > 0` 가드를
+  //  갖고 있어 0 이면 별이 저절로 사라진다 — 화면 코드는 건드릴 필요가 없다.
+  { emoji: "🍺", category: "술집", suffix: "역전할머니맥주", deposit: 10000, rating: 0 },
+  { emoji: "🍽️", category: "일식", suffix: "스시노메", deposit: 15000, rating: 0 },
+  { emoji: "🍲", category: "한식", suffix: "더진국", deposit: 8000, rating: 0 },
+  { emoji: "☕", category: "카페", suffix: "블루보틀", deposit: 5000, rating: 0 },
+  { emoji: "🥩", category: "고기", suffix: "새마을식당", deposit: 12000, rating: 0 },
 ];
 
 export function generatePlaces(regionName: string, center?: { lat: number; lng: number }): PlaceCandidate[] {
