@@ -104,7 +104,7 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
         {!data && !err && (
           <div className="center muted" style={{ padding: "26px 0", fontSize: 13 }}>
             <span className="spinner" style={{ display: "inline-block", borderColor: "color-mix(in srgb,var(--ac) 30%,transparent)", borderTopColor: "var(--ac)", verticalAlign: "-3px", marginRight: 8 }} />
-            실시간 경로 불러오는 중…
+            경로 불러오는 중…
           </div>
         )}
 
@@ -116,14 +116,19 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                 {data.participantName} · {data.origin} → {data.destName}{" "}
                 {data.mode === "car" && <span style={{ fontSize: 12 }}>🚗</span>}
               </b>
+              {/* ⚠️ 예전엔 `ODsay 실시간` · `TMAP 실시간` 이었다. **"실시간"이 아니다** —
+                  우리는 두 API 어디에도 시각을 보내지 않는다(`odsay.ts`·`tmap.ts` 요청 파라미터
+                  확인). 그러니 이 값은 "지금"이 아니라 "실제 노선을 계산한 결과"다.
+                  게다가 이 앱은 다음 주 모임을 잡는 도구라 "지금 막히는 정도"는 애초에 필요 없다.
+                  → 앱 전체를 `경로 기준` / `거리 추정` 두 단어로 통일했다(2026-08-05, CEO 결정). */}
               {data.live && !unverified ? (
-                <span className="chip ok">{data.mode === "car" ? "TMAP 실시간" : "ODsay 실시간"}</span>
+                <span className="chip ok">경로 기준</span>
               ) : unverified ? (
                 // 진단 모드(NEXT_PUBLIC_FF_ODSAY_PROBE)에서만 나온다 —
-                // 껍데기 가드를 통과 못 한 값이라 "실시간"으로 표시하면 안 된다.
+                // 껍데기 가드를 통과 못 한 값이라 실제 경로처럼 표시하면 안 된다.
                 <span className="chip warn">⚠ 검증 안 된 원시 응답</span>
               ) : (
-                <span className="chip warn">추정값</span>
+                <span className="chip warn">거리 추정</span>
               )}
             </div>
 
@@ -134,8 +139,11 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                   {unverified
                     ? "진단 모드 — ODsay 가 돌려준 원시 응답입니다. 탑승 구간이 없어 평소엔 걸러지는 값이라 실제와 다를 수 있어요"
                     : data.live
-                    ? `경로 후보 ${data.transit.length}개 · 시간표 기준`
-                    : "실시간 경로를 가져오지 못해 추정값으로 표시해요"}
+                    ? // ⚠️ "시간표 기준"이라 단정하지 않는다. "실시간"을 뺀 근거가 *"우리가 확인하지
+                      //    않은 것은 말하지 않는다"* 였는데, 그 자리에 역시 확인 안 한 주장을 넣으면
+                      //    같은 잘못이다 — ODsay 응답에는 어느 시각·어느 편 기준인지 표기가 없다.
+                      `경로 후보 ${data.transit.length}개 · 실제 노선으로 계산`
+                    : "실제 경로를 계산하지 못해 직선거리로 추정했어요"}
                 </p>
                 {/* 도시간 경로(KTX·고속버스·항공)는 ODsay 가 역·터미널·공항 사이만 답한다.
                     표시 시간에 우리가 더한 추정치가 섞여 있으므로 그대로 밝힌다 —
@@ -174,7 +182,7 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                       color: "var(--warn)",
                     }}
                   >
-                    <b>직선거리로 추정한 값이에요.</b> 실시간 경로를 가져오지 못해
+                    <b>직선거리로 추정한 값이에요.</b> 실제 경로를 계산하지 못해
                     거리로만 계산했어요 — 실제 소요시간과 크게 다를 수 있습니다.
                     정확한 시간은 카카오맵·네이버지도에서 확인해주세요.
                   </div>
@@ -239,7 +247,11 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
             {/* ══ 자차 (시안 2) ══ */}
             {data.mode === "car" && data.live && (
               <>
-                <p className="faint" style={{ fontSize: 11, margin: "-4px 0 0" }}>지금 출발 기준 · 실시간 교통 반영</p>
+                {/* 자차는 대중교통과 사정이 다르다 — TMAP 에도 시각을 안 보내므로 이 값은
+                    **호출한 순간**의 도로 상황이다. 모임은 보통 며칠 뒤라, 신선한데 엉뚱한
+                    시점의 신선함이다. "실시간 교통 반영"이라고만 적으면 장점처럼 읽혀서
+                    그 어긋남을 그대로 밝힌다(2026-08-05 CEO 지적). */}
+                <p className="faint" style={{ fontSize: 11, margin: "-4px 0 0" }}>지금 출발 기준 — 모임 시각의 도로 상황은 다를 수 있어요</p>
                 {/* 추천 옵션 */}
                 <div className="ropt sel">
                   <div className="between">
@@ -301,7 +313,7 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
               </>
             )}
             {data.mode === "car" && !data.live && (
-              <p className="muted" style={{ fontSize: 12.5 }}>실시간 경로를 가져오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+              <p className="muted" style={{ fontSize: 12.5 }}>경로를 가져오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
             )}
 
             <button className="btn ghost" onClick={onClose}>닫기</button>

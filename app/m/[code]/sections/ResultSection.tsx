@@ -106,10 +106,17 @@ export default function ResultSection({
             </div>
           ) : state.winnerPlace.reservable ? (
             <>
-              <div className="kv"><span className="k">선입금</span><span className="v tnum">1인 {state.winnerPlace.depositPerHead.toLocaleString()}원 × {state.headcount}명</span></div>
+              {/* ⚠️ 금액 줄에 `(모의)` 를 붙인다. 예전엔 버튼과 완료 칩에만 있어서
+                  `선입금 1인 15,000원 × 4명 / 합계 60,000원` 만 보면 실제 가격으로 읽혔다.
+                  가게 이름·좌표는 카카오 실데이터인데 금액은 카테고리별 고정 상수라
+                  (`lib/routing.ts` PLACE_QUERIES), 실존 가게에 지어낸 값이 붙는 모양이 된다. */}
+              <div className="kv"><span className="k">선입금 (모의)</span><span className="v tnum">1인 {state.winnerPlace.depositPerHead.toLocaleString()}원 × {state.headcount}명</span></div>
               <div className="between">
-                <b className="tnum" style={{ fontSize: 15 }}>합계 {(state.winnerPlace.depositPerHead * state.headcount).toLocaleString()}원</b>
+                <b className="tnum" style={{ fontSize: 15 }}>합계 {(state.winnerPlace.depositPerHead * state.headcount).toLocaleString()}원 <span className="faint" style={{ fontSize: 11, fontWeight: 400 }}>(모의)</span></b>
               </div>
+              <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
+                금액은 카테고리별 예시값이에요 — 가게가 실제로 받는 선입금이 아니고, 예약 가능 여부도 확인된 값이 아닙니다.
+              </p>
               <button className="btn ok" disabled={!isLeader} onClick={onOpenReserve}>
                 {isLeader ? "예약 · 선입금 결제 (모의)" : "방장만 결제할 수 있어요"}
               </button>

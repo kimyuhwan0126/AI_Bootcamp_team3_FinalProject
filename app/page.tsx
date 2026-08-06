@@ -828,19 +828,28 @@ export default function Home() {
             </div>
           ) : null
         ) : midLoading ? (
-          <div className="v8-mapnote">실 이동시간(ODsay/TMAP)으로 계산 중…</div>
+          // 결과를 예단하지 않는다 — 이 계산은 실패하면 그대로 거리 추정으로 떨어져서
+          // 바로 다음 프레임에 `거리 추정` 이 뜬다. 앞 문장이 뒤 결과를 부정하면 안 된다.
+          // (경로 상세 시트의 로딩 문구와도 같은 원칙)
+          <div className="v8-mapnote">경로 계산 중…</div>
         ) : midpoint ? (
           <div className="v8-mapnote">
             📍 중간 추천 지역: <b>{midpoint.name}</b> · {midpoint.reason}
-            {criteria === "time" && (
-              <span className="faint">
-                {" · "}
-                {/* "키 없음"은 이제 원인 중 하나일 뿐이다 — 키가 있어도 프록시·터널이
-                    죽거나 ODsay 가 못 푸는 구간이면 거리 추정으로 떨어진다.
-                    원인을 단정하지 않고 "무엇을 보고 있는지"만 밝힌다. */}
-                {midLive ? "실 이동시간 기준" : "거리 추정으로 계산"}
-              </span>
-            )}
+            {/* ⚠️ 예전엔 이 표기가 `criteria === "time"` 안에만 있었다. 그래서 **거리순으로
+                보면 `reason` 이 "최대 42분 · 편차 12분"처럼 분 단위를 그대로 보여주면서
+                출처를 한 글자도 말하지 않았다.** 거리순은 정의상 외부 API를 안 부르는
+                100% 직선거리 추정이라(`recommendRegions`), 오히려 반드시 밝혀야 하는 쪽이다.
+                "키 없음"은 원인 중 하나일 뿐이라(프록시·터널·못 푸는 구간) 원인은 단정하지 않고
+                "무엇을 보고 있는지"만 밝힌다.
+
+                ⚠️ 문구에 **범위**를 붙인다 — 여기 `midLive` 는 목록 전체 판정("한 명이라도
+                폴백이면 false")인데 모임 상세 목록의 칩은 **사람 단위**다. 같은 두 단어가
+                층이 다른 것을 가리키면, 4명 중 1명만 실패했을 때 홈은 `거리 추정` 인데
+                상세는 3명이 `경로 기준` 이라 서로 반대 사실처럼 읽힌다. */}
+            <span className="faint">
+              {" · "}
+              {criteria !== "time" ? "거리 추정" : midLive ? "전원 경로 기준" : "일부 거리 추정"}
+            </span>
           </div>
         ) : null}
       </div>
@@ -1029,7 +1038,11 @@ export default function Home() {
                           ● {ARRIVAL_LABEL[p.status]}{p.etaText ? ` · ${p.etaText}` : ""}
                         </span>
                       ) : per ? (
-                        <span className="chip line" style={{ fontSize: 10 }}>예상 {formatMinutes(per.min)}</span>
+                        // 여기도 출처를 밝힌다 — `per.real` 이 이미 이 스코프에 있는데
+                        // 예전엔 그냥 "예상 N분"이라 어디서 온 숫자인지 말하지 않았다.
+                        <span className="chip line" style={{ fontSize: 10 }}>
+                          {per.real === true ? "경로 기준" : "거리 추정"} {formatMinutes(per.min)}
+                        </span>
                       ) : (
                         <span className="chip line" style={{ fontSize: 10 }}>상태 미입력</span>
                       )}

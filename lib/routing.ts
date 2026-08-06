@@ -3,7 +3,9 @@
 //
 //  · resolveGeocode(text)         : 주소/역명 → 좌표 (카카오 → mock)
 //  · travelMinutes(from,to,mode)  : 이동시간(분) (ODsay/TMAP → mock)
-//  · recommendRegions(participants): 공평한 중간지역 후보 3 (실시간 기반)
+//  · recommendRegions(participants): 공평한 중간지역 후보 3 (실 경로 기반)
+//    ⚠️ "실시간"이 아니다 — ODsay·TMAP 요청에 시각을 보내지 않는다. 실 API 값은
+//       "지금"이 아니라 "실제 노선을 계산한 값"이다. 화면 문구도 `경로 기준` 이다.
 //
 //  캐시로 중복 호출을 막아 무료 한도(일 1,000콜)를 아낍니다.
 // ─────────────────────────────────────────────────────────────
@@ -164,7 +166,12 @@ export async function travelMinutesEx(
     real = r?.min ?? null;
   } else {
     const r = await transitRouteOdsay(from, to);
-    real = r?.min ?? null;
+    // ⚠️ `verified === false` 는 진단 모드에서만 나오는 **껍데기 응답**이다
+    //    (탑승 구간이 하나도 없는데 시간만 있는 값 — `odsay.ts` 껍데기 가드 참고).
+    //    이걸 `real: true` 로 올리면 화면에 `경로 기준` 칩이 붙어, 경로 상세 시트가
+    //    같은 값을 "⚠ 검증 안 된 원시 응답"이라 경고하는 것과 정면으로 어긋난다.
+    //    믿을 수 없는 값은 실값으로 세지 않는다(CLAUDE.md §6).
+    real = r && r.verified !== false ? r.min : null;
   }
   // 실 API 성공값만 캐시. 폴백(haversine 추정)은 캐시하지 않음.
   if (real != null) {
@@ -217,7 +224,7 @@ async function scoreCandidates(
   candidates: { name: string; hub: { lat: number; lng: number } }[],
   located: Located[]
 ): Promise<RegionsWithMeta> {
-  // 하나라도 추정 폴백이 섞였는지 — 화면의 "실 이동시간 기준" 배지 판정에 쓴다.
+  // 하나라도 추정 폴백이 섞였는지 — 홈 화면의 `전원 경로 기준` / `일부 거리 추정` 판정에 쓴다.
   //
   // 🗳️ 정의: **한 명이라도 폴백이면 `live: false`.** "과반이 실값이면 true" 도
   //    가능하지만, 이 앱은 "가짜를 실제처럼 그리지 않는다"(CLAUDE.md §6)를 지켜온
@@ -234,7 +241,10 @@ async function scoreCandidates(
         located.map(async (p) => {
           const t = await travelMinutesEx({ lat: p.lat, lng: p.lng }, hub, p.transport);
           if (!t.real) allReal = false;
-          return { pid: p.id, name: p.name, min: t.min };
+          // `real` 을 사람 단위로 같이 내려보낸다 — 목록 하나에 실값과 추정이
+          // 섞이기 때문이다(자월도 참가자만 ODsay 실패 · 2026-08-05 실측).
+          // 화면의 출처 칩(`경로 기준` / `거리 추정`)이 행마다 붙으므로 판정도 행 단위여야 한다.
+          return { pid: p.id, name: p.name, min: t.min, real: t.real };
         })
       )
   );
@@ -282,14 +292,20 @@ async function recommendDynamicRegions(located: Located[]): Promise<RegionsWithM
 export async function scoreRegionForParticipants(
   hub: Coord,
   participants: Participant[]
-): Promise<{ maxMin: number; devMin: number; perParticipant: { pid: string; name: string; min: number }[] }> {
+): Promise<{
+  maxMin: number;
+  devMin: number;
+  perParticipant: { pid: string; name: string; min: number; real?: boolean }[];
+}> {
   const located = participants.filter((p) => p.lat != null && p.lng != null);
   const perParticipant = await Promise.all(
-    located.map(async (p) => ({
-      pid: p.id,
-      name: p.name,
-      min: await travelMinutes({ lat: p.lat!, lng: p.lng! }, hub, p.transport),
-    }))
+    // ⚠️ `travelMinutes`(분만 주는 래퍼)가 아니라 `travelMinutesEx` 를 쓴다.
+    //    래퍼는 `real` 을 버려서, 참가자가 직접 등록한 후보만 출처를 알 수 없게 된다
+    //    — 그러면 그 후보 화면에서만 출처 칩(`경로 기준`) 판정이 되살아난다.
+    located.map(async (p) => {
+      const t = await travelMinutesEx({ lat: p.lat!, lng: p.lng! }, hub, p.transport);
+      return { pid: p.id, name: p.name, min: t.min, real: t.real };
+    })
   );
   const mins = perParticipant.map((x) => x.min);
   const maxMin = mins.length ? Math.max(...mins) : 0;

@@ -133,7 +133,10 @@ export default function MapPanel({
           <div className="v8-mapnote">
             📍 중간 추천 지역: <b>{state.winnerRegion.name}</b> · {state.winnerRegion.reason}
             {routes.length > 0 && !routes.every((r) => r.real) && (
-              <span className="faint">{" · "}점선은 직선 근사(경로 API 미응답)</span>
+              // 같은 화면의 이동시간 칩과 **같은 단어**를 쓴다 — 예전엔 여기만 `직선 근사` 라는
+              // 세 번째 표현이라 사용자가 다른 개념으로 읽었다. 원인도 단정하지 않는다
+              // (키 없음·API 실패·못 푸는 구간 전부 같은 폴백이다).
+              <span className="faint">{" · "}점선은 거리 추정(실제 경로를 가져오지 못한 구간)</span>
             )}
           </div>
         )}
