@@ -57,3 +57,8 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# AI 검증 실험 하네스 (Ollama 키 하드코딩 — 커밋 금지)
+/_*.mjs
+/_*.json
+/_w*.log
