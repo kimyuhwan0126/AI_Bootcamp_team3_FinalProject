@@ -80,6 +80,21 @@ const CAND_MINE = "#f2803d";
 
 const JS_KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY || "";
 
+/**
+ * 키가 **빌드에 박혔는지**. 지도 실패 안내가 원인을 구분하는 데 쓴다.
+ *
+ * `loadSdk()` 는 두 경우 모두 `false` 를 돌려준다:
+ *   ① 키가 없다            → 즉시 false
+ *   ② 키는 있는데 SDK 로드 실패 → `s.onerror` (도메인 미등록 · 차단 · 오프라인)
+ * 화면이 둘을 같은 문구로 말하면, 키를 넣고 재배포한 뒤에도 똑같은 안내가 떠서
+ * "키가 안 들어갔나?" 하고 엉뚱한 데를 보게 된다(2026-08-06 Preview 에서 실제로 겪음).
+ *
+ * ⚠️ `NEXT_PUBLIC_*` 는 **빌드 시점에 문자열로 치환**된다. 그래서 이 값은
+ *    "지금 환경변수가 있나"가 아니라 **"이 번들을 만들 때 있었나"** 다 —
+ *    Vercel 에서 키를 추가만 하고 재배포를 안 하면 여전히 false 다.
+ */
+export const KAKAO_JS_KEY_SET = !!JS_KEY;
+
 // SDK 스크립트를 1회만 로드 (autoload=false → kakao.maps.load로 초기화)
 function loadSdk(): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);

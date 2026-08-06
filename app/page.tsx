@@ -6,7 +6,7 @@
 //  → 카카오맵 표시 → 주변 카페/음식점/술집/교통 리스트
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import KakaoMap, { MapPin, MapRoute, MapCandidate, pinColor } from "./components/KakaoMap";
+import KakaoMap, { MapPin, MapRoute, MapCandidate, pinColor, KAKAO_JS_KEY_SET } from "./components/KakaoMap";
 import BottomNav from "./components/v8/BottomNav";
 import V8Header from "./components/v8/V8Header";
 import Splash from "./components/v8/Splash";
@@ -809,7 +809,15 @@ export default function Home() {
           <div className="v8-mapempty">
             지도를 불러오지 못했어요
             <small>
-              카카오 JS 키(NEXT_PUBLIC_KAKAO_JS_KEY) 설정 후 표시됩니다
+              {/* ⚠️ **원인을 구분해 말한다.** 예전엔 두 경우 모두 "키 설정 후 표시됩니다"
+                  였는데, 키를 넣고 재배포한 뒤에도 같은 문구가 떠서 원인을 좁힐 수 없었다
+                  (2026-08-06 Preview 실측). `loadSdk()` 는 ①키 없음 ②키는 있는데 SDK 로드
+                  실패(도메인 미등록·차단) 를 똑같이 `false` 로 돌려준다.
+                  ⚠️ `KAKAO_JS_KEY_SET` 은 **빌드 시점** 값이다 — Vercel 에서 키를 추가만
+                     하고 재배포를 안 하면 여전히 false 다. 그것도 안내에 넣는다. */}
+              {KAKAO_JS_KEY_SET
+                ? "키는 있는데 지도 SDK 를 못 불러왔어요 — 이 주소가 카카오 개발자 콘솔의 사이트 도메인에 등록됐는지 확인해주세요"
+                : "카카오 JS 키(NEXT_PUBLIC_KAKAO_JS_KEY)가 이 빌드에 없어요 — 환경변수를 넣고 다시 배포하면 표시됩니다"}
               {/* ⚠️ `midpoint.name` 이 아니라 `center.name` 이다 — 위 `center` 주석 참고.
                   모임을 고른 상태에서 확정 거점과 다른 이름을 말하면 안 된다. */}
               {center ? ` · 중간 추천: ${center.name}` : ""}
