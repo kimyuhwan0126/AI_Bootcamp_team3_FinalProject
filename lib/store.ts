@@ -615,10 +615,16 @@ export async function reserve(input: {
   const place = m.places.find((p) => p.id === input.placeId);
   if (!place) return { ok: false, error: "가게를 찾을 수 없어요." };
   if (!place.reservable) return { ok: false, error: "예약 불가한 가게예요." };
-  const total = place.depositPerHead * m.headcount;
+  // ⚠️ 모임 **정원**(`m.headcount`)이 아니라 **실제 참여자 수**로 센다.
+  //    정원 8명·참여 2명인 모임에서 화면은 "참여자 2명"인데 결제는 "× 8명"이었다
+  //    (2026-08-06 실측 — CEO 결정으로 참여자 수 기준으로 통일).
+  //    ⚠️ `ResultSection.tsx`(미리보기)·`ReserveModal.tsx`(모달)와 **같은 기준이어야 한다.**
+  //       셋 중 하나만 고치면 "미리보기 20,000원 → 결제하니 80,000원"이 된다.
+  const headcount = m.participants.length;
+  const total = place.depositPerHead * headcount;
   m.reservation = {
     placeId: place.id,
-    headcount: m.headcount,
+    headcount,
     depositPerHead: place.depositPerHead,
     total,
     status: "paid",

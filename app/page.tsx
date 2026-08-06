@@ -455,16 +455,24 @@ export default function Home() {
     }
   }
   // 중간지점 핀 — 모임 모드에선 확정된 거점만 표시(거점 투표 중에는 후보 박스가 그 자리를 대신한다)
+  //
+  // ⚠️ `name` 을 따로 들고 다니는 이유: 지도 SDK 가 실패했을 때의 폴백 문구도
+  //    **이 값**을 써야 한다. 예전엔 거기서 `midpoint.name`(홈이 자체 계산한 값)을
+  //    직접 읽어서, 모임을 고른 상태에선 확정 거점과 달랐다 —
+  //    **같은 화면이 중간지점을 두 개로 말했다**(2026-08-06 실측: 지도 자리
+  //    "중간 추천: 왕십리" · 바로 아래 카드 "중간 추천 지역: 교대").
+  //    지도가 정상이면 그 자리가 안 보여서 지금까지 안 잡혔다.
   const center = selectedMeeting
     ? selectedMeeting.winnerRegion
       ? {
           lat: selectedMeeting.winnerRegion.lat,
           lng: selectedMeeting.winnerRegion.lng,
+          name: selectedMeeting.winnerRegion.name,
           label: `중간 추천 지역 · ${selectedMeeting.winnerRegion.name}`,
         }
       : null
     : midpoint
-    ? { lat: midpoint.lat, lng: midpoint.lng, label: `중간 추천 지역 · ${midpoint.name}` }
+    ? { lat: midpoint.lat, lng: midpoint.lng, name: midpoint.name, label: `중간 추천 지역 · ${midpoint.name}` }
     : null;
 
   // 지도 위 투표 후보 박스 — 피그마: "지도에서 후보를 눌러 투표하세요"
@@ -802,7 +810,9 @@ export default function Home() {
             지도를 불러오지 못했어요
             <small>
               카카오 JS 키(NEXT_PUBLIC_KAKAO_JS_KEY) 설정 후 표시됩니다
-              {midpoint ? ` · 중간 추천: ${midpoint.name}` : ""}
+              {/* ⚠️ `midpoint.name` 이 아니라 `center.name` 이다 — 위 `center` 주석 참고.
+                  모임을 고른 상태에서 확정 거점과 다른 이름을 말하면 안 된다. */}
+              {center ? ` · 중간 추천: ${center.name}` : ""}
             </small>
           </div>
         ) : (
