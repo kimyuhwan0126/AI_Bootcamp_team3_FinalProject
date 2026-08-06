@@ -51,18 +51,47 @@ const MIN_CANDIDATES = 3;
 const MAX_CANDIDATES = 5;
 
 /**
- * 서로 이만큼 안에 붙어 있는 역은 **같은 곳으로 본다**(km).
+ * 서로 이만큼 안에 붙어 있는 역은 **같은 곳으로 본다** — 검색 반경에 비례한다(km).
  *
- * 왜: 중심이 강남 한복판이면 반경 안에 역이 10개 넘게 나오는데 전부 걸어서 갈
- * 거리다. 투표 화면에 `강남역 · 역삼역 · 선릉역` 이 뜨면 사용자는 "뭐가 다른데?"
- * 가 된다. 후보는 **고를 이유가 서로 다를 때만** 후보다.
+ * 왜 솎아내는가: 중심이 강남 한복판이면 반경 안에 역이 10개 넘게 나오는데 전부
+ * 걸어서 갈 거리다. `강남역 · 역삼역 · 선릉역` 이 뜨면 "뭐가 다른데?" 가 된다.
+ * 후보는 **고를 이유가 서로 다를 때만** 후보다.
+ *
+ * 🔴 왜 고정값이 아닌가 (2026-08-06 실측):
+ *   고정 1.5km 였을 때 **노원+의정부에서 도봉산역이 잘렸다.**
+ *     장암역   중심 431m   최대 30분 · 편차 3분   ← 중심에 더 가까워 먼저 채택
+ *     도봉산역 중심 887m   최대 32분 · 편차 7분   ← 장암역과 713m → 1.5km 규칙에 제거
+ *   그런데 **도봉산역이 1·7호선 환승역**이라 의정부(1호선)에서 직통이고,
+ *   장암역은 7호선 종점이라 환승이 필요하다. 직선거리는 노선을 모른다.
+ *
+ *   그렇다고 고정 0.6km 로 낮추면 반대쪽이 깨진다 — 강남 일대 역 간격이
+ *   841m(강남↔역삼) · 1,185m(역삼↔선릉) 이라 **거의 안 걸러진다.**
+ *
+ *   → 반경에 비례시키면 둘 다 잡힌다:
+ *       노원+의정부  반경  2,813m → 임계   563m   장암↔도봉산 713m  ✅ 둘 다 남음
+ *       8인 광역     반경 17,760m → 임계 3,552m   강남↔역삼  841m  ✅ 하나로 합침
+ *
+ * ⚠️ 최소 500m 는 유지한다 — 같은 역의 다른 출구가 별개 후보로 뜨는 걸 막는다.
  */
-const DEDUPE_KM = 1.5;
+function dedupeKmFor(radiusM: number): number {
+  return Math.max(0.5, (radiusM / 1000) * 0.2);
+}
 
 export interface HubCandidate {
   name: string;
   hub: { lat: number; lng: number };
 }
+
+/**
+ * 후보 캐시 TTL. 짧게 잡는다 — 역이 새로 생기는 일은 드물지만, 우리 반경·솎아내기
+ * 로직을 고쳤을 때 배포 후에도 옛 결과가 오래 남으면 검증이 헷갈린다.
+ */
+const POOL_TTL_MS = 10 * 60 * 1000;
+
+// 서버 프로세스 캐시. `globalThis` 에 두는 건 이 저장소의 다른 캐시와 같은 방식이다
+// (Next 개발 모드의 모듈 재평가에도 살아남게 하려는 것).
+const g = globalThis as unknown as { __moimerHubPool?: Map<string, { at: number; pool: HubCandidate[] }> };
+const poolCache = g.__moimerHubPool ?? (g.__moimerHubPool = new Map());
 
 export interface HubPool {
   pool: HubCandidate[];
@@ -137,7 +166,7 @@ export function adaptiveRadiusM(spreadKm: number): number {
  * 중심에서 가까운 순으로 주므로, 앞에 온 것을 남기고 뒤엣것을 버리면
  * "각 무리에서 중심에 제일 가까운 역"이 남는다.
  */
-export function dedupeNearby<T extends { lat: number; lng: number }>(items: T[], minKm = DEDUPE_KM): T[] {
+export function dedupeNearby<T extends { lat: number; lng: number }>(items: T[], minKm: number): T[] {
   const kept: T[] = [];
   for (const it of items) {
     if (kept.every((k) => haversineKm(k, it) >= minKm)) kept.push(it);
@@ -167,18 +196,26 @@ export async function resolveHubPool(located: Pt[]): Promise<HubPool> {
   const center = geometricMedian(located);
   const spreadKm = Math.max(...located.map((p) => haversineKm(p, center)));
 
+  // ── 짧은 캐시 ──────────────────────────────────────────────
+  //  화면이 **거리순/시간순을 토글할 때마다** 같은 중심으로 다시 물어보게 되는데,
+  //  그 사이 후보가 달라질 이유가 없다. 같은 중심(≈110m 격자)·같은 반경이면 재사용한다.
+  //  ⚠️ 실 API 성공값만 담는다 — 하드코딩 폴백을 캐시하면 키를 나중에 넣어도
+  //     TTL 이 끝날 때까지 계속 폴백이 나온다(CLAUDE.md §5, 캐시 오염 방지).
+  const key = `${center.lat.toFixed(3)},${center.lng.toFixed(3)}|${Math.round(spreadKm)}`;
+  const hit = poolCache.get(key);
+  if (hit && Date.now() - hit.at < POOL_TTL_MS) return { pool: hit.pool, source: "station" };
+
   for (const radius of [adaptiveRadiusM(spreadKm), Math.min(KAKAO_MAX_RADIUS_M, adaptiveRadiusM(spreadKm) * 2)]) {
     // 키가 없거나 실패하면 null — 그대로 하드코딩 폴백으로 간다.
     const found = await searchByCategoryKakao(SUBWAY_CODE, center, 15, radius);
     if (!found || found.length === 0) continue;
 
-    const picked = dedupeNearby(found).slice(0, MAX_CANDIDATES);
+    const picked = dedupeNearby(found, dedupeKmFor(radius)).slice(0, MAX_CANDIDATES);
     if (picked.length >= MIN_CANDIDATES) {
-      return {
-        // 카카오가 주는 이름은 `도봉산역` 처럼 이미 사람이 읽는 형태다. 그대로 쓴다.
-        pool: picked.map((s) => ({ name: s.name, hub: { lat: s.lat, lng: s.lng } })),
-        source: "station",
-      };
+      // 카카오가 주는 이름은 `도봉산역` 처럼 이미 사람이 읽는 형태다. 그대로 쓴다.
+      const pool = picked.map((s) => ({ name: s.name, hub: { lat: s.lat, lng: s.lng } }));
+      poolCache.set(key, { at: Date.now(), pool });
+      return { pool, source: "station" };
     }
     // 상한 반경에서도 모자랐으면 더 넓힐 수 없다 — 폴백으로 간다.
     if (radius >= KAKAO_MAX_RADIUS_M) break;

@@ -368,29 +368,39 @@ export default function Home() {
       etaText: null,
     }));
 
-    if (criteria === "dist") {
-      setMidpoint(recommendRegions(pseudo)[0] || null);
-      setMidLive(null);
-      return;
-    }
+    // 🔴 **거리순도 서버를 거친다.** 예전엔 여기서 `recommendRegions(pseudo)` 를
+    //    브라우저가 직접 불렀는데, 그러면 후보가 **하드코딩 28곳**으로만 나온다 —
+    //    실제 역을 찾는 카카오 REST 키는 **서버에만** 있기 때문이다.
+    //
+    //    2026-08-06 실측: 노원+의정부에서 **시간순은 `장암역`(실제 역), 거리순은
+    //    `종로3가`(하드코딩)** 가 떴다. 같은 화면의 두 버튼이 서로 다른 세계를 보고 있었다.
+    //    `/api/midpoint` 안에서 두 모드가 후보를 공유하도록 고쳤는데(#52),
+    //    **거리순이 그 API 를 타지 않아 절반만 고쳐진 상태**였다.
+    //
+    //    ⚠️ 거리순은 여전히 **이동시간 API(ODsay/TMAP)를 안 부른다** — 서버가
+    //       `mode:"dist"` 로 직선거리 계산만 한다. 늘어나는 건 후보를 찾는 카카오 1콜뿐이고,
+    //       같은 중심이면 서버 캐시(10분)가 받아낸다.
+    const mode = criteria === "dist" ? "dist" : "time";
 
-    // 시간순 — 응답이 늦게 와도 마지막 요청만 반영
+    // 응답이 늦게 와도 마지막 요청만 반영
     let alive = true;
     setMidLoading(true);
     fetch("/api/midpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ participants: pseudo, mode: "time" }),
+      body: JSON.stringify({ participants: pseudo, mode }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (!alive) return;
         setMidpoint(d.items?.[0] || null);
-        setMidLive(!!d.live);
+        // 거리순은 정의상 전부 추정이라 `live` 를 쓰지 않는다 — 화면 문구도
+        // `criteria !== "time"` 이면 무조건 `거리 추정` 이다(아래 v8-mapnote).
+        setMidLive(mode === "time" ? !!d.live : null);
       })
       .catch(() => {
         if (!alive) return;
-        // 실패하면 거리 기준으로라도 보여준다
+        // 서버가 죽어도 화면이 비지 않게 — 브라우저에서 하드코딩 후보로라도 계산한다.
         setMidpoint(recommendRegions(pseudo)[0] || null);
         setMidLive(false);
       })
@@ -869,7 +879,11 @@ export default function Home() {
           // 결과를 예단하지 않는다 — 이 계산은 실패하면 그대로 거리 추정으로 떨어져서
           // 바로 다음 프레임에 `거리 추정` 이 뜬다. 앞 문장이 뒤 결과를 부정하면 안 된다.
           // (경로 상세 시트의 로딩 문구와도 같은 원칙)
-          <div className="v8-mapnote">경로 계산 중…</div>
+          //
+          // ⚠️ 거리순도 이제 서버를 거치므로 이 자리를 지나간다(#52 후속). 그런데
+          //    거리순은 **경로를 계산하지 않는다** — 후보를 찾고 직선거리로 잴 뿐이다.
+          //    두 모드에 같은 문구를 쓰면 안 하는 일을 한다고 말하는 셈이다(CLAUDE.md §6).
+          <div className="v8-mapnote">{criteria === "time" ? "경로 계산 중…" : "중간지점 찾는 중…"}</div>
         ) : midpoint ? (
           <div className="v8-mapnote">
             📍 중간 추천 지역: <b>{midpoint.name}</b> · {midpoint.reason}
