@@ -13,12 +13,11 @@ import {
   geocode as mockGeocode,
   estMinutes,
   haversineKm,
-  HUBS,
-  nearCentroidHubs,
   generatePlaces,
   isOutsideHubCoverage,
   geometricCandidates,
 } from "./geo";
+import { resolveHubPool, type HubCandidate } from "./hub-pool";
 import { geocodeKakao, coord2AddressKakao, searchPlacesKakao, type Coord } from "./kakao";
 import { geoCacheGet, geoCacheSet, routeCacheGet, routeCacheSet } from "./cache-store";
 import { transitRouteOdsay } from "./odsay";
@@ -320,14 +319,18 @@ export async function scoreRegionForParticipants(
  * `live: false` 는 "키가 없다"가 아니라 **"이 목록의 숫자 중 추정이 섞였다"** 는 뜻이다.
  * 키를 넣어도 프록시·터널이 죽으면 false 가 되므로, 화면이 장애를 감지할 수 있다.
  */
-export async function recommendRegionsWithMeta(participants: Participant[]): Promise<RegionsWithMeta> {
+export async function recommendRegionsWithMeta(
+  participants: Participant[],
+  /** 호출부가 이미 구해 둔 후보 — 없으면 여기서 구한다. `app/api/midpoint` 만 넘긴다. */
+  presolved?: HubCandidate[],
+): Promise<RegionsWithMeta> {
   const located = participants.filter((p) => p.lat != null && p.lng != null) as Located[];
   if (located.length === 0) return { items: [], live: false };
 
   if (isOutsideHubCoverage(located)) return recommendDynamicRegions(located);
 
-  // 거리 기반과 동일하게 후보를 참가자 중심 근처로 좁힌다
-  const pool = nearCentroidHubs(located).map((name) => ({ name, hub: HUBS[name] }));
+  // 후보는 `lib/hub-pool.ts` 가 만든다 — 카카오 실제 역 → 실패 시 하드코딩(💰 1~2콜).
+  const { pool } = presolved ? { pool: presolved } : await resolveHubPool(located);
   return scoreCandidates(pool, located);
 }
 

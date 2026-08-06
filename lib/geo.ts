@@ -305,9 +305,26 @@ function scoreAndPick(
   }));
 }
 
-export function recommendRegions(participants: Participant[]): RegionCandidate[] {
+export function recommendRegions(
+  participants: Participant[],
+  /**
+   * 호출부가 미리 구해 둔 후보 목록.
+   *
+   * 이 함수는 **동기**라(브라우저에서도 도는 즉시 추정 경로) 카카오를 직접 못 부른다.
+   * 그런데 실제 역 후보는 API 가 필요하다 — 그래서 `app/api/midpoint` 가 한 번 구해
+   * **시간순·거리순 양쪽에 같은 목록**을 넘긴다.
+   *
+   * ⚠️ 두 모드가 같은 후보를 써야 한다. 후보가 다르면 사용자가 토글할 때 **목록 자체가
+   *    바뀌어** "뭐가 바뀐 건지" 알 수 없다. 토글은 *같은 후보의 다른 계산*이어야 한다.
+   * ⚠️ 안 넘기면 예전처럼 하드코딩 후보를 쓴다 — 이 함수를 직접 부르는 다른 곳이
+   *    깨지지 않게 하기 위함이다.
+   */
+  presolved?: { name: string; hub: { lat: number; lng: number } }[],
+): RegionCandidate[] {
   const located = participants.filter((p) => p.lat != null && p.lng != null);
   if (located.length === 0) return [];
+
+  if (presolved && presolved.length > 0) return scoreAndPick(presolved, located);
 
   if (isOutsideHubCoverage(located)) {
     // 수도권 밖 — 이름 있는 서울 후보 대신 좌표 자체로 계산한다.
