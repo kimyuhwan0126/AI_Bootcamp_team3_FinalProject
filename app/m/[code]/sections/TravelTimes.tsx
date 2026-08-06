@@ -99,7 +99,25 @@ export default function TravelTimes({
                       이번에 고친 "목록과 상세가 같은 숫자를 다르게 설명한다"를 그대로 되풀이한다.
                       ⚠️ 대중교통에 "시간표 기준"이라고 단정하지 않는다 — 응답에 기준시점 표기가
                       없어 우리가 말할 수 있는 건 "실제 노선으로 계산했다"까지다(CLAUDE.md §6). */}
-                  {isReal ? (
+                  {/* 🔴 **숫자가 없으면 출처를 주장하지 않는다.**
+                      예전엔 `m` 이 없어도 `거리 추정` 이 붙어 `거리 추정  —` 이 떴다 —
+                      **아무 값도 없는데 "거리로 추정했다"고 말하는** 꼴이다(2026-08-06 실측).
+
+                      왜 비는가: 거점 후보를 계산한 **뒤에** 출발지를 등록한 사람은
+                      `perParticipant` 에 안 들어간다. 확정된 뒤에는 후보를 다시 계산하지
+                      않으므로(`setRegionCandidates`) 영영 채워지지 않는다.
+                      재현: 2인 모임에서 B만 출발지 → `regions` → A 출발지 → 확정
+                            → `perParticipant` 에 B 하나만 남는다.
+                      ⚠️ **재계산 정책은 팀 판단 사항**이라 여기서는 표시만 바로잡는다. */}
+                  {m == null ? (
+                    <span
+                      className="chip line"
+                      style={{ fontSize: 8.5, padding: "2px 7px" }}
+                      title="이 거점 후보를 계산한 뒤에 출발지가 등록돼서 이동시간이 빠져 있어요"
+                    >
+                      이동시간 없음
+                    </span>
+                  ) : isReal ? (
                     <span
                       className="chip ok"
                       style={{ fontSize: 8.5, padding: "2px 7px" }}
@@ -116,7 +134,7 @@ export default function TravelTimes({
                       거리 추정
                     </span>
                   )}
-                  <b className="tnum" style={{ fontSize: 11.5, color: statusColor }}>{formatMinutes(m)}</b>
+                  {m != null && <b className="tnum" style={{ fontSize: 11.5, color: statusColor }}>{formatMinutes(m)}</b>}
                 </span>
               </div>
               <div className="bar sm">

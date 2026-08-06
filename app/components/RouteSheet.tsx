@@ -185,25 +185,36 @@ export default function RouteSheet({ code, participantId, dest, onClose }: Props
                     <b>직선거리로 추정한 값이에요.</b> 실제 경로를 계산하지 못해
                     거리로만 계산했어요 — 실제 소요시간과 크게 다를 수 있습니다.
                     {/* ⚠️ 예전엔 "카카오맵·네이버지도에서 확인해주세요"라고만 하고
-                        **링크가 없었다.** 사용자는 앱을 따로 열어 출발지·도착지를 다시
-                        타이핑해야 했는데, 그 두 값은 우리가 이미 갖고 있다
-                        (2026-08-06 CEO 지적 — 경로 구간이 하나도 안 나와서 "고장난 듯"
-                        하게 보이는 자리다. 실제로는 ODsay 키가 없어 보여줄 게 없는 것).
+                        **링크가 없었다.** 사용자는 앱을 따로 열어 목적지를 다시 타이핑해야
+                        했는데, 그 값은 우리가 이미 갖고 있다 (2026-08-06 CEO 지적 —
+                        경로 구간이 하나도 안 나와서 "고장난 듯" 보이는 자리다.
+                        실제로는 ODsay 키가 없어 보여줄 게 없는 것).
 
-                        ⚠️ 둘 다 있을 때만 건다. `origin` 은 `p.origin ?? ""` 라 빌 수 있고,
-                           빈 값으로 길찾기를 열면 엉뚱한 화면이 뜬다.
-                        ⚠️ 수단(대중교통/자차)은 지정하지 않는다 — 이 링크는 길찾기 화면을
-                           열어줄 뿐이고, 우리가 고른 수단으로 열린다고 **말할 수 없다.**
-                           그래서 문구도 "길찾기 열기"까지만 한다. */}
-                    {data.origin && data.destName && (
+                        🔴 **처음엔 `?sName=출발&eName=도착`(이름만) 으로 붙였다가 실패했다** —
+                           카카오맵이 그 파라미터를 그대로 무시해서 **출발지·도착지가 빈 채로**
+                           길찾기 화면만 열렸다(2026-08-06 CEO 실측). 링크가 있으나 마나였다.
+                           공식 URL 스킴은 **좌표를 요구**한다:
+                             map.kakao.com/link/to/{이름},{위도},{경도}
+                           그래서 `route-detail` 응답에 `to` 좌표를 함께 싣게 했다.
+
+                        ✅ **도착지만 넣는 것이 의도다** (2026-08-06 CEO 결정 —
+                           *"출발지는 굳이 등록하지 말고 도착지만 찾게 해. 어차피 카카오맵
+                           안에서 내 위치 찾아주잖아"*). 카카오맵이 현위치를 잡아주므로
+                           우리가 등록한 출발지 텍스트를 밀어 넣는 것보다 정확하다 —
+                           그 텍스트는 "압구정역" 같은 **역 이름**이지 사용자가 지금 있는
+                           자리가 아니다. **미완성이 아니니 출발지를 다시 넣지 말 것.**
+                           문구도 그래서 "목적지로 길찾기"까지만 한다(CLAUDE.md §6).
+                        ⚠️ 수단(대중교통/자차)도 지정하지 않는다. 우리가 고른 수단으로
+                           열린다고 말할 수 없다. */}
+                    {data.destName && data.to && (
                       <a
-                        href={`https://map.kakao.com/?sName=${encodeURIComponent(data.origin)}&eName=${encodeURIComponent(data.destName)}`}
+                        href={`https://map.kakao.com/link/to/${encodeURIComponent(data.destName)},${data.to.lat},${data.to.lng}`}
                         target="_blank"
                         rel="noreferrer"
                         className="chip line"
                         style={{ display: "inline-flex", marginTop: 8, textDecoration: "none", fontSize: 10.5 }}
                       >
-                        🗺 카카오맵에서 길찾기 열기
+                        🗺 카카오맵에서 ‘{data.destName}’ 으로 길찾기
                       </a>
                     )}
                   </div>
