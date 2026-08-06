@@ -20,7 +20,10 @@ export interface ReserveModalProps {
 }
 
 export default function ReserveModal({ state, place, busy, onConfirm, onClose }: ReserveModalProps) {
-  const total = place.depositPerHead * state.headcount;
+  // ⚠️ `headcount`(모임 **정원**)가 아니라 `totalParticipants`(**실제 참여자 수**)다.
+  //    `ResultSection.tsx` 의 미리보기와 `lib/store.ts` 의 `reserve()` 가 같은 기준을
+  //    써야 한다 — 어긋나면 "미리보기 20,000원 → 결제하니 80,000원"이 된다.
+  const total = place.depositPerHead * state.totalParticipants;
   return (
     <div className="backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -33,7 +36,7 @@ export default function ReserveModal({ state, place, busy, onConfirm, onClose }:
         </p>
         <div className="card tight stack" style={{ gap: 4, marginBottom: 12 }}>
           <div className="kv"><span className="k">가게</span><span className="v">{place.emoji} {place.name}</span></div>
-          <div className="kv"><span className="k">인원</span><span className="v tnum">{state.headcount}명</span></div>
+          <div className="kv"><span className="k">인원</span><span className="v tnum">{state.totalParticipants}명</span></div>
           <div className="kv"><span className="k">1인 선입금</span><span className="v tnum">{place.depositPerHead.toLocaleString()}원</span></div>
           <div className="divider" />
           <div className="kv"><span className="k">합계</span><span className="v tnum" style={{ color: "var(--ac)", fontSize: 15 }}>{total.toLocaleString()}원</span></div>

@@ -109,10 +109,19 @@ export default function ResultSection({
               {/* ⚠️ 금액 줄에 `(모의)` 를 붙인다. 예전엔 버튼과 완료 칩에만 있어서
                   `선입금 1인 15,000원 × 4명 / 합계 60,000원` 만 보면 실제 가격으로 읽혔다.
                   가게 이름·좌표는 카카오 실데이터인데 금액은 카테고리별 고정 상수라
-                  (`lib/routing.ts` PLACE_QUERIES), 실존 가게에 지어낸 값이 붙는 모양이 된다. */}
-              <div className="kv"><span className="k">선입금 (모의)</span><span className="v tnum">1인 {state.winnerPlace.depositPerHead.toLocaleString()}원 × {state.headcount}명</span></div>
+                  (`lib/routing.ts` PLACE_QUERIES), 실존 가게에 지어낸 값이 붙는 모양이 된다.
+
+                  ⚠️ `(모의)` 는 **값 쪽**에 둔다. 라벨(`.kv .k`)이 72px 고정폭이라
+                     `선입금 (모의)` 는 "선입금 (모" / "의)" 로 줄바꿈됐다(2026-08-06 실측).
+
+                  ⚠️ 인원은 `headcount`(모임 **정원**)가 아니라 `totalParticipants`
+                     (**실제 참여자 수**)다. 정원 8명·참여 2명인 모임에서 화면 위쪽은
+                     "참여자 2명"인데 여기만 "× 8명 / 합계 80,000원"이 떠서 오류로 읽혔다.
+                     `ReserveModal.tsx` 와 `lib/store.ts` 의 `reserve()` 도 같은 기준이다 —
+                     **셋이 어긋나면 미리보기와 결제 결과가 달라진다.** */}
+              <div className="kv"><span className="k">선입금</span><span className="v tnum">1인 {state.winnerPlace.depositPerHead.toLocaleString()}원 × {state.totalParticipants}명 <span className="faint" style={{ fontSize: 11, fontWeight: 400 }}>(모의)</span></span></div>
               <div className="between">
-                <b className="tnum" style={{ fontSize: 15 }}>합계 {(state.winnerPlace.depositPerHead * state.headcount).toLocaleString()}원 <span className="faint" style={{ fontSize: 11, fontWeight: 400 }}>(모의)</span></b>
+                <b className="tnum" style={{ fontSize: 15 }}>합계 {(state.winnerPlace.depositPerHead * state.totalParticipants).toLocaleString()}원 <span className="faint" style={{ fontSize: 11, fontWeight: 400 }}>(모의)</span></b>
               </div>
               <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
                 금액은 카테고리별 예시값이에요 — 가게가 실제로 받는 선입금이 아니고, 예약 가능 여부도 확인된 값이 아닙니다.
