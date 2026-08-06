@@ -103,13 +103,24 @@ export async function searchPlacesKakao(
 export async function searchByCategoryKakao(
   code: string,
   center: Coord,
-  size = 5
+  size = 5,
+  /**
+   * 검색 반경(m). 기본 2,000 은 "거점 주변 정보" 용도의 값이라 그대로 뒀다 —
+   * `/api/places` 의 정류장·역 탭이 이 기본값에 기대고 있다.
+   *
+   * ⚠️ 중간지점 후보를 찾을 땐 참가자 퍼짐에 맞춰 넓혀야 한다. 2km 고정으로는
+   *    8인이 의정부~수원에 흩어진 경우(퍼짐 29.6km) 중심 주변만 훑는다.
+   *    계산은 `lib/hub-pool.ts` 의 `adaptiveRadiusM` 이 한다.
+   * ⚠️ 카카오 상한은 **20,000m**. 넘겨 보내면 400 이 온다.
+   */
+  radius = 2_000
 ): Promise<{ name: string; category: string; detail: string; distanceM: number; lat: number; lng: number; url: string }[] | null> {
   if (!env.kakaoRest) return null;
   try {
+    const safeRadius = Math.min(20_000, Math.max(0, Math.round(radius)));
     const url =
       `https://dapi.kakao.com/v2/local/search/category.json?category_group_code=${encodeURIComponent(code)}` +
-      `&x=${center.lng}&y=${center.lat}&radius=2000&sort=distance&size=${size}`;
+      `&x=${center.lng}&y=${center.lat}&radius=${safeRadius}&sort=distance&size=${size}`;
     const r = await fetch(url, { headers: { Authorization: `KakaoAK ${env.kakaoRest}` } });
     if (!r.ok) return null;
     const d = await r.json();
