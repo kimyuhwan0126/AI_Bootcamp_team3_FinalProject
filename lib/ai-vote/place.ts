@@ -8,7 +8,7 @@
 //   · 미달이면 있는 만큼만 + notes — 억지로 채우지 않는다(V4·V8)
 // ─────────────────────────────────────────────────────────────
 import type { PlaceCandidate } from "../types";
-import { webSearch, webRouteRetry, isRouteError, hav, type WebPlace } from "./web-kakao";
+import { webSearch, webRouteRetry, isRouteError, hav, type WebPlace } from "./api-kakao";
 import { glmChat, extractJson, newUsage, type Profile, type ToolSpec, type Usage } from "./glm";
 
 const FIND_CAP = 15;
@@ -116,7 +116,7 @@ ${table}
       emoji: p.emoji ?? "🍽️", lat: g?.lat, lng: g?.lng,
       distanceM: walkLog.get(p.name) ?? (g ? Math.round(hav(anchor, g) * 1000) : -1),
       rating: g?.rating ?? 0, reservable: false, depositPerHead: 0,
-      url: g?.kakaoId ? `https://place.map.kakao.com/${g.kakaoId}` : undefined };
+      url: g?.pageUrl ?? (g?.kakaoId ? `https://place.map.kakao.com/${g.kakaoId}` : undefined) };
   });
   return { places, live: true, notes: parsed.data.notes ?? "", density, glmTokens };
 }

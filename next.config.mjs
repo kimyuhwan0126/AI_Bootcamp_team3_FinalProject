@@ -16,9 +16,6 @@ const SELF_HOST_URL = (process.env.SELF_HOST_URL || "").trim().replace(/\/+$/, "
 const nextConfig = {
   reactStrictMode: true,
 
-  // AI 투표지(/api/ai-vote)가 서버에서 헤드리스 크롬을 띄운다(카카오맵 웹 렌더링).
-  // playwright-core 는 네이티브 실행 파일을 참조하므로 번들에서 제외해야 서버 라우트에서 동작한다.
-  experimental: { serverComponentsExternalPackages: ["playwright-core", "playwright"] },
 
   async rewrites() {
     if (!SELF_HOST_URL) return [];

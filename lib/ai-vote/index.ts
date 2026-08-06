@@ -30,7 +30,7 @@ export interface RegionVoteResult {
   stage: "region"; items: RegionCandidate[]; live: boolean; degraded: boolean;
   purpose: Classified["how"]; purposeUnknown: boolean; notes: string; ms: number;
   checked?: { name: string; ok: boolean; why?: string }[]; error?: string;
-  legSources?: { odsay: number; odsayFallback: number; web: number };
+  legSources?: { odsay: number; odsayFallback: number; kakaoApi: number };
   glmTokens?: Usage;
 }
 export interface PlaceVoteResult {

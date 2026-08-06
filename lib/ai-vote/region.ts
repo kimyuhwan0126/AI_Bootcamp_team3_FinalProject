@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 import type { Participant, RegionCandidate } from "../types";
 import { travelMinutesEx } from "../routing";
-import { webSearch, webRouteRetry, isRouteError, hav, type WebPlace } from "./web-kakao";
+import { webSearch, webRouteRetry, isRouteError, hav, type WebPlace } from "./api-kakao";
 import { glmChat, extractJson, newUsage, type Profile, type ToolSpec, type Usage } from "./glm";
 
 // 도간(道間) 판단 임계 — 카카오맵 웹은 일부 도간 구간에서 KTX 를 아예 안 준다
@@ -43,7 +43,7 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (t: T, i: number) =>
 export interface RegionSheet {
   items: RegionCandidate[]; live: boolean; notes: string;
   checked: { name: string; ok: boolean; why?: string }[];
-  legSources: { odsay: number; odsayFallback: number; web: number };
+  legSources: { odsay: number; odsayFallback: number; kakaoApi: number };
   glmTokens: Usage;
 }
 
@@ -74,7 +74,7 @@ export async function generateRegionSheet(participants: Participant[], profile: 
     // ⚠️ "신촌"처럼 역 없이 온 지명은 상위 결과가 전부 관광명소일 수 있다(서버 실측:
     //    "신촌" 1위=등산로 안산자락길, "여의도" 1위=한강 → 상권 0 오탈락). 앵커는
     //    ① 결과 내 역 → ② "{이름}역" 재검색 → ③ 첫 결과 순으로 잡는다.
-    const isStation = (p: WebPlace): boolean => /지하철|기차/.test(p.category) || (p.name.startsWith(n) && p.name.includes("역"));
+    const isStation = (p: WebPlace): boolean => p.catRoot === "지하철역" || /지하철|전철|기차|호선/.test(p.category) || (p.name.startsWith(n) && p.name.includes("역"));
     let hit = found.find(isStation);
     if (!hit && !/역$/.test(n)) hit = (await webSearch(`${n}역`)).places.find(isStation);
     hit = hit ?? found[0];
@@ -107,7 +107,7 @@ export async function generateRegionSheet(participants: Participant[], profile: 
     { type: "function", function: { name: "transit_route", description: "대중교통 소요시간(분). 참가자·후보 이름만 사용.", parameters: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } }, required: ["from", "to"] } } },
     { type: "function", function: { name: "car_route", description: "자동차 소요시간(분). 자차 참가자용.", parameters: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } }, required: ["from", "to"] } } },
   ];
-  const legSources = { odsay: 0, odsayFallback: 0, web: 0 };
+  const legSources = { odsay: 0, odsayFallback: 0, kakaoApi: 0 };
   const impl = async (name: string, a: { from?: string; to?: string }): Promise<unknown> => {
     const f = dict.get(String(a.from ?? "").trim()), t = dict.get(String(a.to ?? "").trim());
     if (!f || !t) return { error: `사전에 없는 이름: ${!f ? a.from : a.to}` };
@@ -122,7 +122,7 @@ export async function generateRegionSheet(participants: Participant[], profile: 
       legSources.odsayFallback++;
     }
     const r = await webRouteRetry(name === "car_route" ? "car" : "traffic", f, t);
-    if (!isRouteError(r)) { legSources.web++; routeLog.push({ from: f.name, to: t.name, minutes: r.minutes }); }
+    if (!isRouteError(r)) { legSources.kakaoApi++; routeLog.push({ from: f.name, to: t.name, minutes: r.minutes }); }
     return r;
   };
 
