@@ -366,6 +366,124 @@ test("§7 모임 삭제는 방장만", async ({ request }) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// §4-⑩ 결과 · 신호등 · 시간   /   §4-⑪ 지난 모임 · 재모임
+// ═══════════════════════════════════════════════════════════════
+
+/** 결과 단계까지 밀어 넣는다 (지점 확정까지) */
+async function toResult(request: APIRequestContext) {
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  const p = poi.items[0];
+  const added = await act(request, {
+    action: "addPlace", code, participantId: leaderId,
+    name: p.name, category: p.category, lat: p.lat, lng: p.lng,
+  });
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "place", id: added.candidate.id });
+  return { code, leaderId };
+}
+
+test("§4-⑩ 모임 시간 미입력이면 신호등이 잠긴다", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+  const st = await get(request, code);
+  expect(st.stage).toBe("result");
+  expect(st.meetTime, "생성 시 시간을 안 줬으므로 null 이어야 한다").toBeNull();
+
+  const locked = await actFails(request, {
+    action: "status", code, participantId: leaderId, status: "green",
+  });
+  expect(locked.error).toContain("모임 시간을 먼저");
+});
+
+test("§4-⑩ 모임 시간은 방장만 · 과거는 거부", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+
+  const denied = await actFails(request, {
+    action: "meetTime", code, participantId: joined.participantId,
+    meetTime: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  expect(denied.error).toContain("방장만");
+
+  const past = await actFails(request, {
+    action: "meetTime", code, participantId: leaderId,
+    meetTime: new Date(Date.now() - 86_400_000).toISOString(),
+  });
+  expect(past.error).toContain("지난 시각");
+
+  const future = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  const ok = await act(request, { action: "meetTime", code, participantId: leaderId, meetTime: future });
+  expect(ok.meetTime).toBeTruthy();
+});
+
+test("§4-⑩ 신호등은 모임 당일에만 열린다 · 노랑은 지각 분을 공유한다", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+
+  // 3일 뒤로 잡으면 아직 못 쓴다 (v16)
+  await act(request, {
+    action: "meetTime", code, participantId: leaderId,
+    meetTime: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+  });
+  const early = await actFails(request, { action: "status", code, participantId: leaderId, status: "green" });
+  expect(early.error).toContain("당일");
+
+  // 오늘 늦은 시각으로 옮기면 열린다
+  const today = new Date();
+  today.setHours(23, 30, 0, 0);
+  await act(request, { action: "meetTime", code, participantId: leaderId, meetTime: today.toISOString() });
+
+  await act(request, { action: "status", code, participantId: leaderId, status: "yellow", lateMin: 15 });
+  const st = await get(request, code);
+  const me = st.participants.find((p: { id: string }) => p.id === leaderId);
+  expect(me.status).toBe("yellow");
+  expect(me.lateMin, "노랑이면 지각 분이 전원에게 보여야 한다").toBe(15);
+
+  // 색을 바꾸면 지각 분은 사라진다
+  await act(request, { action: "status", code, participantId: leaderId, status: "green" });
+  const st2 = await get(request, code);
+  expect(st2.participants.find((p: { id: string }) => p.id === leaderId).lateMin).toBeNull();
+});
+
+test("§4-⑩ '지역까지' 모임에는 신호등이 없다", async ({ request }) => {
+  const { code, leaderId } = await setup(request, { scope: "region" });
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const denied = await actFails(request, { action: "status", code, participantId: leaderId, status: "green" });
+  expect(denied.error).toContain("'지역까지'");
+});
+
+test("§4-⑪ 재모임은 방장만 · 로그인 멤버만 자동 이전", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+  // 로그인 멤버 1명 + 비로그인 1명
+  await act(request, { action: "join", code, name: "로그인멤버", kakaoId: "kakao-1" });
+  const guest = await act(request, { action: "join", code, name: "비로그인" });
+
+  const denied = await actFails(request, {
+    action: "recreate", code, participantId: guest.participantId,
+  });
+  expect(denied.error).toContain("방장만");
+
+  const r = await act(request, { action: "recreate", code, participantId: leaderId });
+  expect(r.code, "새 모임 코드가 없다").toBeTruthy();
+  expect(r.code).not.toBe(code);
+  expect(r.carried, "로그인 멤버 1명만 옮겨가야 한다").toBe(1);
+
+  const fresh = await get(request, r.code);
+  // 방장 + 로그인 멤버 = 2명 (비로그인은 재참여해야 한다)
+  expect(fresh.totalParticipants).toBe(2);
+  expect(fresh.participants.some((p: { name: string }) => p.name === "로그인멤버")).toBe(true);
+  expect(fresh.participants.some((p: { name: string }) => p.name === "비로그인")).toBe(false);
+  // 새 모임은 처음 단계부터 시작한다
+  expect(fresh.stage).toBe("main");
+  expect(fresh.isPast).toBe(false);
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 화면 — 규칙이 실제로 그려지는가
 // ═══════════════════════════════════════════════════════════════
 

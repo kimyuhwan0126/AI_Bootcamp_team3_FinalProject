@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────
 import type { MeetingState, RegionCandidate } from "@/lib/types";
 import TravelTimes from "./TravelTimes";
+import ArrivalPanel from "./ArrivalPanel";
 import { openGoogleCalendar, downloadIcs } from "@/lib/calendar";
 import { FLAGS } from "@/lib/flags";
 
@@ -30,6 +31,13 @@ export interface ResultSectionProps {
   onPromoteToPlace: () => void;
   /** v10: 모임 삭제 (방장) — 확인 팝업은 부모가 띄운다 */
   onDeleteMeeting: () => void;
+  /** v19 §4-⑩ 도착 신호등 · 시간 변경 — 액션 한 방 (부모가 /api/meeting 으로 보낸다) */
+  onAction: (body: Record<string, unknown>, ok?: string) => Promise<unknown>;
+  onEditTime: () => void;
+  busy: boolean;
+  myId: string | undefined;
+  /** v18: 지난 모임 — 방장의 '이 멤버로 재모임 만들기' */
+  onRecreate: () => void;
 }
 
 export default function ResultSection({
@@ -42,6 +50,11 @@ export default function ResultSection({
   onToast,
   onPromoteToPlace,
   onDeleteMeeting,
+  onAction,
+  onEditTime,
+  busy,
+  myId,
+  onRecreate,
 }: ResultSectionProps) {
   // v19 §3: 확정 범위가 '지역까지'인 모임. 경로 API·지점 카카오 링크·도착 신호등을
   // 전부 숨긴다 (v11, v14). 이 화면의 분기는 전부 이 한 값에서 나온다.
@@ -213,6 +226,40 @@ export default function ResultSection({
           ) : (
             <p className="muted" style={{ fontSize: 12.5 }}>이 가게는 예약 대상이 아니에요.</p>
           )}
+        </div>
+      )}
+
+      {/* ── v19 §4-⑩ 도착 신호등 ──
+             '지역까지' 모임엔 아예 없다 (v14). 지난 모임도 읽기 전용이라 숨긴다 (v18). */}
+      {!isRegionOnly && !state.isPast && (
+        <ArrivalPanel
+          state={state}
+          myId={myId}
+          isLeader={isLeader}
+          busy={busy}
+          onAction={onAction}
+          onEditTime={onEditTime}
+        />
+      )}
+
+      {/* ── v18 §4-⑪ 지난 모임 — 읽기 전용 + 방장의 재모임 ── */}
+      {state.isPast && (
+        <div className="card stack" style={{ gap: 8 }}>
+          <div className="between">
+            <span className="eyebrow">지난 모임</span>
+            <span className="chip line" style={{ fontSize: 10 }}>종료됨</span>
+          </div>
+          <p className="faint" style={{ fontSize: 11, margin: 0 }}>
+            기록 열람만 돼요. 되살릴 수는 없고, 같은 멤버로 새 모임을 만들 수 있어요.
+          </p>
+          {isLeader && (
+            <button className="btn ok" disabled={busy} onClick={onRecreate}>
+              🔁 이 멤버로 재모임 만들기
+            </button>
+          )}
+          <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
+            카카오 로그인한 멤버는 자동으로 옮겨가고, 그 외에는 새 초대 링크로 다시 참여해요.
+          </p>
         </div>
       )}
 

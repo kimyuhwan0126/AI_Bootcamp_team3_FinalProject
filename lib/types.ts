@@ -257,6 +257,13 @@ export interface Meeting {
   /** @deprecated v17 — '선입금' 폐기. 항상 null 로 두고 화면에 그리지 않는다 */
   reservation: Reservation | null;
   createdAt: string;
+  /**
+   * 마지막으로 무언가 바뀐 시각 (DB `updated_at` — 트리거가 자동 갱신).
+   *
+   * **모임 시간을 안 정한 모임**의 '지난 모임' 판정에 쓴다: 마지막 활동 7일 후 (v9).
+   * 인메모리 모드에는 트리거가 없어 `undefined` 이고, 그때는 `createdAt` 으로 대신한다.
+   */
+  updatedAt?: string;
 }
 
 // 클라이언트로 내려주는 상태(비밀번호 제외)

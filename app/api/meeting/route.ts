@@ -26,6 +26,8 @@ import {
   recoverParticipant,
   kickParticipant,
   deleteMeeting,
+  setMeetTime,
+  recreateMeeting,
 } from "@/lib/store";
 import { MAX_PARTICIPANTS, PURPOSE_LABELS } from "@/lib/types";
 import type { PurposeCategory } from "@/lib/types";
@@ -319,15 +321,35 @@ async function handlePost(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ── 모임 시간(확정용) 저장 — 피그마: 최종 확정 화면의 입력 ──
+    // ── v2·v16: 모임 시간 — 생성 폼 입력이 원칙이고 여기선 변경만. 과거 불가. ──
+    //  `time` 은 사람이 쓴 자유 문구(예: "이번 주 토요일 저녁 7시")라 표시용으로만 남기고,
+    //  실제 판정(D-day · 신호등 당일 · 지난 모임)은 ISO 값 `meetTime` 이 맡는다.
     case "meetTime": {
-      const st = await getState(body.code);
-      if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
-      const me = st.participants.find((p: any) => p.id === body.participantId);
-      if (!me?.isLeader) return NextResponse.json({ error: "방장만 시간을 정할 수 있어요." }, { status: 400 });
-      const r = await updatePrefs(String(body.code).toUpperCase(), { timeText: String(body.time || "").trim().slice(0, 40) });
-      if (!r.ok) return NextResponse.json({ error: "저장 실패" }, { status: 400 });
-      return NextResponse.json({ ok: true });
+      const r = await setMeetTime({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        meetTime: body.meetTime ? String(body.meetTime) : null,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      // 자유 문구도 같이 왔으면 표시용으로 보관한다 (기존 동작 유지)
+      if (body.time !== undefined) {
+        await updatePrefs(String(body.code).toUpperCase(), {
+          timeText: String(body.time || "").trim().slice(0, 40),
+        });
+      }
+      return NextResponse.json({ ok: true, meetTime: r.meetTime });
+    }
+
+    // ── v18: '이 멤버로 재모임 만들기' — 방장만. 로그인 멤버만 자동 이전(v17) ──
+    case "recreate": {
+      const r = await recreateMeeting({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        name: body.name ? String(body.name) : undefined,
+        meetTime: body.meetTime ? String(body.meetTime) : null,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, code: r.code, participantId: r.leaderId, carried: r.carried });
     }
 
     // ── 참가자 자가신고 도착 상태 — 본인 항목만 수정 가능(회의록) ──
@@ -338,6 +360,7 @@ async function handlePost(req: NextRequest) {
         participantId: String(body.participantId || ""),
         status,
         etaText: body.etaText !== undefined ? String(body.etaText ?? "") : undefined,
+        lateMin: body.lateMin !== undefined ? Number(body.lateMin) : undefined,
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true });

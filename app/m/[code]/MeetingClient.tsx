@@ -828,6 +828,31 @@ export default function MeetingClient({ code }: { code: string }) {
               void act({ action: "promoteToPlace", participantId: me?.id }, "지점 정하기를 시작했어요");
             }}
             // v10: 모임 삭제 — 되돌릴 수 없다. 모임 이름을 한 번 더 확인시킨다.
+            onAction={act}
+            busy={busy}
+            myId={me?.id}
+            // v2·v16: 모임 시간 — 생성 폼이 원칙이고 여기선 변경만. 과거는 서버가 막는다.
+            onEditTime={() => {
+              const cur = state.meetTime ? new Date(state.meetTime) : new Date(Date.now() + 3600_000);
+              const pad = (n: number) => String(n).padStart(2, "0");
+              const suggest = `${cur.getFullYear()}-${pad(cur.getMonth() + 1)}-${pad(cur.getDate())} ${pad(cur.getHours())}:${pad(cur.getMinutes())}`;
+              const input = prompt("모임 시간을 입력하세요 (예: 2026-08-14 19:00)", suggest);
+              if (!input) return;
+              // `new Date("YYYY-MM-DD HH:mm")` 는 로컬 시각으로 해석된다 — 의도한 동작이다.
+              const d = new Date(input.replace(/-/g, "/"));
+              if (Number.isNaN(d.getTime())) return flash("⚠ 시간을 알아볼 수 없어요");
+              void act({ action: "meetTime", participantId: me?.id, meetTime: d.toISOString() }, "모임 시간을 정했어요");
+            }}
+            // v18: 지난 모임 → 같은 멤버로 새 모임. 로그인 멤버만 자동 이전(v17).
+            onRecreate={() => {
+              if (!confirm("이 멤버로 새 모임을 만들까요?\n카카오 로그인한 멤버만 자동으로 옮겨가요.")) return;
+              void act({ action: "recreate", participantId: me?.id }).then((d: any) => {
+                if (d?.code) {
+                  addIdentity(d.code, { id: d.participantId, name: me?.name ?? "방장", isLeader: true });
+                  location.href = `/m/${d.code}`;
+                }
+              });
+            }}
             onDeleteMeeting={() => {
               if (!confirm(`'${state.name}' 모임을 삭제할까요?\n참여자·후보·표가 전부 사라지고 되돌릴 수 없어요.`)) return;
               void act({ action: "deleteMeeting", participantId: me?.id }).then(() => {

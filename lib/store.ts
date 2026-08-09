@@ -560,13 +560,31 @@ export async function setParticipantStatus(input: {
   participantId: string;
   status: "green" | "yellow" | "red" | null;
   etaText?: string | null;
+  /** v16: 노랑(지각)일 때 몇 분 늦는지 — 전원에게 공유된다 */
+  lateMin?: number | null;
 }): Promise<Result> {
   const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p) return { ok: false, error: "참가자를 찾을 수 없어요." };
+
+  // ── v19 §4-⑩ 신호등 가드 ──
+  // ⚠️ 화면도 같은 조건으로 잠그지만, **서버가 최종 관문**이다 (v12).
+  if (m.archivedAt) return { ok: false, error: "지난 모임이에요." };
+  // v14: '지역까지' 모임엔 신호등이 아예 없다
+  if (m.scope === "region") return { ok: false, error: "'지역까지' 모임에는 도착 신호등이 없어요." };
+  // v7: 시간을 안 정했으면 잠긴다 — 언제 도착인지 기준이 없기 때문이다
+  if (!m.meetTime) return { ok: false, error: "모임 시간을 먼저 정해 주세요." };
+  // v16: 모임 당일에만 활성
+  if (!isSameLocalDay(m.meetTime)) return { ok: false, error: "도착 신호등은 모임 당일에만 쓸 수 있어요." };
+
   p.status = input.status;
   if (input.etaText !== undefined) p.etaText = input.etaText?.trim().slice(0, 40) || null;
+  // 노랑일 때만 지각 분을 갖는다 — 색을 바꾸면 이전 분은 지운다
+  p.lateMin =
+    input.status === "yellow"
+      ? Math.max(1, Math.min(600, Math.round(Number(input.lateMin) || 0))) || null
+      : null;
   await writeParticipant(m, p);
   return { ok: true };
 }
@@ -742,6 +760,134 @@ export async function saveCandidates(
 }
 
 // ── 다시 논의 (Leader): 장소 단계 → 지역 단계로, 결과 → 장소 단계로 ──
+// ═══════════════════════════════════════════════════════════════
+// v19 결과 · 신호등 · 지난 모임 (설계_v19.md §4-⑩ · §4-⑪)
+// ═══════════════════════════════════════════════════════════════
+
+/** 그 시각이 '오늘'인지 — 도착 신호등은 **모임 당일만** 활성이다 (v16) */
+export function isSameLocalDay(iso: string, now = new Date()): boolean {
+  const d = new Date(iso);
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+/**
+ * '지난 모임'이 될 때가 됐는지 (v9).
+ *
+ *   · 모임 시간이 있으면 → **모임일 다음날 0시**부터
+ *   · 없으면            → **마지막 활동 7일 후**부터
+ *
+ * ⚠️ 시간이 지나 과거가 되는 것은 정상이다 — 여기서 판정하는 건 "끝난 모임인가"이지
+ *    "시간 입력이 잘못됐나"가 아니다 (그건 `normalizeMeetTime` 이 본다).
+ */
+export function archiveDueAt(m: Meeting): number {
+  if (m.meetTime) {
+    const d = new Date(m.meetTime);
+    // 모임일 **다음날 0시** — 모임이 밤 11시에 끝나도 그날 안엔 '지난 모임'이 아니다
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+  }
+  const last = new Date(m.updatedAt ?? m.createdAt).getTime();
+  return last + 7 * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * 때가 됐으면 '지난 모임'으로 넘긴다. 넘겼으면 `true`.
+ *
+ * 스케줄러가 없으므로 **읽을 때 판정한다**(`getState`). 폴링이 1.8초마다 들어오지만
+ * 전환은 한 번뿐이라 쓰기도 한 번이다.
+ */
+async function archiveIfDue(m: Meeting): Promise<boolean> {
+  if (m.archivedAt) return false;
+  if (Date.now() < archiveDueAt(m)) return false;
+  m.archivedAt = new Date().toISOString();
+  await write(m);
+  return true;
+}
+
+/**
+ * 모임 시간 설정·변경 — 방장만. **과거는 거부한다** (v16).
+ * 비우면(`null`) 미입력으로 되돌아가고, 결과 화면은 다시 입력 유도 배너를 띄운다.
+ */
+export async function setMeetTime(input: {
+  code: string;
+  participantId: string;
+  meetTime: string | null;
+}): Promise<{ ok: boolean; error?: string; meetTime?: string | null }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const me = m.participants.find((x) => x.id === input.participantId);
+  if (!me?.isLeader) return { ok: false, error: "방장만 시간을 정할 수 있어요." };
+  if (m.archivedAt) return { ok: false, error: "지난 모임은 시간을 바꿀 수 없어요." };
+
+  if (input.meetTime) {
+    const norm = normalizeMeetTime(input.meetTime);
+    if (!norm) return { ok: false, error: "지난 시각은 정할 수 없어요." };
+    m.meetTime = norm;
+  } else {
+    m.meetTime = null;
+  }
+  await write(m);
+  return { ok: true, meetTime: m.meetTime };
+}
+
+/**
+ * '이 멤버로 재모임 만들기' — **방장만** (v18).
+ *
+ * 지난 모임은 **부활하지 않는다** (v16). 대신 멤버를 이어받은 **새 모임**을 만든다.
+ * **카카오 로그인 멤버만 자동 이전**되고, 비로그인 참여자는 링크로 재참여한다 (v17) —
+ * 비로그인은 기기(localStorage)에만 신원이 있어 서버가 옮겨줄 수가 없다.
+ */
+export async function recreateMeeting(input: {
+  code: string;
+  participantId: string;
+  name?: string;
+  meetTime?: string | null;
+}): Promise<{ ok: boolean; error?: string; code?: string; leaderId?: string; carried?: number }> {
+  const old = await read(input.code);
+  if (!old) return { ok: false, error: "모임 없음" };
+  const me = old.participants.find((x) => x.id === input.participantId);
+  if (!me?.isLeader) return { ok: false, error: "방장만 재모임을 만들 수 있어요." };
+
+  const { code, leaderId } = await createMeeting({
+    name: (input.name || `${old.name} (다시)`).slice(0, 40),
+    password: "",
+    headcount: old.headcount,
+    leaderName: me.name,
+    scope: old.scope,
+    purposeCategory: old.purposeCategory,
+    meetTime: input.meetTime ?? null,
+    leaderTransport: me.transport,
+    leaderKakaoId: me.kakaoId,
+  });
+
+  // v17: 카카오 로그인 멤버만 자동으로 옮긴다
+  const carried = old.participants.filter((p) => !p.isLeader && p.kakaoId);
+  if (carried.length > 0) {
+    const fresh = await read(code);
+    if (fresh) {
+      for (const p of carried) {
+        fresh.participants.push({
+          ...p,
+          id: genId("u_"),
+          // 새 모임에서 다시 정할 것들 — 출발지는 유지(같은 사람이니까),
+          // 도착 신호등·지각 분은 지난 모임의 상태라 가져오지 않는다.
+          status: null,
+          etaText: null,
+          lateMin: null,
+          pin: null,
+          pinFails: 0,
+        });
+      }
+      await write(fresh);
+      if (hasDb) await upsertParticipants(code, fresh.participants);
+    }
+  }
+  return { ok: true, code, leaderId, carried: carried.length };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // v19 참여·인증 (설계_v19.md §4-⑤ · §7)
 // ═══════════════════════════════════════════════════════════════
@@ -1270,6 +1416,9 @@ export async function reserve(input: {
 export async function getState(code: string): Promise<MeetingState | null> {
   const m = await read(code);
   if (!m) return null;
+  // v9: 스케줄러가 없으므로 **읽을 때** '지난 모임' 전환을 판정한다.
+  //     전환은 한 번뿐이라 폴링이 잦아도 쓰기는 한 번이다.
+  await archiveIfDue(m);
   return {
     code: m.code,
     name: m.name,

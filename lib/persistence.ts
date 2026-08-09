@@ -46,6 +46,7 @@ interface MeetingRow {
   prefs: unknown;
   reservation: unknown;
   created_at: string | Date;
+  updated_at?: string | Date | null;
   // ── v19 (001_v19_설계정렬.sql) ──
   // 마이그레이션을 아직 안 돌린 DB 도 있을 수 있어 전부 optional 로 읽고
   // 아래 매핑에서 기본값을 채운다 — 컬럼이 없으면 undefined 로 온다.
@@ -155,6 +156,7 @@ export async function loadMeeting(code: string): Promise<Meeting | null> {
       placeVotes,
       reservation: (mRow.reservation ?? null) as Meeting["reservation"],
       createdAt: isoOf(mRow.created_at),
+      updatedAt: mRow.updated_at ? isoOf(mRow.updated_at) : undefined,
       // ── v19 ──
       // 옛 행(마이그레이션 전 또는 v19 이전 생성)은 값이 없다.
       // 기본값은 **새 모임과 같은 값**으로 맞춘다 — 옛 모임이 열렸을 때
