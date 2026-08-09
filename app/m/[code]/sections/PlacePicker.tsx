@@ -121,7 +121,7 @@ export default function PlacePicker({ state, isLeader, busy, myId, onAction }: P
                   <div className="faint" style={{ fontSize: 10.5 }}>
                     {p.category} · {p.distanceM}m
                     {p.rating > 0 ? ` · ⭐ ${p.rating}` : ""}
-                    {p.source === "ai" ? " · AI 추천" : p.proposedBy ? ` · ${p.proposedBy}` : ""}
+                    {p.proposedBy ? ` · ${p.proposedBy}` : ""}{p.aiSuggested ? " · AI 추천" : ""}
                   </div>
                 </div>
                 {canDelete && (

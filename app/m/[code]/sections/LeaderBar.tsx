@@ -38,6 +38,10 @@ export interface LeaderBarProps {
   onAction: (body: Record<string, unknown>, ok?: string) => Promise<unknown>;
   participantId: string | undefined;
   onOpenManual: (target: "region" | "place") => void;
+  /** v19 §8: AI 추천 (방장 opt-in). `hasPrev` 면 교체/추가를 먼저 묻는다 (v14) */
+  onAiRecommend: (hasPrev: boolean) => void;
+  /** AI 추천 기능이 켜져 있는지 (NEXT_PUBLIC_FF_AI_VOTE) */
+  aiRecommendEnabled: boolean;
 }
 
 export default function LeaderBar({
@@ -52,6 +56,8 @@ export default function LeaderBar({
   onAction,
   participantId,
   onOpenManual,
+  onAiRecommend,
+  aiRecommendEnabled,
 }: LeaderBarProps) {
   /** 최다득표 후보로 확정하는 버튼 — 문구가 투표 진행률을 말한다. */
   const confirmBtn = (target: "region" | "place") => {
@@ -99,6 +105,33 @@ export default function LeaderBar({
     stage === "main" || (stage === "chat" && state.aiPhase === "place" && !state.placeVoteOpen);
   const registerPool = state.aiPhase === "place" ? state.places : state.regions;
 
+  /**
+   * v19 §8 — AI 추천. **방장에게만 보이고, 안 누르면 0원이다.**
+   * 후보 등록 단계에서만 뜨고, 재호출 시 교체/추가를 묻는다 (v14).
+   * 로딩(`state.aiBusy`)도 방장 화면에서만 그린다.
+   */
+  const aiBtn = () => {
+    if (!aiRecommendEnabled) return null;
+    const already = registerPool.some((c) => "aiSuggested" in c && c.aiSuggested);
+    return (
+      <button
+        className="btn"
+        style={{ background: "#F1EDFF", color: "#6C5CE7", borderColor: "#6C5CE7" }}
+        disabled={busy || state.aiBusy}
+        title="AI가 후보 3곳을 제안합니다 (방장만 · 안 누르면 호출 안 함)"
+        onClick={() => onAiRecommend(already)}
+      >
+        {state.aiBusy ? (
+          <>
+            <span className="spinner" /> AI 추천 중… {state.aiPhase === "place" ? "(~9초)" : "(~25초)"}
+          </>
+        ) : (
+          <>🤖 AI {state.aiPhase === "place" ? "지점" : "지역"} 추천{already ? " 다시" : ""}</>
+        )}
+      </button>
+    );
+  };
+
   /** 투표 시작 = 후보 잠금 (v5, v8). 0개면 못 누르고, 1개면 서버가 투표를 생략한다. */
   const startVoteBtn = () => (
     <button
@@ -133,7 +166,10 @@ export default function LeaderBar({
             💬 AI와 함께 정하기 · 대화 시작
           </button>
         ) : (
-          startVoteBtn()
+          <>
+            {aiBtn()}
+            {startVoteBtn()}
+          </>
         ))}
 
       {stage === "chat" && (
@@ -153,7 +189,14 @@ export default function LeaderBar({
           </button>
 
           {!aiChatEnabled ? (
-            isRegistering ? startVoteBtn() : confirmBtn(votePhase)
+            isRegistering ? (
+              <>
+                {aiBtn()}
+                {startVoteBtn()}
+              </>
+            ) : (
+              confirmBtn(votePhase)
+            )
           ) : (
             <button
               className="btn"

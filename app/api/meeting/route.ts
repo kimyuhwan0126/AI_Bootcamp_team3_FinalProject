@@ -28,6 +28,9 @@ import {
   deleteMeeting,
   setMeetTime,
   recreateMeeting,
+  applyAiCandidates,
+  getMeeting,
+  setAiBusy,
 } from "@/lib/store";
 import { MAX_PARTICIPANTS, PURPOSE_LABELS } from "@/lib/types";
 import type { PurposeCategory } from "@/lib/types";
@@ -45,6 +48,7 @@ import {
   scoreRegionForParticipants,
 } from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
+import { aiRegionVote, aiPlaceVote } from "@/lib/ai-vote";
 
 // 인메모리 스토어를 쓰므로 항상 동적 처리 (캐시 금지)
 export const dynamic = "force-dynamic";
@@ -210,6 +214,59 @@ async function handlePost(req: NextRequest) {
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, radiusM: r.radiusM });
     }
+    // ── v19 §8: AI 추천 — **방장 opt-in 버튼 하나뿐. 안 누르면 0원.** ──
+    //  💰 Ollama Cloud(GLM 5.2) 호출이다. NEXT_PUBLIC_FF_AI_VOTE=1 일 때만 열린다.
+    //  후보 등록 단계에서만 되고(v8), 재호출은 무제한이되 교체/추가를 고른다(v14).
+    case "aiRecommend": {
+      if (process.env.NEXT_PUBLIC_FF_AI_VOTE !== "1")
+        return NextResponse.json({ error: "AI 추천이 꺼져 있어요 (NEXT_PUBLIC_FF_AI_VOTE=1)." }, { status: 403 });
+
+      const code = String(body.code || "").toUpperCase();
+      const participantId = String(body.participantId || "");
+      const mode: "replace" | "append" = body.mode === "append" ? "append" : "replace";
+
+      const m = await getMeeting(code);
+      if (!m) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const leader = m.participants.find((p) => p.id === participantId);
+      if (!leader?.isLeader)
+        return NextResponse.json({ error: "AI 추천은 방장만 쓸 수 있어요." }, { status: 400 });
+
+      const wantRegion = m.stage === "main" && m.aiPhase === "region";
+      const wantPlace = m.aiPhase === "place" && !m.placeVoteOpen;
+      if (!wantRegion && !wantPlace)
+        return NextResponse.json({ error: "후보 등록 단계에서만 AI 추천을 쓸 수 있어요." }, { status: 400 });
+
+      // 로딩 표시는 방장 화면에만 뜬다 — aiBusy 는 폴링으로 전원에게 가지만
+      // 화면이 `isLeader` 일 때만 그린다 (v19 §8).
+      setAiBusy(code, true);
+      try {
+        const purposeText = m.purposeCategory ? PURPOSE_LABELS[m.purposeCategory] : (m.prefs.purpose ?? "");
+        if (wantRegion) {
+          const r = await aiRegionVote(code, m.participants, purposeText, false, true /* ECO 원콜 */);
+          if ("error" in r) return NextResponse.json({ error: r.error }, { status: 400 });
+          // v9: 실패하면 토스트 + 재시도다. 강등 결과를 후보로 밀어 넣지 않는다 —
+          //     "AI 가 골라줬다"고 말할 수 없는 것을 AI 후보로 앉히면 거짓말이 된다.
+          if (r.degraded)
+            return NextResponse.json({ error: "AI 추천에 실패했어요. 다시 시도하거나 직접 후보를 등록해 주세요." }, { status: 502 });
+          const applied = await applyAiCandidates({ code, participantId, mode, regions: r.items.slice(0, 3) });
+          if (!applied.ok) return NextResponse.json({ error: applied.error }, { status: 400 });
+          return NextResponse.json({ ...applied, ms: r.ms });
+        }
+        const region = m.regions.find((x) => x.id === m.winnerRegionId);
+        if (!region) return NextResponse.json({ error: "확정된 지역이 없어요." }, { status: 400 });
+        const r = await aiPlaceVote(code, { name: region.name, lat: region.lat, lng: region.lng }, purposeText, m.participants.length, false, true);
+        if ("error" in r) return NextResponse.json({ error: r.error }, { status: 400 });
+        if (r.degraded)
+          return NextResponse.json({ error: "AI 추천에 실패했어요. 다시 시도하거나 직접 후보를 등록해 주세요." }, { status: 502 });
+        const applied = await applyAiCandidates({ code, participantId, mode, places: r.places.slice(0, 3) });
+        if (!applied.ok) return NextResponse.json({ error: applied.error }, { status: 400 });
+        return NextResponse.json({ ...applied, ms: r.ms });
+      } finally {
+        // v17: 실행이 끝나면(성공·실패·취소 무관) 반드시 로딩을 내린다
+        setAiBusy(code, false);
+      }
+    }
+
     // v5·v8: 투표 시작 = 후보 잠금. 후보 0개면 거부, 1개면 투표를 생략한다.
     case "startVote": {
       const r = await startVote({

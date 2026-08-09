@@ -484,6 +484,26 @@ test("§4-⑪ 재모임은 방장만 · 로그인 멤버만 자동 이전", asyn
 });
 
 // ═══════════════════════════════════════════════════════════════
+// §8 AI 추천 — 게이트 (💰 실제 호출은 하지 않는다)
+//
+//  ⚠️ 여기서는 **AI 를 부르지 않는다.** `NEXT_PUBLIC_FF_AI_VOTE` 가 꺼진 상태라
+//     403 에서 막히는 것까지가 검사 범위다 — CI 에서 유료 API(Ollama Cloud)를
+//     호출하면 안 되기 때문이다 (CLAUDE.md §4).
+//     병합 규칙(v9·v14)은 켠 상태에서 사람이 눌러 확인한다.
+// ═══════════════════════════════════════════════════════════════
+
+test("§8 AI 추천은 플래그가 꺼져 있으면 호출조차 되지 않는다 (0원 보장)", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const res = await request.post("/api/meeting", {
+    data: { action: "aiRecommend", code, participantId: leaderId, mode: "replace" },
+  });
+  // 플래그가 꺼져 있으면 403 — 유료 API 로 가는 길이 아예 닫혀 있다
+  expect(res.status(), "AI 플래그가 꺼졌는데 호출이 통과했다").toBe(403);
+  const body = await res.json();
+  expect(body.error).toContain("NEXT_PUBLIC_FF_AI_VOTE");
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 화면 — 규칙이 실제로 그려지는가
 // ═══════════════════════════════════════════════════════════════
 

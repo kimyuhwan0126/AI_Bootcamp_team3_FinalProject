@@ -42,15 +42,18 @@ export default function VoteList({
           title: r.name,
           plainName: r.name,
           sub: `최대 ${formatMinutes(r.maxMin)} · 편차 ${formatGap(r.devMin)}`,
-          // 참가자가 직접 올린 후보임을 밝힌다 — 자동 추천과 구분되어야 판단이 된다
-          badge: r.proposedBy ? `${r.proposedBy} 제안` : null,
+          // 참가자가 직접 올린 후보임을 밝힌다 — 자동 추천과 구분되어야 판단이 된다.
+          // v9: AI 가 같은 동을 추천했으면 **둘 다** 보여준다("○○ 제안 · AI 추천").
+          badge: [r.proposedBy ? `${r.proposedBy} 제안` : null, r.aiSuggested ? "AI 추천" : null]
+            .filter(Boolean).join(" · ") || null,
         }))
       : state.places.map((p) => ({
           id: p.id,
           title: `${p.emoji} ${p.name}`,
           plainName: p.name,
-          sub: `${p.category} · ${p.distanceM}m${p.reservable ? " · 예약가능" : ""}`,
-          badge: null,
+          sub: `${p.category} · ${p.distanceM}m${p.rating > 0 ? ` · ⭐ ${p.rating}` : ""}`,
+          badge: [p.proposedBy ? `${p.proposedBy} 등록` : null, p.aiSuggested ? "AI 추천" : null]
+            .filter(Boolean).join(" · ") || null,
         }));
 
   if (rows.length === 0) {

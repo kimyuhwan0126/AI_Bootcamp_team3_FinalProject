@@ -761,6 +761,110 @@ export async function saveCandidates(
 
 // ── 다시 논의 (Leader): 장소 단계 → 지역 단계로, 결과 → 장소 단계로 ──
 // ═══════════════════════════════════════════════════════════════
+// v19 AI 추천 (설계_v19.md §8)
+//
+//  **AI 는 방장이 누르는 버튼 하나뿐이다. 안 누르면 0원.**
+//  여기서는 "AI 가 만들어 온 후보를 기존 후보에 어떻게 섞는가"만 다룬다 —
+//  실제 생성은 `lib/ai-vote/` 가 맡는다.
+// ═══════════════════════════════════════════════════════════════
+
+/** 재호출 시 이전 AI 후보를 어떻게 할지 (v14 — 교체/추가 선택 팝업) */
+export type AiMergeMode = "replace" | "append";
+
+const normName = (s: string) => s.replace(/\s/g, "");
+
+/**
+ * AI 후보를 기존 후보에 병합한다 (v9 · v14).
+ *
+ * 규칙
+ *  1. **같은 이름이 이미 있으면 새로 만들지 않는다** — 기존 후보에 `aiSuggested` 만 켠다.
+ *     사람이 먼저 찍은 핑이면 `source` 는 `manual` 그대로다(그 사람 몫이 사라지면 안 된다).
+ *  2. `replace` 는 **순수 AI 후보만** 지운다 — 수동 병합 후보는 유지한다 (v14).
+ *     그래야 "AI 다시 돌리기"가 남의 핑을 지우지 않는다.
+ *  3. 후보가 늘어나는 것은 기존 표를 무효화하지 않는다. 다만 `replace` 로
+ *     **사라진 후보에 찍혀 있던 표는 함께 사라진다** (v10 과 같은 규칙).
+ */
+export async function applyAiCandidates(input: {
+  code: string;
+  participantId: string;
+  mode: AiMergeMode;
+  regions?: RegionCandidate[];
+  places?: PlaceCandidate[];
+}): Promise<{ ok: boolean; error?: string; added?: number; merged?: number }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const me = m.participants.find((x) => x.id === input.participantId);
+  if (!me?.isLeader) return { ok: false, error: "AI 추천은 방장만 쓸 수 있어요." };
+
+  // v8: AI 호출은 **후보 등록 단계에서만**
+  const step = phaseStepOf(m);
+  const isRegion = step === "region-register";
+  const isPlace = step === "place-register";
+  if (!isRegion && !isPlace)
+    return { ok: false, error: "후보 등록 단계에서만 AI 추천을 쓸 수 있어요." };
+
+  let added = 0;
+  let merged = 0;
+  const dropped: string[] = [];
+
+  if (isRegion) {
+    if (input.mode === "replace") {
+      // 수동 핑이 붙지 않은 **순수 AI 후보만** 걷어낸다 (v14)
+      for (const r of m.regions) {
+        if (r.source === "ai" && (r.contributors?.length ?? 0) === 0) dropped.push(r.id);
+      }
+      m.regions = m.regions.filter((r) => !dropped.includes(r.id));
+    }
+    for (const cand of input.regions ?? []) {
+      const dup = m.regions.find((r) => normName(r.name) === normName(cand.name));
+      if (dup) {
+        dup.aiSuggested = true;   // 병합 — 후보를 새로 만들지 않는다 (v9)
+        merged++;
+        continue;
+      }
+      m.regions.push({ ...cand, id: genId("ra_"), source: "ai", aiSuggested: true, contributors: [] });
+      added++;
+    }
+  } else {
+    if (input.mode === "replace") {
+      for (const p of m.places) {
+        if (p.source === "ai" && !p.proposedById) dropped.push(p.id);
+      }
+      m.places = m.places.filter((p) => !dropped.includes(p.id));
+    }
+    const region = m.regions.find((r) => r.id === m.winnerRegionId);
+    for (const cand of input.places ?? []) {
+      const dup = m.places.find((p) => normName(p.name) === normName(cand.name));
+      if (dup) {
+        dup.aiSuggested = true;
+        merged++;
+        continue;
+      }
+      // 반경 밖 추천은 버린다 — 사람이 등록할 때와 같은 잣대여야 한다 (v4)
+      if (region && cand.lat != null && cand.lng != null) {
+        const d = distanceM(region, { lat: cand.lat, lng: cand.lng });
+        if (d > m.radiusM) continue;
+      }
+      m.places.push({ ...cand, id: genId("pa_"), source: "ai", aiSuggested: true });
+      added++;
+    }
+  }
+
+  // replace 로 사라진 후보의 표만 정리한다
+  const box = isRegion ? m.regionVotes : m.placeVotes;
+  const orphaned = Object.entries(box ?? {})
+    .filter(([, cid]) => dropped.includes(cid))
+    .map(([pid]) => pid);
+  for (const pid of orphaned) delete box[pid];
+
+  await write(m);
+  if (hasDb) {
+    for (const pid of orphaned) await setVote(m.code, isRegion ? "region" : "place", pid, null);
+  }
+  return { ok: true, added, merged };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // v19 결과 · 신호등 · 지난 모임 (설계_v19.md §4-⑩ · §4-⑪)
 // ═══════════════════════════════════════════════════════════════
 

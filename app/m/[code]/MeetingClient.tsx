@@ -38,6 +38,11 @@ const DEV = process.env.NODE_ENV !== "production";
 //   상수를 직접 고치지 않는다 — 브랜치마다 이 값이 달라지면 머지할 때마다
 //   같은 줄에서 충돌나고, 개발하려고 켠 걸 실수로 커밋하면 남의 화면까지 켜진다.
 const AI_CHAT_ENABLED = FLAGS.aiChat;
+
+// v19 §8 — AI 추천 버튼(방장 opt-in). 안 누르면 호출되지 않아 0원이다.
+// ⚠️ `lib/flags.ts` 가 아직 이 플래그를 갖고 있지 않아 여기서 env 를 직접 읽는다
+//    (`app/api/ai-vote/route.ts` 도 같은 방식이다). 통합 시 FLAGS 로 옮긴다.
+const AI_RECOMMEND_ENABLED = process.env.NEXT_PUBLIC_FF_AI_VOTE === "1";
 const DBG_STATIONS = ["강남역", "홍대입구", "잠실", "사당", "건대입구", "수원역", "노원", "부천"];
 
 export default function MeetingClient({ code }: { code: string }) {
@@ -871,6 +876,20 @@ export default function MeetingClient({ code }: { code: string }) {
           stage={stage}
           state={state}
           busy={busy}
+          aiRecommendEnabled={AI_RECOMMEND_ENABLED}
+          // v19 §8 — AI 추천은 방장 opt-in. 재호출이면 교체/추가를 먼저 묻는다 (v14).
+          onAiRecommend={(hasPrev) => {
+            let mode: "replace" | "append" = "replace";
+            if (hasPrev) {
+              // 세 갈래(교체 / 추가 / 취소)를 confirm 두 번으로 낸다.
+              // ⚠️ '추가'를 고르면 수동 병합 후보는 물론 이전 AI 후보도 남는다.
+              const replace = confirm(
+                "AI 후보가 이미 있어요.\n\n[확인] 이전 AI 후보를 교체\n[취소] 이전 것에 추가"
+              );
+              mode = replace ? "replace" : "append";
+            }
+            void act({ action: "aiRecommend", participantId: me?.id, mode }, "AI 추천을 받았어요");
+          }}
           aiChatEnabled={AI_CHAT_ENABLED}
           topRegionId={topRegionId}
           topPlaceId={topPlaceId}

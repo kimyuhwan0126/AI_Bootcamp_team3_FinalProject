@@ -106,6 +106,14 @@ export interface RegionCandidate {
   /** 출처. `ai` 면 화면에 'AI 추천' 태그가 붙는다 (v9) */
   source?: CandidateSource;
   /**
+   * AI 도 이 동을 추천했는가 (v9 병합 규칙).
+   *
+   * AI 추천 동이 **수동 핑과 같으면 후보를 새로 만들지 않고 병합**한다.
+   * 그때 `source` 는 `manual` 그대로 두고(사람이 먼저 찍었으니) 이 표시만 켠다 —
+   * 화면은 둘 다 보여준다: "○○님 제안 · AI 추천".
+   */
+  aiSuggested?: boolean;
+  /**
    * 이 후보(동)에 핑을 찍은 사람들의 participantId.
    *
    * **같은 동은 하나로 병합**되므로 후보 하나에 여러 명이 붙는다 (v4).
@@ -151,6 +159,8 @@ export interface PlaceCandidate {
   // ── v19 ──
   /** 출처. `ai` 면 'AI 추천' 태그 (v9) */
   source?: CandidateSource;
+  /** AI 도 이 지점을 추천했는가 — 지역과 같은 병합 규칙 (v9) */
+  aiSuggested?: boolean;
   /** 후보를 등록한 사람의 participantId — **본인은 자기 후보만 삭제**할 수 있다 (v7) */
   proposedById?: string;
   /** 등록자 이름 (표시용) */
