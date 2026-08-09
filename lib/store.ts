@@ -440,20 +440,49 @@ export async function confirmRegion(
   }
 
   // '지점까지' 모임: 확정 동 중심 반경 안에서 지점을 고른다.
-  m.places = opts?.places?.length
-    ? opts.places
-    : generatePlaces(region.name, { lat: region.lat, lng: region.lng });
+  //
+  // ── v17 경계 reopen 복원 ──
+  //   지점 단계에서 지역으로 되돌아갔다가 **같은 동을 다시 확정**하면,
+  //   그때 보관해 둔 지점 후보·표를 되살린다. 다른 동이면 보관분을 버린다.
+  //   (되돌렸다가 마음을 바꿔 원래 동으로 돌아온 사람이 후보를 처음부터
+  //    다시 등록하지 않아도 되게 하려는 규칙이다)
+  const stash = m.stashedPlaces;
+  const restorable = stash && stash.regionId === region.id;
+  if (restorable) {
+    m.places = stash.places;
+    m.placeVotes = { ...stash.votes };
+  } else {
+    m.places = opts?.places?.length
+      ? opts.places
+      : generatePlaces(region.name, { lat: region.lat, lng: region.lng });
+    m.placeVotes = {};
+  }
+  m.stashedPlaces = null; // 한 번 쓰거나 폐기하면 비운다
   m.aiPhase = "place";
   m.stage = "chat"; // 메인에서 확정한 경우에도 지점 단계로 넘어간다
-  m.placeVotes = {};
   // v8: 지점도 '등록 → 투표 시작(잠금) → 투표' 2단계다. 지금은 등록 단계로 연다.
   m.placeVoteOpen = false;
   // v15: 반경은 새 지역마다 700m 에서 다시 시작한다(확장 1회는 그 지역 안에서만 유효).
   m.radiusM = 700;
-  pushMsg(m, "system", "", `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${how}). 이제 장소를 정해요.`);
+  pushMsg(
+    m,
+    "system",
+    "",
+    restorable
+      ? `📍 다시 ${region.name}(으)로 확정됐어요 (${how}). 아까 등록한 지점 후보를 되살렸어요.`
+      : `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${how}). 이제 장소를 정해요.`
+  );
   await write(m);
-  // 지점 후보가 새로 만들어졌으니 이전 지점 표는 의미가 없다
-  await clearVotes(m.code, "place");
+  if (restorable) {
+    // 복원한 표를 votes 테이블에도 되돌려 놓는다 — 모임 행의 placeVotes 만
+    // 채우면 DB 모드에서 폴링이 빈 집계를 읽는다(표는 별도 행에만 산다).
+    for (const [pid, cid] of Object.entries(m.placeVotes)) {
+      if (hasDb) await setVote(m.code, "place", pid, cid);
+    }
+  } else {
+    // 지점 후보가 새로 만들어졌으니 이전 지점 표는 의미가 없다
+    await clearVotes(m.code, "place");
+  }
   return { ok: true, regionName: region.name };
 }
 
@@ -551,6 +580,16 @@ export async function castVote(input: {
   const p = m.participants.find((x) => x.id === input.participantId);
   if (!p) return { ok: false, error: "참가자를 찾을 수 없어요." };
 
+  // ── v12: 늦은 표는 서버가 거부한다 ──
+  //   확정·잠금이 일어난 직후에 도착한 표를 그냥 받으면, 화면에는 표가 늘었는데
+  //   집계에는 없는 상태가 된다. 폴링(1.8초) 화면이라 실제로 겹친다.
+  const step = phaseStepOf(m);
+  const votable =
+    (input.target === "region" && step === "region-vote") ||
+    (input.target === "place" && step === "place-vote");
+  if (!votable)
+    return { ok: false, error: "단계가 바뀌었어요. 화면을 새로고침해 주세요." };
+
   if (!m.regionVotes) m.regionVotes = {};
   if (!m.placeVotes) m.placeVotes = {};
   const box = input.target === "region" ? m.regionVotes : m.placeVotes;
@@ -589,18 +628,41 @@ export async function addRegionCandidate(input: {
   // 여기서 떨어뜨리면 참가자 제안 후보만 출처를 잃는다 (lib/types.ts 참고)
   perParticipant: { pid: string; name: string; min: number; real?: boolean }[];
   proposedBy: string;
+  /** v4: 핑은 인원당 1개 — 누가 찍었는지 알아야 병합·이동·이탈을 계산한다 */
+  participantId?: string;
 }): Promise<{ ok: boolean; error?: string; candidate?: RegionCandidate; existing?: boolean }> {
   const m = await read(input.code);
   if (!m) return { ok: false, error: "모임 없음" };
-  if (m.stage === "result") return { ok: false, error: "이미 끝난 모임이에요." };
-  if (m.aiPhase !== "region") return { ok: false, error: "이미 거점이 확정됐어요." };
+  // ── v5·v12: 투표가 시작되면 핑이 잠긴다. 늦은 핑은 서버가 거부한다 ──
+  if (phaseStepOf(m) !== "region-register")
+    return { ok: false, error: "단계가 바뀌었어요 — 후보 등록이 끝났어요." };
 
-  // 같은 지역 중복 등록 방지 (공백 무시 비교)
+  // 같은 동은 병합한다 (v4) — 새 후보를 만들지 않고 기존 후보에 사람만 더한다.
+  // 공백 무시 비교.
   const norm = (s: string) => s.replace(/\s/g, "");
   const dup = m.regions.find((r) => norm(r.name) === norm(input.name));
-  if (dup) return { ok: true, candidate: dup, existing: true };
+  if (dup) {
+    // v9: AI 추천 동과 겹치면 병합하고 'AI 추천' 태그는 남긴다.
+    if (input.participantId) {
+      dup.contributors = Array.from(new Set([...(dup.contributors ?? []), input.participantId]));
+      await write(m);
+    }
+    return { ok: true, candidate: dup, existing: true };
+  }
 
-  if (m.regions.length >= 8) return { ok: false, error: "후보는 최대 8개까지예요. 기존 후보로 투표해주세요." };
+  // v4: 핑은 인원당 1개다 — 이미 찍은 사람은 옮긴다(옛 후보에서 자기 몫을 뺀다).
+  if (input.participantId) {
+    for (const r of m.regions) {
+      if (!r.contributors?.includes(input.participantId)) continue;
+      r.contributors = r.contributors.filter((x) => x !== input.participantId);
+      // v12: 병합 핑에서 마지막 한 명이 빠지면 후보 자체가 사라진다.
+      // (AI 후보는 사람이 0명이어도 유지된다 — source 로 구분)
+      if (r.contributors.length === 0 && r.source !== "ai") {
+        m.regions = m.regions.filter((x) => x.id !== r.id);
+        delete m.regionVotes[input.participantId];
+      }
+    }
+  }
 
   const candidate: RegionCandidate = {
     id: genId("rc_"),
@@ -612,6 +674,9 @@ export async function addRegionCandidate(input: {
     proposedBy: input.proposedBy,
     reason: `${input.proposedBy} 님 제안 — 최대 ${input.maxMin}분 · 편차 ${input.devMin}분`,
     perParticipant: input.perParticipant,
+    // ── v19 ── 수동 핑. 같은 동에 여러 명이 붙으면 여기 쌓인다(병합).
+    source: "manual",
+    contributors: input.participantId ? [input.participantId] : [],
   };
   m.regions.push(candidate);
   await write(m);
@@ -671,6 +736,184 @@ export async function saveCandidates(
 }
 
 // ── 다시 논의 (Leader): 장소 단계 → 지역 단계로, 결과 → 장소 단계로 ──
+// ═══════════════════════════════════════════════════════════════
+// v19 단계 규칙 (설계_v19.md §5·§6)
+//
+// 두 단계(지역·지점)가 **똑같은 모양**이다:
+//     등록 → 투표 시작(잠금) → 투표 → 방장 확정
+//
+// 지금 어느 칸에 있는지는 (stage, aiPhase, placeVoteOpen) 셋이 정한다.
+// 판정을 이 한 곳에 모아 둔 이유: 화면·API·store 가 각자 조건을 쓰면
+// "잠겼는데 등록이 되는" 구멍이 생긴다 (v12 가 서버 거부를 못박은 이유).
+// ═══════════════════════════════════════════════════════════════
+
+/** 지금 모임이 서 있는 칸 */
+export type PhaseStep =
+  | "region-register"   // ⑥ 지역 후보 핑 등록      (main · region)
+  | "region-vote"       // ⑦ 지역 투표              (chat · region)
+  | "place-register"    // ⑧ 지점 후보 등록         (chat · place · !placeVoteOpen)
+  | "place-vote"        // ⑨ 지점 투표              (chat · place ·  placeVoteOpen)
+  | "result";           // ⑩ 확정
+
+export function phaseStepOf(m: Meeting): PhaseStep {
+  if (m.stage === "result") return "result";
+  if (m.aiPhase === "place") return m.placeVoteOpen ? "place-vote" : "place-register";
+  return m.stage === "chat" ? "region-vote" : "region-register";
+}
+
+/**
+ * 후보 수에 따른 투표 시작 판정 (v8).
+ *   0개 → 시작 불가 · 1개 → 투표 생략(방장 바로 확정) · 2개 이상 → 정상 투표
+ */
+export function candidateGate(count: number): "blocked" | "skip" | "vote" {
+  if (count === 0) return "blocked";
+  if (count === 1) return "skip";
+  return "vote";
+}
+
+/**
+ * 투표 시작 — 방장만. **이 순간 후보가 잠긴다** (v5, v8).
+ *
+ * 지역이면 `main → chat`, 지점이면 `placeVoteOpen = true`.
+ * 후보가 1개면 투표를 열지 않고 `skipped` 를 돌려준다 — 호출부가 바로 확정을 부른다.
+ * 미배정 핑(홈에서 넘어온 출발지)은 이때 사라진다 (v9).
+ */
+export async function startVote(input: {
+  code: string;
+  participantId: string;
+}): Promise<{ ok: boolean; error?: string; skipped?: boolean; onlyCandidateId?: string }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const p = m.participants.find((x) => x.id === input.participantId);
+  if (!p?.isLeader) return { ok: false, error: "방장만 시작할 수 있어요." };
+  if (m.archivedAt) return { ok: false, error: "지난 모임이에요." };
+
+  const step = phaseStepOf(m);
+  if (step !== "region-register" && step !== "place-register")
+    return { ok: false, error: "이미 투표가 시작됐어요." };
+
+  const isRegion = step === "region-register";
+  const pool: { id: string }[] = isRegion ? m.regions : m.places;
+  const gate = candidateGate(pool.length);
+
+  if (gate === "blocked")
+    return {
+      ok: false,
+      error: isRegion
+        ? "후보가 없어요. 지도를 눌러 후보를 먼저 등록해 주세요."
+        : "후보가 없어요. 지도에서 장소를 눌러 후보로 등록해 주세요.",
+    };
+
+  if (isRegion) {
+    m.stage = "chat";
+    m.aiPhase = "region";
+    // v9: 미배정 핑은 여기서 사라진다 (홈에서 넘어온 뒤 아무도 안 가져간 출발지)
+    m.regions = m.regions.filter((r) => r.source === "ai" || (r.contributors?.length ?? 1) > 0);
+  } else {
+    m.placeVoteOpen = true;
+  }
+
+  // v8: 후보가 하나면 투표 화면을 띄우지 않는다 — 방장이 바로 확정한다.
+  if (gate === "skip") {
+    await write(m);
+    return { ok: true, skipped: true, onlyCandidateId: pool[0].id };
+  }
+
+  pushMsg(m, "system", "", isRegion ? "🗳️ 지역 투표가 시작됐어요." : "🗳️ 지점 투표가 시작됐어요.");
+  await write(m);
+  return { ok: true };
+}
+
+/**
+ * 되돌리기 — **reopen 사다리. 누를 때마다 한 칸씩** (v10).
+ *
+ *     확정 → 투표 다시 → 후보부터 다시
+ *
+ * **표는 유지된다.** 삭제된 후보의 표만 사라진다.
+ *
+ * 지점 등록 → 지역 투표로 넘어가는 칸이 **경계 reopen** 이다 (v17):
+ * 지점 데이터를 통째로 보관해 뒀다가, **같은 동으로 재확정되면 복원**하고
+ * 다른 동이면 폐기한다 (복원은 `confirmRegion` 이 아니라 여기 stash 를 보고 판단).
+ */
+export async function reopenStep(input: {
+  code: string;
+  participantId: string;
+}): Promise<{ ok: boolean; error?: string; step?: PhaseStep }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const p = m.participants.find((x) => x.id === input.participantId);
+  if (!p?.isLeader) return { ok: false, error: "방장만 되돌릴 수 있어요." };
+  if (m.archivedAt) return { ok: false, error: "지난 모임은 되돌릴 수 없어요." };
+
+  const step = phaseStepOf(m);
+  let clearPlaceVotes = false;
+
+  switch (step) {
+    case "result": {
+      // '지역까지' 모임은 지점 단계가 없으니 지역 투표로 (v4)
+      if (m.scope === "region") {
+        m.stage = "chat";
+        m.aiPhase = "region";
+        m.winnerRegionId = null;
+      } else {
+        m.stage = "chat";
+        m.aiPhase = "place";
+        m.placeVoteOpen = true;
+        m.winnerPlaceId = null;
+      }
+      break;
+    }
+    case "place-vote": {
+      // 투표 → 등록. 표는 그대로 둔다(다시 열면 이어서 찍는다).
+      m.placeVoteOpen = false;
+      m.winnerPlaceId = null;
+      break;
+    }
+    case "place-register": {
+      // ── 경계 reopen (v17) — 지점 데이터를 보관하고 지역 투표로 돌아간다 ──
+      if (m.winnerRegionId) {
+        m.stashedPlaces = {
+          regionId: m.winnerRegionId,
+          places: m.places,
+          votes: { ...(m.placeVotes ?? {}) },
+        };
+      }
+      m.places = [];
+      m.placeVotes = {};
+      m.placeVoteOpen = false;
+      m.winnerPlaceId = null;
+      m.winnerRegionId = null;
+      m.aiPhase = "region";
+      m.stage = "chat";
+      m.radiusM = 700;
+      clearPlaceVotes = true;
+      break;
+    }
+    case "region-vote": {
+      m.stage = "main";
+      m.aiPhase = "region";
+      m.winnerRegionId = null;
+      break;
+    }
+    case "region-register":
+      return { ok: false, error: "더 되돌릴 단계가 없어요." };
+  }
+
+  const next = phaseStepOf(m);
+  pushMsg(m, "system", "", `🔄 방장이 이전 단계로 되돌렸어요 (${STEP_LABEL[next]}).`);
+  await write(m);
+  if (clearPlaceVotes) await clearVotes(m.code, "place");
+  return { ok: true, step: next };
+}
+
+const STEP_LABEL: Record<PhaseStep, string> = {
+  "region-register": "지역 후보 등록",
+  "region-vote": "지역 투표",
+  "place-register": "지점 후보 등록",
+  "place-vote": "지점 투표",
+  result: "결과",
+};
+
 export async function reopenDiscussion(
   input: { code: string; participantId: string; target: "region" | "place" },
   opts?: { regions?: RegionCandidate[] }

@@ -18,6 +18,8 @@ import {
   updatePrefs,
   getState,
   promoteToPlace,
+  startVote,
+  reopenStep,
 } from "@/lib/store";
 import { MAX_PARTICIPANTS, PURPOSE_LABELS } from "@/lib/types";
 import type { PurposeCategory } from "@/lib/types";
@@ -129,6 +131,24 @@ async function handlePost(req: NextRequest) {
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, code: String(body.code).toUpperCase(), participantId: r.participantId, isLeader: false });
+    }
+    // v5·v8: 투표 시작 = 후보 잠금. 후보 0개면 거부, 1개면 투표를 생략한다.
+    case "startVote": {
+      const r = await startVote({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, skipped: !!r.skipped, onlyCandidateId: r.onlyCandidateId ?? null });
+    }
+    // v10: reopen 사다리 — 누를 때마다 한 칸씩 되돌린다. 표는 유지된다.
+    case "reopenStep": {
+      const r = await reopenStep({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, step: r.step });
     }
     // v11: '지점도 정하기' 승격 — '지역까지' 모임을 '지점까지'로. 역방향 없음.
     case "promoteToPlace": {

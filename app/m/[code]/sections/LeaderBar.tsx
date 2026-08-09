@@ -91,6 +91,36 @@ export default function LeaderBar({
 
   const votePhase: "region" | "place" = state.aiPhase === "region" ? "region" : "place";
 
+  // ── v19 §5: 지금 어느 칸인가 ──
+  //   등록 칸에서는 '투표 시작'(= 후보 잠금)만 뜬다. 확정 버튼은 투표 칸부터다.
+  //   판정 규칙은 서버(`phaseStepOf`)와 같아야 한다 — 어긋나면
+  //   "눌리는데 서버가 거부하는" 버튼이 생긴다.
+  const isRegistering =
+    stage === "main" || (stage === "chat" && state.aiPhase === "place" && !state.placeVoteOpen);
+  const registerPool = state.aiPhase === "place" ? state.places : state.regions;
+
+  /** 투표 시작 = 후보 잠금 (v5, v8). 0개면 못 누르고, 1개면 서버가 투표를 생략한다. */
+  const startVoteBtn = () => (
+    <button
+      className="btn ok"
+      disabled={busy || registerPool.length === 0}
+      title={
+        registerPool.length === 0
+          ? "후보가 없어요 — 지도를 눌러 후보를 먼저 등록해 주세요"
+          : "후보를 잠그고 투표를 시작합니다"
+      }
+      onClick={() => onAction({ action: "startVote", participantId }, "투표를 시작했어요")}
+    >
+      <b>
+        {registerPool.length === 0
+          ? "후보 0개 — 먼저 등록해 주세요"
+          : registerPool.length === 1
+            ? "후보 1개 — 바로 확정하기"
+            : `🗳️ 투표 시작 · 후보 ${registerPool.length}개 잠금`}
+      </b>
+    </button>
+  );
+
   return (
     <div className="leaderbar">
       {stage === "main" &&
@@ -103,7 +133,7 @@ export default function LeaderBar({
             💬 AI와 함께 정하기 · 대화 시작
           </button>
         ) : (
-          confirmBtn("region")
+          startVoteBtn()
         ))}
 
       {stage === "chat" && (
@@ -111,20 +141,19 @@ export default function LeaderBar({
           <button
             className="btn ghost"
             disabled={busy}
-            title="출발지·거점 투표 화면으로 돌아갑니다"
+            title="이전 단계로 한 칸 되돌립니다 (표는 유지돼요)"
             onClick={() =>
-              // v8은 거점 투표가 메인 화면에 있으므로 뒤로가기는 항상 메인이다.
-              // (AI 모드에서는 기존대로 거점 논의만 다시 연다)
+              // v10: reopen 사다리 — 확정 → 투표 → 후보, 한 칸씩.
               aiChatEnabled && state.aiPhase === "place"
                 ? onAction({ action: "reopen", participantId, target: "region" }, "거점부터 다시 정해요")
-                : onAction({ action: "backToMain", participantId }, "거점 투표로 돌아갔어요")
+                : onAction({ action: "reopenStep", participantId }, "이전 단계로 돌아갔어요")
             }
           >
-            ← 거점 다시
+            ← 이전 단계
           </button>
 
           {!aiChatEnabled ? (
-            confirmBtn(votePhase)
+            isRegistering ? startVoteBtn() : confirmBtn(votePhase)
           ) : (
             <button
               className="btn"
@@ -148,25 +177,17 @@ export default function LeaderBar({
         </>
       )}
 
-      {stage === "result" && (
-        <>
-          <button
-            className="btn ghost"
-            disabled={busy}
-            onClick={() =>
-              onAction({ action: "reopen", participantId, target: "place" }, "장소 논의를 다시 열었어요")
-            }
-          >
-            🔄 장소 다시 논의
-          </button>
-          <button
-            className="btn ghost"
-            disabled={busy}
-            onClick={() => onAction({ action: "backToMain", participantId }, "메인으로 돌아갔어요")}
-          >
-            처음부터
-          </button>
-        </>
+      {stage === "result" && !state.isPast && (
+        // v10: 되돌리기는 **사다리 한 칸**이다. 예전의 '처음부터'(backToMain)는
+        // 표를 통째로 날려서 v19 의 "표는 유지된다"와 어긋난다 — 그래서 뺐다.
+        <button
+          className="btn ghost"
+          disabled={busy}
+          title="확정 → 투표 → 후보, 한 칸씩 되돌립니다 (표는 유지돼요)"
+          onClick={() => onAction({ action: "reopenStep", participantId }, "이전 단계로 돌아갔어요")}
+        >
+          🔄 되돌리기 (한 단계)
+        </button>
       )}
     </div>
   );

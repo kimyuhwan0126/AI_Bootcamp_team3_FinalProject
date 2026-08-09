@@ -116,7 +116,14 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   // 화면이 통째로 비지 않았는지 — 버튼이 하나도 없으면 미렌더다
   expect(await page.getByRole("button").count(), "버튼이 하나도 없다 = 화면 미렌더").toBeGreaterThan(0);
 
-  // ── 3. 투표가 서버에 실제로 기록되는지 ──
+  // ── 3. 투표 시작(= 후보 잠금) → 투표가 서버에 실제로 기록되는지 ──
+  //  v19 §5: 두 단계 모두 '등록 → 투표 시작(잠금) → 투표 → 방장 확정'이다.
+  //  투표 시작 전에는 서버가 표를 **거부한다**(v12 — "단계가 바뀌었어요").
+  //  예전 흐름(등록 화면에서 바로 투표)은 v19 에서 사라졌다.
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  const afterStart = await (await request.get(`/api/meeting?code=${code}`)).json();
+  expect(afterStart.stage, "투표 시작이 지역 투표 단계로 넘기지 못했다").toBe("chat");
+
   await act(request, {
     action: "vote",
     code,
