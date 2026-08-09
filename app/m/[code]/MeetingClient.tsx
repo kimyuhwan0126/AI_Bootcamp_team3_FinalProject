@@ -637,7 +637,15 @@ export default function MeetingClient({ code }: { code: string }) {
               }
             />
 
-            <ParticipantList state={state} />
+            <ParticipantList
+              state={state}
+              isLeader={isLeader}
+              // v10: 강퇴는 되돌릴 수 없는 축에 속하니 한 번 묻는다 (재참여는 가능)
+              onKick={(targetId, name) => {
+                if (!confirm(`${name} 님을 모임에서 내보낼까요?\n그 사람의 핑과 표도 함께 지워져요. (다시 참여할 수는 있어요)`)) return;
+                void act({ action: "kick", participantId: me?.id, targetId }, `${name} 님을 내보냈어요`);
+              }}
+            />
 
             {/* ── 거점(지역) 투표 — 출발지가 모이면 이 화면에서 바로 투표한다 ── */}
             <div className="card stack" style={{ gap: 10 }}>
@@ -818,6 +826,13 @@ export default function MeetingClient({ code }: { code: string }) {
             onPromoteToPlace={() => {
               if (!confirm("이 모임에서 만날 '지점'도 정하기로 할까요?\n되돌릴 수 없어요.")) return;
               void act({ action: "promoteToPlace", participantId: me?.id }, "지점 정하기를 시작했어요");
+            }}
+            // v10: 모임 삭제 — 되돌릴 수 없다. 모임 이름을 한 번 더 확인시킨다.
+            onDeleteMeeting={() => {
+              if (!confirm(`'${state.name}' 모임을 삭제할까요?\n참여자·후보·표가 전부 사라지고 되돌릴 수 없어요.`)) return;
+              void act({ action: "deleteMeeting", participantId: me?.id }).then(() => {
+                location.href = "/meetings";
+              });
             }}
           />
         )}

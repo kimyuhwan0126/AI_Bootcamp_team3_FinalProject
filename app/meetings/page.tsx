@@ -63,8 +63,13 @@ function MeetingsInner() {
   const [cPurpose, setCPurpose] = useState<PurposeCategory>("food");
   // 참여 폼
   const [jCode, setJCode] = useState("");
+  /** 개인 PIN — 비로그인 참여자만 (v15). 복구 모드에서는 확인용으로 쓴다 */
   const [jPw, setJPw] = useState("");
   const [jName, setJName] = useState("");
+  /** 복구 모드 — '이름 + PIN' 으로 기존 자리를 되찾는다 (v15·v16) */
+  const [jRecover, setJRecover] = useState(false);
+  /** 이름 중복으로 거절당했는지 — 별칭/복구 두 갈래를 안내한다 (v4) */
+  const [jDup, setJDup] = useState(false);
 
   useEffect(() => {
     const open = params.get("open");
@@ -152,14 +157,35 @@ function MeetingsInner() {
     }
     setBusy(true);
     try {
-      // URL 붙여넣기 지원: /m/CODE 형태에서 코드 추출 (회의록: URL 또는 이름+패스워드)
+      // URL 붙여넣기 지원: /m/CODE 형태에서 코드 추출
       const m = jCode.match(/\/m\/([A-Za-z0-9]{4,8})/);
       const code = (m ? m[1] : jCode).toUpperCase().trim();
-      const d = await post({ action: "join", code, password: jPw, name });
+
+      // ── v15·v16: 복구 모드 ──
+      //  쿠키(localStorage)가 날아가 자기 자리를 잃은 사람은 '이름 + PIN' 으로
+      //  기존 자리를 되찾는다. 새로 참여하면 정원만 차고 표가 갈라진다.
+      if (jRecover) {
+        const d = await post({ action: "recover", code, name, pin: jPw });
+        addIdentity(d.code, { id: d.participantId, name, isLeader: !!d.isLeader });
+        router.push(`/m/${d.code}`);
+        return;
+      }
+
+      const d = await post({
+        action: "join",
+        code,
+        name,
+        // v15: PIN 은 비로그인만. 로그인했으면 계정으로 복구되니 안 받는다.
+        pin: session?.kind === "kakao" ? null : jPw || null,
+      });
       addIdentity(d.code, { id: d.participantId, name, isLeader: false });
       router.push(`/m/${d.code}`);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "요청 실패");
+      const msg = e instanceof Error ? e.message : "요청 실패";
+      setErr(msg);
+      // v4: 이름이 겹치면 별칭을 붙이거나 PIN 으로 복구하는 두 갈래다.
+      //     서버 메시지만으로는 "복구"라는 길이 있는 걸 모르므로 화면이 알려준다.
+      if (msg.includes("이미") && msg.includes("있어요")) setJDup(true);
       setBusy(false);
     }
   }
@@ -363,31 +389,80 @@ function MeetingsInner() {
         <div className="v8-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
           <div className="v8-modal stack" style={{ gap: 12 }}>
             <div>
-              <h2>모임 참여하기</h2>
-              <p className="m-sub">초대 URL을 붙여넣거나, 코드+패스워드로 참여할 수 있어요.</p>
+              <h2>{jRecover ? "내 자리 되찾기" : "모임 참여하기"}</h2>
+              <p className="m-sub">
+                {jRecover
+                  ? "예전에 참여했다면 이름과 PIN으로 그 자리를 되찾을 수 있어요."
+                  : "초대 링크를 붙여넣으면 바로 참여돼요. 비밀번호는 없어요."}
+              </p>
             </div>
             <div>
               <label className="label">초대 URL 또는 코드</label>
               <input className="input" value={jCode} onChange={(e) => setJCode(e.target.value)} placeholder="https://…/m/ABC123 또는 ABC123" />
             </div>
             <div>
-              <label className="label">패스워드</label>
-              <input className="input" value={jPw} onChange={(e) => setJPw(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">내 이름{session ? " (선택)" : ""}</label>
+              <label className="label">내 이름{session && !jRecover ? " (선택)" : ""}</label>
               <input
                 className="input"
                 value={jName}
-                onChange={(e) => setJName(e.target.value)}
-                placeholder={session ? `비워두면 '${session.name}'(으)로 참여해요` : "예: 유나"}
+                onChange={(e) => { setJName(e.target.value); setJDup(false); }}
+                placeholder={session && !jRecover ? `비워두면 '${session.name}'(으)로 참여해요` : "예: 유나"}
               />
             </div>
+
+            {/* v15: PIN 은 비로그인 참여자만. 카카오 로그인은 계정으로 복구된다. */}
+            {session?.kind !== "kakao" && (
+              <div>
+                <label className="label">
+                  개인 PIN {jRecover ? "" : "(선택 · 나중에 자리 되찾기용)"}
+                </label>
+                <input
+                  className="input"
+                  value={jPw}
+                  inputMode="numeric"
+                  maxLength={6}
+                  onChange={(e) => setJPw(e.target.value)}
+                  placeholder="숫자 4자리"
+                />
+                {!jRecover && (
+                  <p className="faint" style={{ fontSize: 10.5, margin: "4px 0 0" }}>
+                    기기가 바뀌거나 브라우저 기록이 지워졌을 때 이 PIN으로 돌아올 수 있어요.
+                  </p>
+                )}
+              </div>
+            )}
+
             {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
-            {/* 이름은 로그인 상태면 선택사항 — 비회원이 직접 URL로 연 경우에만 필수 */}
-            <button className="btn" onClick={handleJoin} disabled={busy || !jCode || !jPw || (!jName.trim() && !session)}>
-              {busy ? <span className="spinner" /> : "참여하기"}
+
+            {/* v4: 이름 중복 — 별칭을 붙이거나, 본인이면 PIN으로 복구 */}
+            {jDup && !jRecover && (
+              <div className="stack" style={{ gap: 6 }}>
+                <p className="faint" style={{ fontSize: 11, margin: 0 }}>
+                  같은 이름이 이미 있어요. <b>다른 사람</b>이면 이름 뒤에 별칭을 붙이고,
+                  <b> 본인</b>이면 아래로 자리를 되찾으세요.
+                </p>
+                <button className="btn ghost" onClick={() => { setJRecover(true); setErr(null); }}>
+                  내 자리 되찾기 (이름 + PIN)
+                </button>
+              </div>
+            )}
+
+            <button
+              className="btn"
+              onClick={handleJoin}
+              disabled={
+                busy || !jCode ||
+                (!jName.trim() && !session) ||
+                (jRecover && !jPw.trim())   // 복구는 PIN 이 반드시 있어야 한다
+              }
+            >
+              {busy ? <span className="spinner" /> : jRecover ? "되찾기" : "참여하기"}
             </button>
+            {jRecover && (
+              <button className="btn ghost" onClick={() => { setJRecover(false); setErr(null); }}>
+                ← 새로 참여하기
+              </button>
+            )}
             <button className="btn ghost" onClick={closeModal}>닫기</button>
           </div>
         </div>

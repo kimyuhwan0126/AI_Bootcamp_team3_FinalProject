@@ -23,7 +23,7 @@ import type {
   MeetingScope,
   PurposeCategory,
 } from "./types";
-import { MAX_PARTICIPANTS } from "./types";
+import { MAX_PARTICIPANTS, MAX_PIN_FAILS } from "./types";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
 import { hasDb } from "./db";
 import {
@@ -34,6 +34,8 @@ import {
   upsertParticipants,
   setVote,
   clearVotes,
+  deleteParticipantRow,
+  deleteMeetingRow,
 } from "./persistence";
 
 type Result = { ok: boolean; error?: string };
@@ -740,6 +742,125 @@ export async function saveCandidates(
 }
 
 // ── 다시 논의 (Leader): 장소 단계 → 지역 단계로, 결과 → 장소 단계로 ──
+// ═══════════════════════════════════════════════════════════════
+// v19 참여·인증 (설계_v19.md §4-⑤ · §7)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 이름 + PIN 으로 자기 자리 되찾기 — **비로그인 참여자 전용** (v15).
+ *
+ * 쿠키(localStorage)가 날아가면 참여자는 자기 신원을 잃는다. 다시 참여하면
+ * 정원만 차고 표가 갈라지므로, 이름과 PIN 으로 기존 자리를 돌려준다.
+ *
+ * ⚠️ **5회 실패하면 잠근다** (v16). 잠긴 뒤에는 방장이 강퇴해야 다시 들어올 수 있다.
+ *    4자리 숫자라 무제한이면 사실상 아무나 남의 자리를 가져갈 수 있다.
+ */
+export async function recoverParticipant(input: {
+  code: string;
+  name: string;
+  pin: string;
+}): Promise<{ ok: boolean; error?: string; participantId?: string; isLeader?: boolean }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임을 찾을 수 없어요." };
+
+  const name = (input.name || "").trim();
+  const p = m.participants.find((x) => x.name === name);
+  if (!p) return { ok: false, error: "그 이름으로 참여한 사람이 없어요." };
+  if (!p.pin) return { ok: false, error: "이 참여자는 PIN 이 없어요 (카카오 로그인으로 참여했어요)." };
+
+  if (p.pinFails >= MAX_PIN_FAILS)
+    return { ok: false, error: `PIN 을 ${MAX_PIN_FAILS}회 틀려 잠겼어요. 방장에게 요청해 주세요.` };
+
+  if (p.pin !== String(input.pin)) {
+    p.pinFails += 1;
+    await writeParticipant(m, p);
+    const left = MAX_PIN_FAILS - p.pinFails;
+    return {
+      ok: false,
+      error: left > 0 ? `PIN 이 달라요. ${left}번 더 틀리면 잠겨요.` : "PIN 을 5회 틀려 잠겼어요.",
+    };
+  }
+
+  // 성공 — 실패 횟수를 되돌린다
+  if (p.pinFails !== 0) {
+    p.pinFails = 0;
+    await writeParticipant(m, p);
+  }
+  return { ok: true, participantId: p.id, isLeader: p.isLeader };
+}
+
+/**
+ * 강퇴 — 방장만 (v10). **그 사람의 핑·표를 함께 지우고, 재참여는 허용한다.**
+ *
+ * 병합 핑에서는 **그 사람 몫만** 빠진다 (v12). 마지막 한 명이면 후보가 사라지고,
+ * 그 후보에 찍혀 있던 표도 함께 사라진다.
+ */
+export async function kickParticipant(input: {
+  code: string;
+  participantId: string;
+  targetId: string;
+}): Promise<Result> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const me = m.participants.find((x) => x.id === input.participantId);
+  if (!me?.isLeader) return { ok: false, error: "방장만 내보낼 수 있어요." };
+  const target = m.participants.find((x) => x.id === input.targetId);
+  if (!target) return { ok: false, error: "해당 참여자가 없어요." };
+  if (target.isLeader) return { ok: false, error: "방장은 내보낼 수 없어요." };
+
+  m.participants = m.participants.filter((x) => x.id !== input.targetId);
+
+  // 지역 핑에서 그 사람 몫만 뺀다 — 마지막 한 명이면 후보 삭제 (v12)
+  const droppedRegions: string[] = [];
+  for (const r of m.regions) {
+    if (!r.contributors?.includes(input.targetId)) continue;
+    r.contributors = r.contributors.filter((x) => x !== input.targetId);
+    if (r.contributors.length === 0 && r.source !== "ai") droppedRegions.push(r.id);
+  }
+  m.regions = m.regions.filter((r) => !droppedRegions.includes(r.id));
+
+  // 그 사람이 등록한 지점 후보도 정리한다
+  const droppedPlaces = m.places.filter((p) => p.proposedById === input.targetId).map((p) => p.id);
+  m.places = m.places.filter((p) => !droppedPlaces.includes(p.id));
+
+  // 표 정리: 본인 표 + 사라진 후보에 찍힌 표
+  delete m.regionVotes[input.targetId];
+  delete m.placeVotes[input.targetId];
+  for (const [pid, cid] of Object.entries(m.regionVotes)) {
+    if (droppedRegions.includes(cid)) delete m.regionVotes[pid];
+  }
+  for (const [pid, cid] of Object.entries(m.placeVotes)) {
+    if (droppedPlaces.includes(cid)) delete m.placeVotes[pid];
+  }
+
+  pushMsg(m, "system", "", `${target.name} 님이 모임에서 나갔어요.`);
+  await write(m);
+  if (hasDb) {
+    await deleteParticipantRow(input.targetId);
+    // 고아가 된 표를 votes 테이블에서도 지운다
+    for (const p of m.participants) {
+      if (m.regionVotes[p.id] === undefined) await setVote(m.code, "region", p.id, null);
+      if (m.placeVotes[p.id] === undefined) await setVote(m.code, "place", p.id, null);
+    }
+  }
+  return { ok: true };
+}
+
+/** 모임 삭제 — 방장만 (v10). 확인 팝업은 화면이 띄운다. */
+export async function deleteMeeting(input: {
+  code: string;
+  participantId: string;
+}): Promise<Result> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const me = m.participants.find((x) => x.id === input.participantId);
+  if (!me?.isLeader) return { ok: false, error: "방장만 삭제할 수 있어요." };
+
+  if (hasDb) await deleteMeetingRow(m.code);
+  memMeetings.delete(m.code);
+  return { ok: true };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // v19 지점 단계 (설계_v19.md §4-⑧)
 //

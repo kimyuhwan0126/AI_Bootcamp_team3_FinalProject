@@ -28,6 +28,8 @@ export interface ResultSectionProps {
   onToast: (msg: string) => void;
   /** v11: '지점도 정하기' 승격 (방장 · '지역까지' 모임에만 보인다) */
   onPromoteToPlace: () => void;
+  /** v10: 모임 삭제 (방장) — 확인 팝업은 부모가 띄운다 */
+  onDeleteMeeting: () => void;
 }
 
 export default function ResultSection({
@@ -39,6 +41,7 @@ export default function ResultSection({
   onOpenReserve,
   onToast,
   onPromoteToPlace,
+  onDeleteMeeting,
 }: ResultSectionProps) {
   // v19 §3: 확정 범위가 '지역까지'인 모임. 경로 API·지점 카카오 링크·도착 신호등을
   // 전부 숨긴다 (v11, v14). 이 화면의 분기는 전부 이 한 값에서 나온다.
@@ -228,6 +231,19 @@ export default function ResultSection({
           🔗 모임 링크 공유
         </button>
       </div>
+
+      {/* v10: 방장 모임 삭제 — 되돌릴 수 없어 맨 아래에 따로 둔다 */}
+      {isLeader && !state.isPast && (
+        <div className="card stack" style={{ gap: 6 }}>
+          <span className="eyebrow">위험 구역</span>
+          <button className="btn ghost" style={{ color: "var(--danger, #E11D48)" }} onClick={onDeleteMeeting}>
+            🗑 모임 삭제
+          </button>
+          <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
+            참여자·후보·표가 전부 사라지고 되돌릴 수 없어요.
+          </p>
+        </div>
+      )}
     </>
   );
 }

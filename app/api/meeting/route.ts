@@ -23,6 +23,9 @@ import {
   addPlaceCandidate,
   removePlaceCandidate,
   expandRadius,
+  recoverParticipant,
+  kickParticipant,
+  deleteMeeting,
 } from "@/lib/store";
 import { MAX_PARTICIPANTS, PURPOSE_LABELS } from "@/lib/types";
 import type { PurposeCategory } from "@/lib/types";
@@ -133,6 +136,40 @@ async function handlePost(req: NextRequest) {
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, code: String(body.code).toUpperCase(), participantId: r.participantId, isLeader: false });
+    }
+    // v15·v16: 이름 + PIN 으로 자기 자리 되찾기 (비로그인 전용 · 5회 제한)
+    case "recover": {
+      const r = await recoverParticipant({
+        code: String(body.code || "").toUpperCase(),
+        name: String(body.name || "").trim(),
+        pin: String(body.pin || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({
+        ok: true,
+        code: String(body.code).toUpperCase(),
+        participantId: r.participantId,
+        isLeader: !!r.isLeader,
+      });
+    }
+    // v10: 방장 강퇴 — 그 사람 핑·표 삭제, 재참여는 허용
+    case "kick": {
+      const r = await kickParticipant({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        targetId: String(body.targetId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+    // v10: 방장 모임 삭제 — 확인 팝업은 화면이 띄운다
+    case "deleteMeeting": {
+      const r = await deleteMeeting({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
     }
     // v7·v10: 지점 후보 등록 — 전원 가능 · 상한 없음 · 반경 밖은 서버가 거부
     case "addPlace": {

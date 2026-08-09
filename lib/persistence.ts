@@ -320,6 +320,32 @@ export async function setVote(
 }
 
 /** 한 단계의 표를 전부 비운다 — 후보가 바뀌면 기존 표는 의미가 없다 */
+/**
+ * 참가자 한 명을 지운다 — 강퇴 (v10).
+ * `votes` 는 `participant_id` FK 에 `on delete cascade` 가 걸려 있어 함께 사라진다.
+ */
+export async function deleteParticipantRow(participantId: string): Promise<void> {
+  if (!db) return;
+  try {
+    await db`delete from participants where id = ${participantId}`;
+  } catch (e) {
+    throw new Error(`참가자 삭제 실패: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * 모임을 통째로 지운다 — 방장 삭제 (v10).
+ * `participants` · `votes` 는 `code` FK 의 `on delete cascade` 로 함께 사라진다.
+ */
+export async function deleteMeetingRow(code: string): Promise<void> {
+  if (!db) return;
+  try {
+    await db`delete from meetings where code = ${code.toUpperCase()}`;
+  } catch (e) {
+    throw new Error(`모임 삭제 실패: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export async function clearVotes(code: string, target?: "region" | "place"): Promise<void> {
   if (!db) return;
   const key = code.toUpperCase();

@@ -283,6 +283,89 @@ test("§6 경계 reopen 후 같은 동으로 재확정하면 지점 후보가 �
 });
 
 // ═══════════════════════════════════════════════════════════════
+// §4-⑤ · §7 참여 · 인증 · 방장 권한
+// ═══════════════════════════════════════════════════════════════
+
+test("§4-⑤ 정원 8명 — 9번째는 입장 거부", async ({ request }) => {
+  const { code } = await setup(request);
+  // 방장 1명 + 7명 = 8명
+  for (let i = 2; i <= 8; i++) {
+    await act(request, { action: "join", code, name: `참가자${i}` });
+  }
+  const full = await get(request, code);
+  expect(full.totalParticipants).toBe(8);
+
+  const denied = await actFails(request, { action: "join", code, name: "아홉번째" });
+  expect(denied.error).toContain("정원이 가득");
+});
+
+test("§4-⑤ 이름 중복은 거부하고 별칭을 요구한다", async ({ request }) => {
+  const { code } = await setup(request);
+  await act(request, { action: "join", code, name: "김철수" });
+  const dup = await actFails(request, { action: "join", code, name: "김철수" });
+  expect(dup.error).toContain("이미");
+  // 별칭을 붙이면 들어간다
+  await act(request, { action: "join", code, name: "김철수2" });
+  expect((await get(request, code)).totalParticipants).toBe(3);
+});
+
+test("§4-⑤ 이름+PIN 으로 자리를 되찾고, 5회 틀리면 잠긴다", async ({ request }) => {
+  const { code } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "복구맨", pin: "1234" });
+
+  // 맞는 PIN → 같은 participantId 를 돌려준다 (새로 만들지 않는다)
+  const ok = await act(request, { action: "recover", code, name: "복구맨", pin: "1234" });
+  expect(ok.participantId).toBe(joined.participantId);
+  expect((await get(request, code)).totalParticipants, "복구가 새 참가자를 만들면 안 된다").toBe(2);
+
+  // 5회 틀리면 잠긴다 (v16)
+  for (let i = 0; i < 5; i++) {
+    await actFails(request, { action: "recover", code, name: "복구맨", pin: "0000" });
+  }
+  const locked = await actFails(request, { action: "recover", code, name: "복구맨", pin: "1234" });
+  expect(locked.error, "5회 초과 후엔 맞는 PIN 도 막혀야 한다").toContain("잠겼어요");
+});
+
+test("§7 강퇴는 방장만 · 그 사람의 표가 함께 사라진다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "나갈사람" });
+  const memberId: string = joined.participantId;
+
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "vote", code, participantId: memberId, target: "region", candidateId: regions[0].id });
+  expect((await get(request, code)).regionVotes[memberId]).toBe(regions[0].id);
+
+  // 참가자는 강퇴 못 한다
+  const denied = await actFails(request, { action: "kick", code, participantId: memberId, targetId: leaderId });
+  expect(denied.error).toContain("방장만");
+
+  // 방장이 강퇴 → 사람도 표도 사라진다
+  await act(request, { action: "kick", code, participantId: leaderId, targetId: memberId });
+  const after = await get(request, code);
+  expect(after.totalParticipants).toBe(1);
+  expect(after.regionVotes[memberId], "강퇴된 사람의 표가 남아 있다").toBeUndefined();
+
+  // v10: 재참여는 허용된다
+  await act(request, { action: "join", code, name: "나갈사람" });
+  expect((await get(request, code)).totalParticipants).toBe(2);
+});
+
+test("§7 모임 삭제는 방장만", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+
+  const denied = await actFails(request, {
+    action: "deleteMeeting", code, participantId: joined.participantId,
+  });
+  expect(denied.error).toContain("방장만");
+
+  await act(request, { action: "deleteMeeting", code, participantId: leaderId });
+  const res = await request.get(`/api/meeting?code=${code}`);
+  expect(res.status(), "삭제된 모임이 아직 조회된다").toBe(404);
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 화면 — 규칙이 실제로 그려지는가
 // ═══════════════════════════════════════════════════════════════
 
