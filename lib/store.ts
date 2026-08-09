@@ -421,24 +421,72 @@ export async function confirmRegion(
   if (!region) return { ok: false, error: "해당 지역 후보가 없어요." };
 
   m.winnerRegionId = region.id;
+  const how =
+    input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정";
+
+  // ── v19 §3: 확정 범위 분기 — 여기가 전체 흐름이 갈리는 지점이다 ──
+  if (m.scope === "region") {
+    // '지역까지' 모임: 지점 단계(⑧⑨)를 건너뛰고 바로 결과로 간다.
+    // 결과 화면은 지도만 보여준다 — 경로 API·지점 카카오 링크·도착 신호등 전부 숨김 (v11, v14).
+    m.stage = "result";
+    m.aiPhase = "done";
+    m.places = [];
+    m.placeVotes = {};
+    m.placeVoteOpen = false;
+    pushMsg(m, "system", "", `📍 모임 지역이 ${region.name}(으)로 확정됐어요 (${how}).`);
+    await write(m);
+    await clearVotes(m.code, "place");
+    return { ok: true, regionName: region.name };
+  }
+
+  // '지점까지' 모임: 확정 동 중심 반경 안에서 지점을 고른다.
   m.places = opts?.places?.length
     ? opts.places
     : generatePlaces(region.name, { lat: region.lat, lng: region.lng });
   m.aiPhase = "place";
-  m.stage = "chat"; // 메인에서 확정한 경우에도 가게 단계로 넘어간다
+  m.stage = "chat"; // 메인에서 확정한 경우에도 지점 단계로 넘어간다
   m.placeVotes = {};
-  pushMsg(
-    m,
-    "system",
-    "",
-    `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${
-      input.by === "vote" ? "투표 결과" : input.by === "ai" ? "AI 합의 판단" : "방장 확정"
-    }). 이제 장소를 정해요.`
-  );
+  // v8: 지점도 '등록 → 투표 시작(잠금) → 투표' 2단계다. 지금은 등록 단계로 연다.
+  m.placeVoteOpen = false;
+  // v15: 반경은 새 지역마다 700m 에서 다시 시작한다(확장 1회는 그 지역 안에서만 유효).
+  m.radiusM = 700;
+  pushMsg(m, "system", "", `📍 중간지역이 ${region.name}(으)로 확정됐어요 (${how}). 이제 장소를 정해요.`);
   await write(m);
-  // 가게 후보가 새로 만들어졌으니 이전 가게 표는 의미가 없다
+  // 지점 후보가 새로 만들어졌으니 이전 지점 표는 의미가 없다
   await clearVotes(m.code, "place");
   return { ok: true, regionName: region.name };
+}
+
+/**
+ * '지점도 정하기' 승격 — 방장만 (v11).
+ *
+ * `지역까지` 로 끝난 모임을 `지점까지` 로 올린다. **역방향은 없다.**
+ * 확정된 지역은 그대로 두고, 그 동 중심 반경 700m 에서 지점 후보 등록을 다시 연다.
+ */
+export async function promoteToPlace(input: {
+  code: string;
+  participantId: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const me = m.participants.find((p) => p.id === input.participantId);
+  if (!me?.isLeader) return { ok: false, error: "방장만 할 수 있어요." };
+  if (m.archivedAt) return { ok: false, error: "지난 모임은 되돌릴 수 없어요." };
+  if (m.scope !== "region") return { ok: false, error: "이미 '지점까지' 모임이에요." };
+  const region = m.regions.find((r) => r.id === m.winnerRegionId);
+  if (!region) return { ok: false, error: "확정된 지역이 없어요." };
+
+  m.scope = "place";
+  m.stage = "chat";
+  m.aiPhase = "place";
+  m.places = generatePlaces(region.name, { lat: region.lat, lng: region.lng });
+  m.placeVotes = {};
+  m.placeVoteOpen = false;
+  m.radiusM = 700;
+  pushMsg(m, "system", "", `📍 ${region.name} 안에서 만날 지점도 정하기로 했어요.`);
+  await write(m);
+  await clearVotes(m.code, "place");
+  return { ok: true };
 }
 
 // ── 장소 확정 (투표 마감 · AI 도구 · 방장 수동) → 결과 화면 ──

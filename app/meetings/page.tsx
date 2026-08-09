@@ -11,7 +11,8 @@ import V8Header from "../components/v8/V8Header";
 import { IcSearch, IcPeople } from "../components/v8/Icons";
 import { addIdentity } from "@/lib/identity";
 import { useSession } from "../components/v8/useSession";
-import type { MeetingState } from "@/lib/types";
+import type { MeetingState, MeetingScope, PurposeCategory } from "@/lib/types";
+import { PURPOSE_LABELS } from "@/lib/types";
 
 const STAGE_LABEL: Record<string, { text: string; on: boolean }> = {
   main: { text: "참석자 모집 중", on: false },
@@ -55,6 +56,11 @@ function MeetingsInner() {
   const [cPw, setCPw] = useState("");
   const [cLeader, setCLeader] = useState("");
   const [cTime, setCTime] = useState("");
+  // ── v19 생성 폼 (설계_v19.md §4-④) ──
+  // 확정 범위는 전체 흐름을 가르는 축이다. 기본 '지점까지' (v13).
+  const [cScope, setCScope] = useState<MeetingScope>("place");
+  // 목적 카테고리 — '지역까지'를 고르면 화면에서 숨긴다 (v15).
+  const [cPurpose, setCPurpose] = useState<PurposeCategory>("food");
   // 참여 폼
   const [jCode, setJCode] = useState("");
   const [jPw, setJPw] = useState("");
@@ -100,7 +106,16 @@ function MeetingsInner() {
       // 비워두면 로그인 이름 → 그것도 없으면 "방장"
       const leaderName = cLeader.trim() || session?.name || "방장";
       const headcount = 8;
-      const d = await post({ action: "create", name: cName, password: cPw, headcount, leaderName });
+      const d = await post({
+        action: "create",
+        name: cName,
+        password: cPw,          // @deprecated v2 — 서버가 검사하지 않는다
+        headcount,
+        leaderName,
+        // ── v19 ──
+        scope: cScope,
+        purposeCategory: cScope === "region" ? null : cPurpose,
+      });
       addIdentity(d.code, { id: d.participantId, name: leaderName, isLeader: true });
       // 모임 시간은 선택 입력 — 비워두면 나중에 홈/결과 화면에서도 정할 수 있다
       let timeText = "";
@@ -272,10 +287,53 @@ function MeetingsInner() {
                 <label className="label">모임 이름</label>
                 <input className="input" value={cName} onChange={(e) => setCName(e.target.value)} placeholder="예: 협성대 브레인파크 모임" />
               </div>
+              {/* ── v19 §3: 확정 범위 — 이 선택이 전체 흐름을 가른다 ──
+                     '지역까지' = 동네만 정하고 끝(지점 단계 건너뜀, 결과는 지도만)
+                     '지점까지' = 동네 확정 후 반경 700m 안에서 지점까지 정한다 (기본) */}
               <div>
-                <label className="label">패스워드</label>
-                <input className="input" value={cPw} onChange={(e) => setCPw(e.target.value)} placeholder="참여자에게 공유할 비밀번호" />
+                <label className="label">어디까지 정할까요?</label>
+                <div className="row" style={{ gap: 6 }}>
+                  {([
+                    ["region", "지역까지", "동네만 정해요"],
+                    ["place", "지점까지", "만날 곳까지 정해요"],
+                  ] as const).map(([v, label, hint]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={"btn sm grow" + (cScope === v ? "" : " ghost")}
+                      onClick={() => setCScope(v)}
+                      style={{ flexDirection: "column", gap: 2, padding: "8px 6px" }}
+                    >
+                      <b style={{ fontSize: 12.5 }}>{label}</b>
+                      <span className="faint" style={{ fontSize: 10 }}>{hint}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* v15: '지역까지' 모임엔 지점 단계가 없어 카테고리를 숨긴다 */}
+              {cScope === "place" && (
+                <div>
+                  <label className="label">무엇을 하러 모여요?</label>
+                  <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
+                    {(Object.keys(PURPOSE_LABELS) as PurposeCategory[]).map((k) => (
+                      <button
+                        key={k}
+                        type="button"
+                        className={"chip" + (cPurpose === k ? " ok" : " line")}
+                        onClick={() => setCPurpose(k)}
+                        style={{ cursor: "pointer", fontSize: 11.5 }}
+                      >
+                        {PURPOSE_LABELS[k]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="faint" style={{ fontSize: 10.5, margin: "6px 0 0" }}>
+                    지점을 고를 때 이 분류를 먼저 보여줘요. 나중에 바꿀 수 있어요.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="label">내 이름 (방장{session ? " · 선택" : ""})</label>
                 <input
@@ -290,7 +348,8 @@ function MeetingsInner() {
                 <input className="input" value={cTime} onChange={(e) => setCTime(e.target.value)} placeholder="예: 이번 주 토요일 저녁 7시" />
               </div>
               {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
-              <button className="btn" onClick={handleCreate} disabled={busy || !cName || !cPw}>
+              {/* v2: 비밀번호가 폐기돼 이름만 있으면 만들 수 있다 */}
+              <button className="btn" onClick={handleCreate} disabled={busy || !cName}>
                 {busy ? <span className="spinner" /> : "만들기"}
               </button>
               <button className="btn ghost" onClick={closeModal}>닫기</button>

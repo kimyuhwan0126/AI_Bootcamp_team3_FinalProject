@@ -801,6 +801,11 @@ export default function MeetingClient({ code }: { code: string }) {
             onOpenRoute={setRouteFor}
             onOpenReserve={() => setShowReserve(true)}
             onToast={flash}
+            // v11: '지점도 정하기' 승격 — 되돌릴 수 없으니 한 번 묻는다
+            onPromoteToPlace={() => {
+              if (!confirm("이 모임에서 만날 '지점'도 정하기로 할까요?\n되돌릴 수 없어요.")) return;
+              void act({ action: "promoteToPlace", participantId: me?.id }, "지점 정하기를 시작했어요");
+            }}
           />
         )}
       </div>

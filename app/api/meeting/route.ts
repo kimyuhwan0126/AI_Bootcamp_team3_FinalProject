@@ -17,7 +17,18 @@ import {
   setParticipantStatus,
   updatePrefs,
   getState,
+  promoteToPlace,
 } from "@/lib/store";
+import { MAX_PARTICIPANTS, PURPOSE_LABELS } from "@/lib/types";
+import type { PurposeCategory } from "@/lib/types";
+
+/**
+ * 요청 본문의 목적 카테고리를 좁은 타입으로. 모르는 값이면 null.
+ * (`any` 를 쓰지 않고 unknown 을 가드로 좁힌다 — CLAUDE.md §3-3)
+ */
+function toPurposeCategory(v: unknown): PurposeCategory | null {
+  return typeof v === "string" && v in PURPOSE_LABELS ? (v as PurposeCategory) : null;
+}
 import {
   resolveGeocode,
   recommendRegions,
@@ -89,25 +100,44 @@ async function handlePost(req: NextRequest) {
 
   switch (action) {
     case "create": {
-      if (!body.name || !body.password)
-        return NextResponse.json({ error: "모임이름과 비밀번호를 입력하세요." }, { status: 400 });
+      // v2: 비밀번호 폐기 — 이름만 있으면 만들 수 있다(참여는 초대 링크로만).
+      if (!body.name)
+        return NextResponse.json({ error: "모임 이름을 입력하세요." }, { status: 400 });
       const { code, leaderId } = await createMeeting({
         name: String(body.name).trim(),
-        password: String(body.password),
-        headcount: Number(body.headcount) || 4,
+        password: String(body.password ?? ""),
+        headcount: Number(body.headcount) || MAX_PARTICIPANTS,
         leaderName: String(body.leaderName || "방장").trim(),
+        // ── v19 생성 폼 ──
+        scope: body.scope === "region" ? "region" : "place",
+        purposeCategory: toPurposeCategory(body.purposeCategory),
+        meetTime: body.meetTime ? String(body.meetTime) : null,
+        leaderTransport: body.transport === "car" ? "car" : "transit",
+        leaderKakaoId: body.kakaoId ? String(body.kakaoId) : null,
       });
       return NextResponse.json({ ok: true, code, participantId: leaderId, isLeader: true });
     }
     case "join": {
       const r = await joinMeeting({
         code: String(body.code || "").toUpperCase(),
-        password: String(body.password || ""),
         name: String(body.name || "").trim(),
         headcount: Number(body.headcount) || 1,
+        // ── v19 ── PIN 은 비로그인만, 로그인이면 kakaoId 로 식별한다 (v15)
+        pin: body.pin ? String(body.pin) : null,
+        kakaoId: body.kakaoId ? String(body.kakaoId) : null,
+        transport: body.transport === "car" ? "car" : "transit",
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, code: String(body.code).toUpperCase(), participantId: r.participantId, isLeader: false });
+    }
+    // v11: '지점도 정하기' 승격 — '지역까지' 모임을 '지점까지'로. 역방향 없음.
+    case "promoteToPlace": {
+      const r = await promoteToPlace({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
     }
     case "origin": {
       const origin = String(body.origin || "").trim();

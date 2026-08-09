@@ -23,6 +23,16 @@ export const FLAGS = {
   /** 실시간 전송(WebSocket/Realtime). 끄면 기존 1.8초 폴링. */
   realtime: process.env.NEXT_PUBLIC_FF_REALTIME === "1",
 
+  /**
+   * 옛 모의 선입금 UI. **v17 에서 '선입금' 명칭이 폐기**돼 기본 꺼짐이다
+   * (결과 화면의 그 자리는 이제 '지점 카카오 링크 연결').
+   *
+   * 코드를 지우지 않고 플래그 뒤로 내린 이유: 옛 모임 행에 `reservation` 이
+   * 남아 있을 수 있어, 그 데이터를 열어볼 길은 남겨 둔다.
+   * ⚠️ 켜도 **모의결제**다 — 실제 카드·계좌 정보를 받지 않는다 (루트 CLAUDE.md §3-1).
+   */
+  mockPay: process.env.NEXT_PUBLIC_FF_MOCK_PAY === "1",
+
   /** 날씨 조건을 추천 점수에 반영. 끄면 ScoreContext.weather 가 undefined. */
   weather: process.env.NEXT_PUBLIC_FF_WEATHER === "1",
 

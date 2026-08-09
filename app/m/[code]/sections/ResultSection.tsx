@@ -11,6 +11,10 @@
 import type { MeetingState, RegionCandidate } from "@/lib/types";
 import TravelTimes from "./TravelTimes";
 import { openGoogleCalendar, downloadIcs } from "@/lib/calendar";
+import { FLAGS } from "@/lib/flags";
+
+/** @deprecated v17 — 옛 모의 선입금 UI. 기본 꺼짐 (NEXT_PUBLIC_FF_MOCK_PAY=1 로만 켠다) */
+const mockPayEnabled = FLAGS.mockPay;
 
 export interface ResultSectionProps {
   state: MeetingState;
@@ -22,6 +26,8 @@ export interface ResultSectionProps {
   onOpenRoute: (participantId: string) => void;
   onOpenReserve: () => void;
   onToast: (msg: string) => void;
+  /** v11: '지점도 정하기' 승격 (방장 · '지역까지' 모임에만 보인다) */
+  onPromoteToPlace: () => void;
 }
 
 export default function ResultSection({
@@ -32,7 +38,12 @@ export default function ResultSection({
   onOpenRoute,
   onOpenReserve,
   onToast,
+  onPromoteToPlace,
 }: ResultSectionProps) {
+  // v19 §3: 확정 범위가 '지역까지'인 모임. 경로 API·지점 카카오 링크·도착 신호등을
+  // 전부 숨긴다 (v11, v14). 이 화면의 분기는 전부 이 한 값에서 나온다.
+  const isRegionOnly = state.scope === "region";
+
   return (
     <>
       <div className="card center stack" style={{ gap: 6 }}>
@@ -75,12 +86,38 @@ export default function ResultSection({
               )}
             </div>
           </>
+        ) : isRegionOnly && state.winnerRegion ? (
+          // v11·v14: '지역까지' 모임 — 지역만 확정하고 끝난다.
+          // 경로·지점 카카오 링크·도착 신호등은 이 모임에 아예 없다.
+          <>
+            <h2 className="sec" style={{ fontSize: 20 }}>📍 {state.winnerRegion.name}</h2>
+            <p className="muted" style={{ fontSize: 12.5 }}>
+              이 동네에서 만나기로 했어요 — 정확한 장소는 각자 정해요.
+            </p>
+            <span className="chip ac" style={{ fontSize: 10.5 }}>
+              {aiChatEnabled ? "💬 AI 대화로 함께 정했어요" : "🗳️ 투표로 함께 정했어요"}
+            </span>
+          </>
         ) : (
           <p className="muted">확정된 장소가 없어요.</p>
         )}
       </div>
 
-      {destRegion ? (
+      {/* v11: '지역까지' 모임은 경로 API 를 쓰지 않는다 — 지도만 보여준다.
+             방장은 '지점도 정하기'로 승격할 수 있다(역방향 없음). */}
+      {isRegionOnly && isLeader && (
+        <div className="card stack" style={{ gap: 8 }}>
+          <span className="eyebrow">방장</span>
+          <button className="btn ok" onClick={onPromoteToPlace}>
+            📍 지점도 정하기
+          </button>
+          <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
+            {state.winnerRegion?.name} 안에서 만날 지점을 다시 정합니다. 되돌릴 수 없어요.
+          </p>
+        </div>
+      )}
+
+      {isRegionOnly ? null : destRegion ? (
         <TravelTimes
           state={state}
           dest={destRegion}
@@ -100,8 +137,38 @@ export default function ResultSection({
         </div>
       )}
 
-      {/* 유료서비스: 가게 예약 > 결제(선입금) */}
-      {state.winnerPlace && (
+      {/* ── v17: '선입금' 명칭 폐기 → '지점 카카오 링크 연결' ──
+             결제는 범위 외다(루트 CLAUDE.md §3-1). 이 자리는 이제 카카오맵 상세로
+             보내주는 링크 하나이고, **지점 모임에만** 뜬다.
+
+             ⚠️ 아래 옛 선입금 블록은 `FF_MOCK_PAY` 플래그 뒤로 내렸다 — 지우지 않은 이유는
+                옛 모임 데이터(state.reservation) 가 남아 있을 수 있어서다. 기본은 꺼짐. */}
+      {!isRegionOnly && state.winnerPlace && (
+        <div className="card stack" style={{ gap: 8 }}>
+          <span className="eyebrow">지점</span>
+          {state.winnerPlace.url ? (
+            <a
+              className="btn ok"
+              style={{ textDecoration: "none", textAlign: "center" }}
+              href={state.winnerPlace.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              🗺 카카오맵에서 {state.winnerPlace.name} 열기
+            </a>
+          ) : (
+            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+              이 지점은 카카오맵 상세 링크가 없어요.
+            </p>
+          )}
+          <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
+            길찾기·메뉴·전화는 카카오맵에서 확인하세요. 예약·결제는 모이머가 대신하지 않아요.
+          </p>
+        </div>
+      )}
+
+      {/* @deprecated v17 — 옛 모의 선입금. 기본 숨김이고 옛 데이터가 있을 때만 그린다. */}
+      {mockPayEnabled && state.winnerPlace && (
         <div className="card stack" style={{ gap: 10 }}>
           <div className="between">
             <span className="eyebrow">유료서비스 · 가게 예약</span>
