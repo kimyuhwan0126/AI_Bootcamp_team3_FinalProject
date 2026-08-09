@@ -9,9 +9,24 @@ import { useRouter, useSearchParams } from "next/navigation";
 import BottomNav from "../components/v8/BottomNav";
 import V8Header from "../components/v8/V8Header";
 import { IcSearch, IcPeople } from "../components/v8/Icons";
-import { addIdentity } from "@/lib/identity";
+import { addIdentity, getIdentities } from "@/lib/identity";
 import { useSession } from "../components/v8/useSession";
 import type { MeetingState, MeetingScope, PurposeCategory } from "@/lib/types";
+
+/** v19 §4-② 모임 탭 필터 — 단계 4 · 역할 2 · 지난 모임 1 (+ 전체) */
+type MeetingFilter =
+  | "all" | "gathering" | "region" | "place" | "confirmed" | "leader" | "joined" | "past";
+
+const FILTERS: { key: MeetingFilter; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "gathering", label: "모집" },
+  { key: "region", label: "지역" },
+  { key: "place", label: "지점" },
+  { key: "confirmed", label: "확정" },
+  { key: "leader", label: "방장" },
+  { key: "joined", label: "참여" },
+  { key: "past", label: "지난" },
+];
 import { PURPOSE_LABELS } from "@/lib/types";
 
 const STAGE_LABEL: Record<string, { text: string; on: boolean }> = {
@@ -37,6 +52,8 @@ function MeetingsInner() {
   const { session } = useSession();
   const [meetings, setMeetings] = useState<MeetingState[]>([]);
   const [filter, setFilter] = useState("");
+  /** v7: 모임 탭 필터 — 단계 4 + 역할 2 + 지난 모임 1 (+ 전체) */
+  const [tab, setTab] = useState<MeetingFilter>("all");
   const [modal, setModal] = useState<"create" | "join" | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -75,6 +92,18 @@ function MeetingsInner() {
     const open = params.get("open");
     if (open === "create" || open === "join") setModal(open);
   }, [params]);
+
+  // ── v19 §4-③·v11(v19 가 단순화): 내정보 기본값 자동 채움 ──
+  //  조건은 **'내정보에 값이 있으면'** 하나뿐이다 — 로그인 여부와 무관하다.
+  //  (v11 은 '카카오 로그인 + 기본 출발지 설정자만' 이었는데 v19 가 이렇게 줄였다)
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem("moimer:v8:profile") || "null");
+      if (p?.pin) setJPw(String(p.pin));
+    } catch {
+      /* 프로필이 없거나 깨졌으면 그냥 비워 둔다 */
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -198,9 +227,55 @@ function MeetingsInner() {
     router.replace("/meetings");
   }
 
-  const shown = meetings.filter((m) => !filter || m.name.includes(filter));
-  const ongoing = shown.filter((m) => m.stage !== "result");
-  const done = shown.filter((m) => m.stage === "result");
+  // ── v19 §4-② 통합 허브 ──
+  //  필터 7종 = 단계 4(모집·지역·지점·확정) + 역할 2(방장·참여) + 지난 모임 1.
+  //  '전체'까지 8개 칩이지만, v19 가 세는 "필터 7종"은 전체를 뺀 개수다.
+  const byName = meetings.filter((m) => !filter || m.name.includes(filter));
+
+  /** 이 모임이 지금 어느 칸인지 — 칩 라벨과 같은 기준으로 판정한다 */
+  function stageKey(m: MeetingState): MeetingFilter {
+    if (m.isPast) return "past";
+    if (m.stage === "result") return "confirmed";
+    if (m.aiPhase === "place") return "place";
+    if (m.stage === "chat") return "region";
+    return "gathering";
+  }
+
+  const amLeader = (m: MeetingState) =>
+    !!getIdentities(m.code).find((i) => i.isLeader);
+
+  const matches = (m: MeetingState) => {
+    switch (tab) {
+      case "all": return !m.isPast;          // 기본 목록에서 지난 모임은 뺀다
+      case "leader": return !m.isPast && amLeader(m);
+      case "joined": return !m.isPast && !amLeader(m);
+      case "past": return m.isPast;
+      default: return stageKey(m) === tab;
+    }
+  };
+
+  /**
+   * 시간순 정렬 (v7) — **가까운 모임이 위로.**
+   * 시간을 안 정한 모임은 맨 아래로 보낸다(언제인지 모르니 급하다고 말할 수 없다).
+   * 지난 모임 탭에서는 최근에 끝난 것부터.
+   */
+  const shown = byName.filter(matches).sort((a, b) => {
+    if (tab === "past") {
+      return new Date(b.archivedAt ?? 0).getTime() - new Date(a.archivedAt ?? 0).getTime();
+    }
+    const ta = a.meetTime ? new Date(a.meetTime).getTime() : Infinity;
+    const tb = b.meetTime ? new Date(b.meetTime).getTime() : Infinity;
+    return ta - tb;
+  });
+
+  /**
+   * 🔔 **투표할 것 상단 고정** (v6·v7).
+   * 지금 투표가 열려 있는 모임 — 내가 아직 안 찍었는지까지는 여기서 알 수 없어
+   * (내 participantId 가 모임마다 다르다) **투표가 열린 모임**을 올린다.
+   */
+  const needsVote = byName.filter(
+    (m) => !m.isPast && m.stage === "chat" && (m.aiPhase === "region" || m.placeVoteOpen)
+  );
 
   return (
     <main className="device v8-page">
@@ -217,42 +292,80 @@ function MeetingsInner() {
         </div>
       </div>
 
-      <div className="label" style={{ padding: "6px 16px 4px" }}>최근 등록 모임</div>
+      {/* ── 🔔 투표할 것 상단 고정 (v6·v7) ── */}
+      {needsVote.length > 0 && tab !== "past" && (
+        <div style={{ padding: "0 16px 6px" }}>
+          {needsVote.slice(0, 3).map((m) => (
+            <button
+              key={m.code}
+              className="v8-item"
+              style={{
+                cursor: "pointer", font: "inherit", textAlign: "left",
+                background: "var(--warn-bg, #FFF8E6)", borderColor: "var(--warn, #E5A400)",
+              }}
+              onClick={() => router.push(`/m/${m.code}`)}
+            >
+              <div className="grow">
+                <div className="i-title">🔔 투표하세요! — {m.name}</div>
+                <div className="i-sub">
+                  {m.aiPhase === "place" ? "지점" : "지역"} 투표 진행 중 · {m.totalParticipants}명
+                </div>
+              </div>
+              <span className="faint">›</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── 필터 7종 + 전체 (v7) ── */}
+      <div className="row" style={{ gap: 4, padding: "0 16px 8px", flexWrap: "wrap" }}>
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            className={"chip" + (tab === f.key ? " ok" : " line")}
+            style={{ cursor: "pointer", fontSize: 11.5 }}
+            onClick={() => setTab(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       <div className="v8-list" style={{ paddingBottom: 4 }}>
-        {ongoing.length === 0 ? (
-          <div className="v8-empty">진행 중인 모임이 없어요. 새 모임을 만들어보세요.</div>
+        {shown.length === 0 ? (
+          <div className="v8-empty">
+            {tab === "past" ? "지난 모임이 없어요." : "해당하는 모임이 없어요."}
+          </div>
         ) : (
-          ongoing.map((m) => {
+          shown.map((m) => {
             const s = STAGE_LABEL[m.stage] || STAGE_LABEL.main;
+            // D-day — 시간을 정한 모임만. 정렬 기준과 같은 값이라 눈으로 확인된다.
+            const d = m.meetTime
+              ? Math.round(
+                  (new Date(new Date(m.meetTime).toDateString()).getTime() -
+                    new Date(new Date().toDateString()).getTime()) / 86_400_000
+                )
+              : null;
             return (
-              <button key={m.code} className="v8-item" style={{ cursor: "pointer", font: "inherit", textAlign: "left" }} onClick={() => router.push(`/m/${m.code}`)}>
+              <button
+                key={m.code}
+                className="v8-item"
+                style={{ cursor: "pointer", font: "inherit", textAlign: "left", opacity: m.isPast ? 0.65 : 1 }}
+                onClick={() => router.push(`/m/${m.code}`)}
+              >
                 <div className="grow">
                   <div className="i-title">{m.name}</div>
-                  <div className="i-sub" style={s.on ? { color: "var(--ac)", fontWeight: 800 } : undefined}>
-                    {s.text} · {m.totalParticipants}명 · 코드 {m.code}
+                  <div className="i-sub" style={s.on && !m.isPast ? { color: "var(--ac)", fontWeight: 800 } : undefined}>
+                    {m.isPast ? "지난 모임" : s.text}
+                    {d != null && !m.isPast ? ` · ${d === 0 ? "D-DAY" : d > 0 ? `D-${d}` : `D+${-d}`}` : ""}
+                    {" · "}{m.totalParticipants}명
+                    {m.winnerPlace ? ` · ${m.winnerPlace.name}` : m.winnerRegion ? ` · ${m.winnerRegion.name}` : ""}
                   </div>
                 </div>
                 <span className="faint">›</span>
               </button>
             );
           })
-        )}
-      </div>
-
-      <div className="label" style={{ padding: "10px 16px 4px" }}>이전 모임</div>
-      <div className="v8-list">
-        {done.length === 0 ? (
-          <div className="v8-empty">아직 결정된 모임이 없어요.</div>
-        ) : (
-          done.map((m) => (
-            <button key={m.code} className="v8-item" style={{ cursor: "pointer", font: "inherit", textAlign: "left" }} onClick={() => router.push(`/m/${m.code}`)}>
-              <div className="grow">
-                <div className="i-title">{m.name}</div>
-                <div className="i-sub">확정 완료{m.winnerPlace ? ` · ${m.winnerPlace.name}` : ""}</div>
-              </div>
-              <span className="faint">›</span>
-            </button>
-          ))
         )}
       </div>
 

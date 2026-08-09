@@ -507,6 +507,61 @@ test("화면: 생성 폼에 확정 범위 토글이 있고 '지역까지'면 카
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });
 
+test("화면: §4-② 하단 탭은 3개다 (투표함·모임원은 통합됨)", async ({ page }) => {
+  await page.goto("/meetings");
+  const nav = page.locator(".v8-bottomnav");
+  await expect(nav).toBeVisible();
+  await expect(nav.locator("a")).toHaveCount(3);
+  for (const label of ["홈", "모임", "내정보"]) {
+    await expect(nav.getByText(label, { exact: true })).toBeVisible();
+  }
+  // v6 에서 사라진 탭
+  await expect(nav.getByText("투표함")).toHaveCount(0);
+  await expect(nav.getByText("모임원")).toHaveCount(0);
+});
+
+test("화면: §4-② 폐기된 /votes · /members 는 모임 탭으로 보낸다", async ({ page }) => {
+  await page.goto("/votes");
+  await expect(page).toHaveURL(/\/meetings$/);
+  await page.goto("/members");
+  await expect(page).toHaveURL(/\/meetings$/);
+});
+
+test("화면: §4-② 모임 탭에 필터 7종(+전체)이 있고 지난 모임이 걸러진다", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request, { name: "필터 테스트" });
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto("/meetings");
+
+  for (const label of ["전체", "모집", "지역", "지점", "확정", "방장", "참여", "지난"]) {
+    await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
+  }
+
+  // 기본('전체')에는 모집 중인 이 모임이 보인다
+  await expect(page.getByText("필터 테스트")).toBeVisible();
+  // '지난' 탭으로 가면 사라진다 (아직 지난 모임이 아니다)
+  await page.getByRole("button", { name: "지난", exact: true }).click();
+  await expect(page.getByText("지난 모임이 없어요")).toBeVisible();
+  // '모집' 탭에는 다시 보인다
+  await page.getByRole("button", { name: "모집", exact: true }).click();
+  await expect(page.getByText("필터 테스트")).toBeVisible();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("화면: §4-② 투표가 열린 모임은 상단에 고정된다", async ({ page, request }) => {
+  const { code, leaderId } = await setup(request, { name: "투표중 모임" });
+  await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto("/meetings");
+  await expect(page.getByText(/🔔 투표하세요!/)).toBeVisible();
+  await expect(page.getByText(/지역 투표 진행 중/)).toBeVisible();
+});
+
 test("화면: 지점 등록 단계에 미리보기 목록이 뜨고 탭하면 후보가 된다", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

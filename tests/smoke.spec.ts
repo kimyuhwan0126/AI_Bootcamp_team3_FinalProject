@@ -51,8 +51,10 @@ function collectErrors(page: Page): string[] {
 test("홈 화면이 실제로 그려진다", async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto("/");
-  // 하단 네비게이션 5탭 — 이게 안 보이면 셸이 안 그려진 것
-  for (const tab of ["홈", "모임", "투표함", "모임원", "내정보"]) {
+  // 하단 네비게이션 **3탭** — 이게 안 보이면 셸이 안 그려진 것.
+  // v6 에서 5 → 3 으로 줄었다: '투표함'·'모임원'은 모임 탭으로 통합됐다
+  // (설계_v19.md §4-②). 탭이 3개인지는 tests/v19-flow.spec.ts 가 따로 지킨다.
+  for (const tab of ["홈", "모임", "내정보"]) {
     await expect(page.getByRole("link", { name: new RegExp(tab) }).first()).toBeVisible();
   }
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
