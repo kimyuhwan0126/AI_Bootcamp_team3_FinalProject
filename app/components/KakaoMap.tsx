@@ -128,6 +128,7 @@ export default function KakaoMap({
   routes = [],
   candidates = [],
   onCandidateClick,
+  onMapClick,
 }: {
   pins: MapPin[];
   center: MapCenterPin | null;
@@ -141,6 +142,13 @@ export default function KakaoMap({
   /** 투표 후보 라벨 박스 — 누르면 onCandidateClick(id) */
   candidates?: MapCandidate[];
   onCandidateClick?: (id: string) => void;
+  /**
+   * v19 §4-⑥ **지도 핑** — 빈 지도를 탭하면 그 좌표를 준다.
+   * 넘기지 않으면 지도 클릭은 아무 일도 하지 않는다(기존 화면 동작 그대로).
+   * ⚠️ 후보 라벨 박스를 누른 경우는 `onCandidateClick` 이 먼저 받는다 —
+   *    카카오는 커스텀 오버레이 클릭을 지도 클릭으로 전파하지 않는다.
+   */
+  onMapClick?: (lat: number, lng: number) => void;
 }) {
   // 호출부는 pins/routes 를 렌더마다 새 배열로 만든다. 모임 상세는 1.8초마다
   // 폴링하므로 배열 참조를 그대로 의존성에 쓰면 오버레이가 계속 지워졌다 다시
@@ -155,6 +163,9 @@ export default function KakaoMap({
   // 클릭 콜백은 렌더마다 새 함수여도 오버레이를 다시 그릴 필요가 없다 → ref로 보관
   const clickRef = useRef(onCandidateClick);
   clickRef.current = onCandidateClick;
+  // 지도 클릭도 같은 이유로 ref — 리스너를 한 번만 붙이고 최신 콜백을 본다
+  const mapClickRef = useRef(onMapClick);
+  mapClickRef.current = onMapClick;
 
   const boxRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -176,6 +187,13 @@ export default function KakaoMap({
         mapRef.current = new kakao.maps.Map(boxRef.current, {
           center: new kakao.maps.LatLng(37.5665, 126.978), // 서울 시청 기본
           level: 8,
+        });
+        // v19 §4-⑥: 지도 탭 → 좌표. 리스너는 **지도 생성 시 한 번만** 붙이고
+        // 최신 콜백은 ref 로 본다 — 폴링(1.8초)마다 붙였다 떼면 클릭이 씹힌다.
+        kakao.maps.event.addListener(mapRef.current, "click", (e: any) => {
+          const ll = e?.latLng;
+          if (!ll || !mapClickRef.current) return;
+          mapClickRef.current(ll.getLat(), ll.getLng());
         });
       }
       setReady(true);

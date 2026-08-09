@@ -484,6 +484,58 @@ test("§4-⑪ 재모임은 방장만 · 로그인 멤버만 자동 이전", asyn
 });
 
 // ═══════════════════════════════════════════════════════════════
+// §4-⑥ 지도 핑 — 좌표만 보내면 후보가 된다 (동 스냅 · 인원당 1개 · 병합)
+// ═══════════════════════════════════════════════════════════════
+
+test("§4-⑥ 좌표만 보내도 후보가 만들어진다 (동 스냅 · 실패 시 좌표 이름 폴백)", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+
+  const r = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  expect(r.candidate?.name, "이름 없이 좌표만 보냈는데 후보 이름이 안 붙었다").toBeTruthy();
+  expect(r.candidate.source).toBe("manual");
+  expect(r.candidate.contributors, "핑을 찍은 사람이 기록돼야 병합·이탈이 계산된다").toContain(leaderId);
+});
+
+test("§4-⑥ 핑은 인원당 1개 — 다른 곳을 찍으면 옮겨간다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+
+  const first = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  // 충분히 떨어진 좌표(다른 동)를 찍는다
+  const second = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.4979, lng: 127.0276,
+  });
+  expect(second.candidate.id).not.toBe(first.candidate.id);
+
+  const st = await get(request, code);
+  // 옛 후보는 마지막 한 명이 빠져 사라진다 (v12)
+  expect(st.regions.some((r: { id: string }) => r.id === first.candidate.id),
+    "핑을 옮겼는데 옛 후보가 남아 있다").toBe(false);
+  expect(st.regions.length).toBe(1);
+});
+
+test("§4-⑥ 같은 곳을 두 사람이 찍으면 하나로 병합된다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+
+  const a = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  const b = await act(request, {
+    action: "addRegion", code, participantId: joined.participantId, lat: 37.5665, lng: 126.978,
+  });
+  expect(b.existing, "같은 동인데 새 후보가 만들어졌다").toBe(true);
+  expect(b.candidate.id).toBe(a.candidate.id);
+
+  const st = await get(request, code);
+  expect(st.regions.length, "같은 동은 하나로 병합돼야 한다").toBe(1);
+  expect(st.regions[0].contributors).toHaveLength(2);
+});
+
+// ═══════════════════════════════════════════════════════════════
 // §8 AI 추천 — 게이트 (💰 실제 호출은 하지 않는다)
 //
 //  ⚠️ 여기서는 **AI 를 부르지 않는다.** `NEXT_PUBLIC_FF_AI_VOTE` 가 꺼진 상태라

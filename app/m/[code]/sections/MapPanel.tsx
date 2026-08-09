@@ -39,6 +39,12 @@ export interface MapPanelProps {
   onFail: () => void;
   statusColorFor: (participantId: string) => string | undefined;
   onCandidateClick?: (candidateId: string) => void;
+  /**
+   * v19 §4-⑥ **핑 모드** — 켜면 지도를 탭해 지역 후보를 등록한다.
+   * 부모가 "지금이 지역 후보 등록 단계인가"를 판단해 넘긴다.
+   */
+  pingMode?: boolean;
+  onMapPing?: (lat: number, lng: number) => void;
 }
 
 export default function MapPanel({
@@ -54,9 +60,21 @@ export default function MapPanel({
   onFail,
   statusColorFor,
   onCandidateClick,
+  pingMode,
+  onMapPing,
 }: MapPanelProps) {
   return (
-      <div className="map">
+      <div className="map" style={pingMode ? { cursor: "crosshair" } : undefined}>
+        {/* v19 §4-⑥: 핑 모드일 때만 안내를 띄운다 — 지도가 갑자기 눌리는 화면이
+            되므로 무엇이 일어나는지 먼저 말해준다. */}
+        {pingMode && !fallback && (
+          <div
+            className="chip ok"
+            style={{ position: "absolute", top: 8, left: 8, zIndex: 5, fontSize: 11 }}
+          >
+            📍 지도를 눌러 후보 등록 (동 단위 · 1인 1개)
+          </div>
+        )}
         {/* 홈과 동일한 지도 조작 — 참가자가 2명 이상 위치를 넣었을 때만 의미가 있다 */}
         {!fallback && located.length > 0 && (
           <div className="v8-maplayer">
@@ -95,6 +113,7 @@ export default function MapPanel({
             routes={routes}
             candidates={mapCandidates}
             onCandidateClick={onCandidateClick}
+            onMapClick={pingMode ? onMapPing : undefined}
           />
         ) : (
           <>

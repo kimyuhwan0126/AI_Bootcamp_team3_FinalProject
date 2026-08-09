@@ -612,6 +612,17 @@ export default function MeetingClient({ code }: { code: string }) {
           onFail={() => setMapFallback(true)}
           statusColorFor={statusColorFor}
           onCandidateClick={me ? voteFromMap : undefined}
+          // ── v19 §4-⑥ 지도 핑 ──
+          //  지역 후보 **등록 단계**에서만 켠다. 투표가 시작되면 서버가 거부하므로
+          //  화면에서도 미리 꺼서 "눌리는데 안 되는" 상태를 만들지 않는다 (v5·v12).
+          pingMode={!!me && !viewingPast && !state.isPast && stage === "main" && state.aiPhase === "region"}
+          onMapPing={(lat, lng) => {
+            // 이름을 안 보낸다 — 서버가 동으로 스냅한다(실패하면 좌표 이름으로 폴백).
+            // 인원당 1개·같은 동 병합도 서버 규칙이라 여기서 따지지 않는다.
+            void act({ action: "addRegion", participantId: me?.id, lat, lng }).then((d: any) => {
+              flash(d?.existing ? `${d.candidate?.name}에 핑을 모았어요` : `${d?.candidate?.name ?? "후보"}를 등록했어요`);
+            });
+          }}
         />
 
         {viewingPast && <PastStepView step={displayStep} state={state} />}

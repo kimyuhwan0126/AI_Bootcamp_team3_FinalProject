@@ -59,6 +59,52 @@ export async function coord2AddressKakao(c: Coord): Promise<string | null> {
   }
 }
 
+/**
+ * 좌표 → **행정동** 스냅 (v19 §4-⑥ · v4 확정).
+ *
+ * 지도에 찍은 핑은 좌표 그대로가 아니라 **동 단위로 스냅**돼야 한다.
+ * 그래야 "같은 동은 하나로 병합"(v4)이 성립한다 — 3m 옆에 찍은 두 핑이
+ * 서로 다른 후보가 되면 투표가 갈라진다.
+ *
+ * `coord2regioncode` 는 법정동(`B`)과 행정동(`H`)을 함께 준다. 우리는 **행정동(H)**
+ * 을 쓴다 — 사람들이 말하는 "연남동·성수동"이 행정동 쪽에 가깝다.
+ *
+ * ⚠️ 실패하면 `null` 이고, **호출부가 좌표 기반 이름으로 폴백**한다 (v4).
+ *    키가 없어도 전체 플로우가 돌아야 한다 (CLAUDE.md §3-4).
+ */
+export async function coord2RegionKakao(
+  c: Coord
+): Promise<{ name: string; lat: number; lng: number } | null> {
+  if (!env.kakaoRest) return null;
+  try {
+    const url = `https://dapi.kakao.com/v2/local/geo/coord2regioncode.json?x=${c.lng}&y=${c.lat}`;
+    const r = await fetch(url, { headers: { Authorization: `KakaoAK ${env.kakaoRest}` } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const docs = (d.documents ?? []) as {
+      region_type?: string;
+      region_2depth_name?: string;
+      region_3depth_name?: string;
+      x?: number;
+      y?: number;
+    }[];
+    // 행정동(H) 우선, 없으면 법정동(B)
+    const doc = docs.find((x) => x.region_type === "H") ?? docs[0];
+    if (!doc) return null;
+    const name = [doc.region_2depth_name, doc.region_3depth_name].filter(Boolean).join(" ");
+    if (!name) return null;
+    // ⚠️ 좌표는 **동 중심**(카카오가 주는 x/y)을 쓴다. 찍은 자리를 그대로 두면
+    //    같은 동인데 후보 위치가 사람마다 달라 지도에서 핀이 흩어진다.
+    return {
+      name,
+      lat: Number.isFinite(doc.y) ? Number(doc.y) : c.lat,
+      lng: Number.isFinite(doc.x) ? Number(doc.x) : c.lng,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── (선택) 지역 인근 가게 검색 — 2차 추천장소 실데이터용 ──
 // 카카오 category_name 은 "음식점 > 카페 > 커피전문점 > 파스쿠찌" 처럼
 // 마지막 칸이 브랜드명인 경우가 많다. 마지막을 그대로 쓰면 상호가 카테고리로

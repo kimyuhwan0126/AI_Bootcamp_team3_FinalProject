@@ -48,6 +48,7 @@ import {
   scoreRegionForParticipants,
 } from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
+import { coord2RegionKakao } from "@/lib/kakao";
 import { aiRegionVote, aiPlaceVote } from "@/lib/ai-vote";
 
 // 인메모리 스토어를 쓰므로 항상 동적 처리 (캐시 금지)
@@ -337,12 +338,33 @@ async function handlePost(req: NextRequest) {
       const me = st.participants.find((p) => p.id === body.participantId);
       if (!me) return NextResponse.json({ error: "참가자를 찾을 수 없어요." }, { status: 400 });
 
-      const name = String(body.name || "").trim();
-      if (!name) return NextResponse.json({ error: "지역 이름이 비었어요." }, { status: 400 });
-
-      // 좌표는 지도 검색 결과에서 그대로 받는다(없으면 이름으로 지오코딩)
+      // ── v19 §4-⑥ 지도 핑 ──
+      //  이름 없이 좌표만 오면(=지도를 탭한 경우) **동으로 스냅**한다.
+      //  같은 동은 하나로 병합돼야 해서(v4), 좌표 그대로 두면 3m 옆에 찍은 핑이
+      //  서로 다른 후보가 되고 투표가 갈라진다.
+      //  ⚠️ 스냅 실패(키 없음·API 오류)는 정상 경로다 — **좌표 기반 이름으로 폴백**한다(v4).
       const hasCoord = typeof body.lat === "number" && typeof body.lng === "number";
-      const hub = hasCoord ? { lat: body.lat as number, lng: body.lng as number } : await resolveGeocode(name);
+      let name = String(body.name || "").trim();
+      let hub: { lat: number; lng: number };
+
+      if (!name && hasCoord) {
+        const snapped = await coord2RegionKakao({ lat: body.lat as number, lng: body.lng as number });
+        if (snapped) {
+          name = snapped.name;
+          hub = { lat: snapped.lat, lng: snapped.lng };
+        } else {
+          // 폴백: 좌표를 소수 3자리로 끊어 이름을 만든다 —
+          // 같은 자리를 두 번 찍으면 같은 이름이 나와 병합 규칙이 그대로 산다.
+          const la = (body.lat as number).toFixed(3);
+          const ln = (body.lng as number).toFixed(3);
+          name = `지도 ${la}, ${ln}`;
+          hub = { lat: body.lat as number, lng: body.lng as number };
+        }
+      } else {
+        if (!name) return NextResponse.json({ error: "지역 이름이 비었어요." }, { status: 400 });
+        // 좌표는 지도 검색 결과에서 그대로 받는다(없으면 이름으로 지오코딩)
+        hub = hasCoord ? { lat: body.lat as number, lng: body.lng as number } : await resolveGeocode(name);
+      }
 
       // 출발지를 등록한 사람이 아무도 없으면 이동시간을 계산할 수 없다 —
       // 그래도 후보로는 올릴 수 있게 0으로 두고, 출발지가 모이면 재계산된다.
@@ -359,6 +381,8 @@ async function handlePost(req: NextRequest) {
         devMin,
         perParticipant,
         proposedBy: me.name,
+        // v4: 핑은 인원당 1개 — 누가 찍었는지 알아야 병합·이동·이탈이 계산된다
+        participantId: me.id,
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, candidate: r.candidate, existing: r.existing ?? false });
