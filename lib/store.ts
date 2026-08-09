@@ -452,9 +452,13 @@ export async function confirmRegion(
     m.places = stash.places;
     m.placeVotes = { ...stash.votes };
   } else {
-    m.places = opts?.places?.length
-      ? opts.places
-      : generatePlaces(region.name, { lat: region.lat, lng: region.lng });
+    // ⚠️ v19: **시스템이 지점 후보를 미리 담지 않는다.**
+    //    후보는 사람이 미리보기 핀을 탭해서 만든다(`addPlaceCandidate`) — 그래서
+    //    빈 배열로 연다. 예전엔 여기서 `generatePlaces()` 로 4개를 미리 넣었는데,
+    //    그러면 "후보 0개면 투표 시작 불가"(v8) 규칙이 영영 안 걸리고
+    //    아무도 등록하지 않아도 투표가 열려 버린다.
+    //    (AI 지점 추천은 방장 버튼으로 따로 들어온다 — opts.places)
+    m.places = opts?.places?.length ? opts.places : [];
     m.placeVotes = {};
   }
   m.stashedPlaces = null; // 한 번 쓰거나 폐기하면 비운다
@@ -736,6 +740,149 @@ export async function saveCandidates(
 }
 
 // ── 다시 논의 (Leader): 장소 단계 → 지역 단계로, 결과 → 장소 단계로 ──
+// ═══════════════════════════════════════════════════════════════
+// v19 지점 단계 (설계_v19.md §4-⑧)
+//
+//  확정 동 중심 **반경 700m** 안에서만 고른다. 밖은 거부한다.
+//  확장은 **700 → 1400m, 1회 한정**이고 누구나 누를 수 있으며 전체에 공유된다 (v15).
+// ═══════════════════════════════════════════════════════════════
+
+/** 두 좌표 사이 거리(m) — haversine. 반경 판정에만 쓰므로 지구 반지름 상수 하나면 충분하다. */
+export function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
+): number {
+  const R = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180;
+  const la2 = (b.lat * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
+
+/**
+ * 반경 확장 — **700 → 1400m, 1회 한정. 누구나. 전체 공유** (v15).
+ *
+ * 방장 전용이 아닌 이유: 후보가 안 나와서 막힌 사람이 직접 풀 수 있어야 하기 때문이다.
+ * 대신 전체에 적용되므로 한 번 넓히면 모두가 넓은 반경을 본다.
+ */
+export async function expandRadius(input: {
+  code: string;
+  participantId: string;
+}): Promise<{ ok: boolean; error?: string; radiusM?: number }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  if (!m.participants.some((x) => x.id === input.participantId))
+    return { ok: false, error: "참가자를 찾을 수 없어요." };
+  if (m.aiPhase !== "place") return { ok: false, error: "지점 단계가 아니에요." };
+  if (m.radiusM >= 1400)
+    return { ok: false, error: "이미 최대(1400m)까지 넓혔어요. 다른 카테고리나 검색을 써보세요." };
+
+  m.radiusM = 1400;
+  pushMsg(m, "system", "", "🔍 검색 반경을 1400m(도보 20분)로 넓혔어요.");
+  await write(m);
+  return { ok: true, radiusM: m.radiusM };
+}
+
+/**
+ * 지점 후보 등록 — **전원 가능 · 상한 없음** (v7, v10).
+ *
+ * 반경 밖이면 거부한다. 같은 지점을 두 번 등록하면 기존 것을 돌려준다.
+ */
+export async function addPlaceCandidate(input: {
+  code: string;
+  participantId: string;
+  place: {
+    name: string;
+    category: string;
+    emoji?: string;
+    lat: number;
+    lng: number;
+    rating?: number;
+    url?: string;
+  };
+}): Promise<{ ok: boolean; error?: string; candidate?: PlaceCandidate; existing?: boolean }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const me = m.participants.find((x) => x.id === input.participantId);
+  if (!me) return { ok: false, error: "참가자를 찾을 수 없어요." };
+
+  // v12: 잠긴 뒤 도착한 등록은 서버가 거부한다
+  if (phaseStepOf(m) !== "place-register")
+    return { ok: false, error: "단계가 바뀌었어요 — 후보 등록이 끝났어요." };
+
+  const region = m.regions.find((r) => r.id === m.winnerRegionId);
+  if (!region) return { ok: false, error: "확정된 지역이 없어요." };
+
+  // v4·v15: 확정 동 중심 반경 밖은 거부
+  const d = distanceM(region, input.place);
+  if (d > m.radiusM)
+    return {
+      ok: false,
+      error: `${region.name} 중심에서 ${d}m 떨어져 있어요 (제한 ${m.radiusM}m). 반경을 넓히거나 더 가까운 곳을 골라주세요.`,
+    };
+
+  const norm = (s: string) => s.replace(/\s/g, "");
+  const dup = m.places.find((p) => norm(p.name) === norm(input.place.name));
+  if (dup) return { ok: true, candidate: dup, existing: true };
+
+  const candidate: PlaceCandidate = {
+    id: genId("pc_"),
+    name: input.place.name,
+    category: input.place.category,
+    emoji: input.place.emoji || "📍",
+    lat: input.place.lat,
+    lng: input.place.lng,
+    distanceM: d,
+    // ⚠️ 0 = 정보 없음. 없는 별점을 지어내지 않는다 (CLAUDE.md §3-6).
+    rating: input.place.rating ?? 0,
+    reservable: false,
+    depositPerHead: 0,
+    url: input.place.url,
+    source: "manual",
+    proposedById: me.id,
+    proposedBy: me.name,
+  };
+  m.places.push(candidate);
+  await write(m);
+  // 후보가 늘어나는 것은 기존 표를 무효화하지 않는다
+  return { ok: true, candidate };
+}
+
+/**
+ * 지점 후보 삭제 — **방장은 임의 후보, 본인은 자기 후보만** (v7).
+ * 삭제된 후보에 찍힌 표는 함께 사라진다 (v10 — "삭제된 후보의 표만 사라진다").
+ */
+export async function removePlaceCandidate(input: {
+  code: string;
+  participantId: string;
+  placeId: string;
+}): Promise<Result> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const me = m.participants.find((x) => x.id === input.participantId);
+  if (!me) return { ok: false, error: "참가자를 찾을 수 없어요." };
+  if (m.aiPhase !== "place" || m.stage === "result")
+    return { ok: false, error: "지금은 후보를 지울 수 없어요." };
+
+  const target = m.places.find((p) => p.id === input.placeId);
+  if (!target) return { ok: false, error: "해당 후보가 없어요." };
+  if (!me.isLeader && target.proposedById !== me.id)
+    return { ok: false, error: "내가 등록한 후보만 지울 수 있어요." };
+
+  m.places = m.places.filter((p) => p.id !== input.placeId);
+  // v10: **그 후보에 찍힌 표만** 사라진다. 다른 후보의 표는 건드리지 않는다.
+  const orphaned = Object.entries(m.placeVotes ?? {})
+    .filter(([, cid]) => cid === input.placeId)
+    .map(([pid]) => pid);
+  for (const pid of orphaned) delete m.placeVotes[pid];
+  await write(m);
+  if (hasDb) for (const pid of orphaned) await setVote(m.code, "place", pid, null);
+  return { ok: true };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // v19 단계 규칙 (설계_v19.md §5·§6)
 //

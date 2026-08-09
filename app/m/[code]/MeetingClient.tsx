@@ -12,6 +12,7 @@ import { arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
 import { formatMinutes, formatGap } from "@/lib/format";
 import ChatPanel from "./sections/ChatPanel";
 import VoteList from "./sections/VoteList";
+import PlacePicker from "./sections/PlacePicker";
 import PastStepView from "./sections/PastStepView";
 import TravelTimes from "./sections/TravelTimes";
 import AddParticipant from "./sections/AddParticipant";
@@ -693,7 +694,18 @@ export default function MeetingClient({ code }: { code: string }) {
         {/* ══════════════ STAGE: CHAT (투표 대체 · AI 파실리테이터) ══════════════ */}
         {!viewingPast && stage === "chat" && (
           <>
-            {/* 후보 카드 — 현재 논의 대상 요약(탭하면 지지 의견 전송) */}
+            {/* v19 §4-⑧: 지점 **등록** 칸에서는 투표 목록 대신 후보 등록 화면이 뜬다.
+                   (등록 → 투표 시작(잠금) → 투표 순서라 두 화면이 겹치지 않는다) */}
+            {!AI_CHAT_ENABLED && state.aiPhase === "place" && !state.placeVoteOpen ? (
+              <PlacePicker
+                state={state}
+                isLeader={isLeader}
+                busy={busy}
+                myId={me?.id}
+                onAction={act}
+              />
+            ) : (
+            /* 후보 카드 — 현재 논의 대상 요약(탭하면 지지 의견 전송) */
             <div className="card stack" style={{ gap: 10 }}>
               <div className="between">
                 <div>
@@ -771,6 +783,7 @@ export default function MeetingClient({ code }: { code: string }) {
               </p>
               {!AI_CHAT_ENABLED && voteCardActions(state.aiPhase === "region" ? "region" : "place")}
             </div>
+            )}
 
             {/* 참가자별 이동시간 + 경로 상세 (시안1·2) */}
             {destRegion && <TravelTimes state={state} dest={destRegion} onOpen={setRouteFor} />}

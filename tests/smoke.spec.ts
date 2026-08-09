@@ -149,10 +149,37 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   await page.reload();
   await expect(page.getByText(topRegion).filter({ visible: true }).first()).toBeVisible();
 
-  // ── 5. 가게까지 확정 → 최종 결과 화면 ──
+  // ── 5. 지점 후보 등록 → 투표 시작 → 확정 → 최종 결과 화면 ──
   //  발표에서 마지막으로 보여주는 화면이라 여기까지 와야 데모 경로가 끝난다.
-  expect(afterConfirm.places?.length, "거점 확정 후 가게 후보가 안 만들어졌다").toBeGreaterThan(0);
-  const topPlace = afterConfirm.places[0];
+  //
+  //  ⚠️ v19: 지역을 확정해도 **지점 후보는 비어 있다.** 시스템이 후보를 미리
+  //     담지 않고, 사람이 미리보기 핀을 탭해서 등록한다(§4-⑧).
+  //     예전엔 confirmRegion 이 generatePlaces() 로 4개를 미리 넣었다.
+  expect(afterConfirm.places?.length ?? 0, "지점 후보는 확정 직후 비어 있어야 한다").toBe(0);
+  expect(afterConfirm.radiusM, "지점 반경은 700m 에서 시작한다").toBe(700);
+
+  // 미리보기 POI 를 받아 그중 하나를 후보로 등록한다 (화면의 '탭' 에 해당)
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  expect(poi.items?.length, "반경 안에 미리보기 POI 가 하나도 없다").toBeGreaterThan(0);
+  const pick = poi.items[0];
+  const added = await act(request, {
+    action: "addPlace",
+    code,
+    participantId: leaderId,
+    name: pick.name,
+    category: pick.category,
+    emoji: pick.emoji,
+    lat: pick.lat,
+    lng: pick.lng,
+    url: pick.url,
+  });
+  const topPlace = added.candidate;
+  expect(topPlace?.id, "지점 후보 등록이 실패했다").toBeTruthy();
+
+  // 후보가 1개면 v8 규칙상 투표를 생략하고 방장이 바로 확정한다
+  const started = await act(request, { action: "startVote", code, participantId: leaderId });
+  expect(started.skipped, "후보 1개면 투표를 생략해야 한다").toBe(true);
+
   await act(request, {
     action: "confirmManual",
     code,

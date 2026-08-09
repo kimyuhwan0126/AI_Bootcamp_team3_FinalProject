@@ -20,6 +20,9 @@ import {
   promoteToPlace,
   startVote,
   reopenStep,
+  addPlaceCandidate,
+  removePlaceCandidate,
+  expandRadius,
 } from "@/lib/store";
 import { MAX_PARTICIPANTS, PURPOSE_LABELS } from "@/lib/types";
 import type { PurposeCategory } from "@/lib/types";
@@ -34,7 +37,6 @@ function toPurposeCategory(v: unknown): PurposeCategory | null {
 import {
   resolveGeocode,
   recommendRegions,
-  recommendPlaces,
   scoreRegionForParticipants,
 } from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
@@ -131,6 +133,43 @@ async function handlePost(req: NextRequest) {
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, code: String(body.code).toUpperCase(), participantId: r.participantId, isLeader: false });
+    }
+    // v7·v10: 지점 후보 등록 — 전원 가능 · 상한 없음 · 반경 밖은 서버가 거부
+    case "addPlace": {
+      const r = await addPlaceCandidate({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        place: {
+          name: String(body.name || "").trim(),
+          category: String(body.category || "장소"),
+          emoji: body.emoji ? String(body.emoji) : undefined,
+          lat: Number(body.lat),
+          lng: Number(body.lng),
+          rating: Number(body.rating) || 0,
+          url: body.url ? String(body.url) : undefined,
+        },
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, candidate: r.candidate, existing: !!r.existing });
+    }
+    // v7: 방장은 임의 후보, 본인은 자기 후보만 삭제
+    case "removePlace": {
+      const r = await removePlaceCandidate({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        placeId: String(body.placeId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+    // v15: 반경 확장 700→1400m · 1회 한정 · 누구나 · 전체 공유
+    case "expandRadius": {
+      const r = await expandRadius({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, radiusM: r.radiusM });
     }
     // v5·v8: 투표 시작 = 후보 잠금. 후보 0개면 거부, 1개면 투표를 생략한다.
     case "startVote": {
@@ -310,15 +349,12 @@ async function handlePost(req: NextRequest) {
       if (body.target === "place") {
         r = await confirmPlace({ code: body.code, placeId: String(body.id), by: "leader" });
       } else {
-        // 지역 수동 확정 시에도 실제 가게를 검색해 주입 (실패 시 mock 폴백)
-        const region = st.regions.find((x: any) => x.id === String(body.id));
-        const real = region
-          ? await recommendPlaces(region.name, { lat: region.lat, lng: region.lng })
-          : undefined;
-        r = await confirmRegion(
-          { code: body.code, regionId: String(body.id), by: "leader" },
-          { places: real }
-        );
+        // ⚠️ v19 §4-⑧: 지역을 확정해도 **지점 후보를 미리 주입하지 않는다.**
+        //    후보는 사람이 미리보기 핀을 탭해서 만든다(`addPlace`) — 미리 담아두면
+        //    "후보 0개면 투표 시작 불가"(v8) 규칙이 영영 안 걸린다.
+        //    미리보기 목록은 `/api/place-poi` 가 따로 내려준다.
+        //    (AI 지점 추천만 예외적으로 후보를 공급한다 — 방장 버튼)
+        r = await confirmRegion({ code: body.code, regionId: String(body.id), by: "leader" });
       }
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true });

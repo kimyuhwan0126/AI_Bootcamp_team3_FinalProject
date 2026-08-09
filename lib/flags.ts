@@ -33,6 +33,15 @@ export const FLAGS = {
    */
   mockPay: process.env.NEXT_PUBLIC_FF_MOCK_PAY === "1",
 
+  /**
+   * 지점 별점 조회(카카오맵 웹). **팀 결정 2026-08-09 — 설계_v19.md §13-A.**
+   *
+   * 기본 꺼짐인 이유: 팀원 로컬·CI 에는 크롬이 없을 수 있고, 꺼도 "정보 없음"으로
+   * 정상 동작한다(`rating: 0` → UI 가 별을 안 그린다). **발표 노트북에서만 켠다.**
+   * ⚠️ 켠 채로 두면 지점 조회가 눈에 띄게 느려진다 — 리허설에서 실측할 것.
+   */
+  placeRating: process.env.NEXT_PUBLIC_FF_PLACE_RATING === "1",
+
   /** 날씨 조건을 추천 점수에 반영. 끄면 ScoreContext.weather 가 undefined. */
   weather: process.env.NEXT_PUBLIC_FF_WEATHER === "1",
 
