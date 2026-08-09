@@ -1,0 +1,385 @@
+﻿<!DOCTYPE html>
+<html lang="ko" class="nojs">
+<head>
+<meta charset="utf-8">
+<title>모이머 전체 화면 순서도</title>
+<style>
+  html,body{margin:0;padding:0;background:#fff;height:100%}
+  /* ── 팬·줌 뷰어 ──
+     JS 가 도는 브라우저: #world 를 transform 으로 확대·이동한다.
+     JS 가 막힌 곳(정적 스냅샷): .nojs 폴백 — 창 폭에 맞춰 통짜로 보여준다. */
+  #vp{position:fixed;inset:0;overflow:hidden;cursor:grab;background:#fff}
+  #vp.drag{cursor:grabbing}
+  #world{transform-origin:0 0;width:1560px}
+  svg{display:block;width:1560px;height:auto}
+  .nojs #vp{position:static;overflow:auto}
+  .nojs #world{width:100%}
+  .nojs svg{width:100%;max-width:2040px}
+  /* 줌 버튼 */
+  #hud{position:fixed;top:14px;right:14px;display:flex;gap:6px;align-items:center;z-index:10;
+       background:#ffffffd9;border:1px solid #d7dde3;border-radius:10px;padding:6px 8px;
+       font:600 12px "Malgun Gothic",sans-serif;color:#445;box-shadow:0 2px 8px #0001}
+  .nojs #hud{display:none}
+  #hud button{width:30px;height:30px;border:1px solid #c9d3dc;border-radius:8px;background:#fff;
+       font:700 15px "Malgun Gothic",sans-serif;color:#345;cursor:pointer}
+  #hud button:hover{background:#eef4fa}
+  #hud #fit{width:auto;padding:0 10px;font-size:11.5px}
+  #pct{min-width:42px;text-align:center;color:#667}
+  #hint{position:fixed;left:14px;bottom:12px;z-index:10;font:400 10.5px "Malgun Gothic",sans-serif;
+       color:#98a2ac;background:#ffffffd9;border-radius:8px;padding:4px 8px}
+  .nojs #hint{display:none}
+  /* ?shot=1 — PNG 캡처용: 줌 버튼·안내를 감춘다 */
+  .shot #hud,.shot #hint{display:none}
+
+  .hd{fill:#f1f2f4}.hdt{font:600 13px "Malgun Gothic",sans-serif;fill:#333}
+  .hdg{fill:#e7f2e4}.hdgt{font:600 13px "Malgun Gothic",sans-serif;fill:#2e7d32}
+  .lane{fill:none;stroke:#dcdcdc;stroke-width:1.2}
+  .lgreen{fill:none;stroke:#6aa860;stroke-width:1.8}
+  .col{fill:none;stroke:#c8d8e8;stroke-width:1.2}
+  .colh{fill:#eef4fa}
+  .b{fill:#eaf3fb;stroke:#5b8fc9;stroke-width:1.3}
+  .g{fill:#edf6ea;stroke:#6aa860;stroke-width:1.3}
+  .n{fill:#f7f7f8;stroke:#cfcfcf;stroke-width:1.2;stroke-dasharray:5 4}
+  .q{fill:#fff;stroke:#8aa4bd;stroke-width:1.3}
+  .pill{fill:#fff;stroke:#c9d3dc;stroke-width:1.2}
+  .bt{font:600 12px "Malgun Gothic",sans-serif;fill:#1a5c9e}
+  .gt{font:600 12px "Malgun Gothic",sans-serif;fill:#2e7d32}
+  .nt{font:600 12px "Malgun Gothic",sans-serif;fill:#7a7a7a}
+  .qt{font:600 12px "Malgun Gothic",sans-serif;fill:#38546e}
+  .sub{font:400 10.5px "Malgun Gothic",sans-serif;fill:#6b7a88}
+  .subg{font:400 10.5px "Malgun Gothic",sans-serif;fill:#9a9a9a}
+  .arr{stroke:#9aa0a6;stroke-width:1.3;fill:none}
+  .arg{stroke:#6aa860;stroke-width:1.8;fill:none}
+  .ard{stroke:#b0b6bc;stroke-width:1.2;fill:none;stroke-dasharray:5 4}
+  .al{font:400 10px "Malgun Gothic",sans-serif;fill:#8a9099}
+  .num{font:700 12px "Malgun Gothic",sans-serif;fill:#2e7d32}
+  .leg{font:400 11px "Malgun Gothic",sans-serif;fill:#666}
+  .okt{font:600 12.5px "Malgun Gothic",sans-serif;fill:#2e7d32}
+  .ttl{font:700 17px "Malgun Gothic",sans-serif;fill:#1f2328}
+  .sttl{font:400 11.5px "Malgun Gothic",sans-serif;fill:#6b7a88}
+  .cth{font:700 13px "Malgun Gothic",sans-serif;fill:#1f2328}
+  .cts{font:400 10.5px "Malgun Gothic",sans-serif;fill:#6b7a88}
+  .tab{font:700 10px "Malgun Gothic",sans-serif;fill:#5b8fc9}
+</style>
+</head>
+<body>
+<div id="hud">
+  <button id="zi" title="확대 (휠 위로)">＋</button>
+  <button id="zo" title="축소 (휠 아래로)">－</button>
+  <span id="pct">100%</span>
+  <button id="fit" title="전체가 보이게 맞춤">화면 맞춤</button>
+</div>
+<div id="hint">🖱 휠 = 줌 · 드래그 = 이동 · 더블클릭 = 그 지점 확대</div>
+<div id="vp"><div id="world">
+<svg viewBox="0 0 1560 1290" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="m" markerWidth="8" markerHeight="8" refX="6.5" refY="2.8" orient="auto"><path d="M0,0 L6,2.8 L0,5.6" class="arr"/></marker>
+<marker id="mg" markerWidth="8" markerHeight="8" refX="6.5" refY="2.8" orient="auto"><path d="M0,0 L6,2.8 L0,5.6" class="arg"/></marker>
+<marker id="md" markerWidth="8" markerHeight="8" refX="6.5" refY="2.8" orient="auto"><path d="M0,0 L6,2.8 L0,5.6" class="ard"/></marker>
+</defs>
+
+<text x="16" y="28" class="ttl">모이머 전체 화면 순서도 — 설계 확정판 v19 (2026-08-07)</text>
+<text x="16" y="47" class="sttl">화면 3종: 홈 · 모임 상세 · 하단 3탭. 투표는 지도 핑, AI 는 방장 opt-in, 확정 범위(지역/지점)는 생성 시 설정 — 변경 이력은 하단 ✎ v2–v19.</text>
+
+<!-- ══════ 화면 ① 홈 — 왼쪽 세로 흐름 ══════ -->
+<rect x="12" y="66" width="276" height="520" rx="12" class="lane"/>
+<rect x="12" y="66" width="276" height="30" rx="12" class="hd"/>
+<text x="24" y="86" class="hdt">화면 ① 홈  /  — 지도 전체화면 · 목업 반영</text>
+
+<rect x="32" y="112" width="236" height="46" rx="10" class="q"/>
+<text x="150" y="131" text-anchor="middle" class="qt">출발지 검색 · 추가</text>
+<text x="150" y="147" text-anchor="middle" class="sub">자동완성 · 최근 · 대중교통/자차 토글</text>
+<path d="M150,158 L150,178" class="arr" marker-end="url(#m)"/>
+
+<rect x="32" y="182" width="236" height="46" rx="10" class="q"/>
+<text x="150" y="201" text-anchor="middle" class="qt">출발지 카드 슬라이더 (최대 8)</text>
+<text x="150" y="217" text-anchor="middle" class="sub">색 배지 · 탭: 포커스→시트→숨김</text>
+<path d="M150,228 L150,248" class="arr" marker-end="url(#m)"/>
+
+<rect x="32" y="252" width="236" height="46" rx="10" class="q"/>
+<text x="150" y="271" text-anchor="middle" class="qt">기준 전환 — 거리순 ↔ 시간순</text>
+<text x="150" y="287" text-anchor="middle" class="sub">결정론적 — 누가 계산해도 같은 답</text>
+<path d="M150,298 L150,318" class="arr" marker-end="url(#m)"/>
+
+<rect x="32" y="322" width="236" height="46" rx="10" class="b"/>
+<text x="150" y="341" text-anchor="middle" class="bt">중간지점 1곳 — 말풍선 핀</text>
+<text x="150" y="357" text-anchor="middle" class="sub">핀 드래그 시 재계산 · /api/midpoint</text>
+<path d="M150,368 L150,388" class="arr" marker-end="url(#m)"/>
+
+<rect x="32" y="392" width="236" height="46" rx="10" class="q"/>
+<text x="150" y="411" text-anchor="middle" class="qt">중간지점 확정 → 탐색 모드</text>
+<text x="150" y="427" text-anchor="middle" class="sub">우하단 핀 버튼 · 카테고리 슬라이더</text>
+<path d="M150,438 L150,458" class="arr" marker-end="url(#m)"/>
+
+<rect x="32" y="462" width="236" height="46" rx="10" class="b"/>
+<text x="150" y="481" text-anchor="middle" class="bt">POI 핀 + 장소 바텀시트</text>
+<text x="150" y="497" text-anchor="middle" class="sub">분류 · 도보 · 주소 · 전화 · 길찾기</text>
+
+<text x="150" y="528" text-anchor="middle" class="al">화면 상태 3: browse · clean · detail.</text>
+<text x="150" y="543" text-anchor="middle" class="al">탐색 시트의 <tspan font-weight="700">'이 출발지들로 모임 만들기'</tspan>가</text>
+<text x="150" y="558" text-anchor="middle" class="al">홈 입력값을 생성 폼에 넘긴다 — 전환 고리.</text>
+<text x="150" y="575" text-anchor="middle" class="al"><tspan font-weight="700">카카오 로그인 선행 필수</tspan> · 이때는 폼 출발지 생략.</text>
+
+<!-- 홈 → 모임 상세 진입 -->
+<path d="M288,140 L318,140" class="arg" marker-end="url(#mg)"/>
+<text x="303" y="128" text-anchor="middle" class="al">진입</text>
+
+<!-- ══════ 화면 ③ 모임 상세 — 상태기계 4칸 ══════ -->
+<rect x="322" y="66" width="1226" height="560" rx="12" class="lgreen"/>
+<rect x="322" y="66" width="1226" height="30" rx="12" class="hdg"/>
+<text x="334" y="86" class="hdgt">화면 ③ 모임 상세  /m/[code]  — 상태기계</text>
+<text x="740" y="86" class="al">진입: 모임 탭에서 <tspan font-weight="700">모임 만들기</tspan>(create — <tspan font-weight="700">방장 카카오 로그인</tspan> · 이름·<tspan font-weight="700">출발지</tspan>·시간·<tspan font-weight="700">확정 범위</tspan>·<tspan font-weight="700">목적 카테고리</tspan>) · <tspan font-weight="700">초대 URL 로 참여</tspan>(join) · 상단 스텝탭 0·1·2 는 Stage 가 정한다</text>
+
+<!-- 컬럼 1 : main -->
+<rect x="338" y="110" width="288" height="464" rx="12" class="col"/>
+<rect x="338" y="110" width="288" height="50" rx="12" class="colh"/>
+<text x="350" y="130" class="cth">Stage  main</text>
+<text x="350" y="148" class="cts">사람을 모으고 지역 후보 핑을 받는다</text>
+<text x="576" y="130" class="tab">상단탭 0</text>
+
+<rect x="350" y="172" width="264" height="46" rx="10" class="q"/>
+<text x="482" y="191" text-anchor="middle" class="qt">참여 — 이름 · 출발지 · 이동수단</text>
+<text x="482" y="207" text-anchor="middle" class="sub">초대 링크 · PIN(비로그인만) · 최대 8명</text>
+
+<rect x="350" y="230" width="264" height="46" rx="10" class="b"/>
+<text x="482" y="249" text-anchor="middle" class="bt">지도 전체화면 — 참가자 핀</text>
+<text x="482" y="265" text-anchor="middle" class="sub">색은 PIN_COLORS · 1.8초 폴링</text>
+
+<rect x="350" y="288" width="264" height="46" rx="10" class="q"/>
+<text x="482" y="307" text-anchor="middle" class="qt">핑 찍어 지역 후보 등록 — 누구나</text>
+<text x="482" y="323" text-anchor="middle" class="sub">동 스냅 coord2regioncode · 인원당 1개</text>
+
+<rect x="350" y="346" width="264" height="46" rx="10" class="g"/>
+<text x="482" y="365" text-anchor="middle" class="gt">방장 · AI 추천 버튼 (선택)</text>
+<text x="482" y="381" text-anchor="middle" class="sub">ECO 기본·실패 시 표준 · 로딩은 방장만</text>
+
+<rect x="350" y="404" width="264" height="46" rx="10" class="g"/>
+<text x="482" y="423" text-anchor="middle" class="gt">방장 · 투표 시작</text>
+<text x="482" y="439" text-anchor="middle" class="sub">openChat · 핑 잠금 · 후보 1개면 투표 생략</text>
+
+<text x="482" y="486" text-anchor="middle" class="al">AI 는 이 버튼뿐 — 안 누르면 0원.</text>
+<text x="482" y="501" text-anchor="middle" class="al">후보에 이동시간은 표시하지 않는다,</text>
+<text x="482" y="516" text-anchor="middle" class="al">경로 API 는 최종 확정 후에만 쓴다.</text>
+
+<path d="M626,427 L642,427" class="arg" marker-end="url(#mg)"/>
+<text x="634" y="417" text-anchor="middle" class="num">①</text>
+
+<!-- 컬럼 2 : chat / region -->
+<rect x="646" y="110" width="288" height="464" rx="12" class="col"/>
+<rect x="646" y="110" width="288" height="50" rx="12" class="colh"/>
+<text x="658" y="130" class="cth">Stage  chat · region</text>
+<text x="658" y="148" class="cts">지도 핀에 투표해 지역을 고른다</text>
+<text x="884" y="130" class="tab">상단탭 0</text>
+
+<rect x="658" y="172" width="264" height="46" rx="10" class="b"/>
+<text x="790" y="191" text-anchor="middle" class="bt">후보 핀 — 수동 핑 + AI 3곳</text>
+<text x="790" y="207" text-anchor="middle" class="sub">출처가 달라도 같은 핀 UI</text>
+
+<rect x="658" y="230" width="264" height="46" rx="10" class="q"/>
+<text x="790" y="249" text-anchor="middle" class="qt">핀 탭 → 표 증가</text>
+<text x="790" y="265" text-anchor="middle" class="sub">vote · 1인 1표 · 재탭으로 변경</text>
+
+<rect x="658" y="288" width="264" height="46" rx="10" class="b"/>
+<text x="790" y="307" text-anchor="middle" class="bt">진행률 n/N · 미투표자 이름</text>
+<text x="790" y="323" text-anchor="middle" class="sub">방장의 확정 판단 근거 · 1.8초 폴링</text>
+
+<rect x="658" y="346" width="264" height="46" rx="10" class="g"/>
+<text x="790" y="365" text-anchor="middle" class="gt">방장 · 직접 확정</text>
+<text x="790" y="381" text-anchor="middle" class="sub">confirmManual · 동점: 재량 / 재투표</text>
+
+<rect x="658" y="404" width="264" height="46" rx="10" class="b"/>
+<text x="790" y="423" text-anchor="middle" class="bt">분기 — 생성 시 정한 확정 범위</text>
+<text x="790" y="439" text-anchor="middle" class="sub">지역까지 → 결과 · 지점까지 → 지점</text>
+
+<text x="790" y="486" text-anchor="middle" class="al">'지점까지'면 aiPhase region → place,</text>
+<text x="790" y="501" text-anchor="middle" class="al">'지역까지'면 stage 가 바로 result 다.</text>
+
+<path d="M934,427 L950,427" class="arg" marker-end="url(#mg)"/>
+<text x="942" y="417" text-anchor="middle" class="num">②</text>
+
+<!-- 컬럼 3 : chat / place -->
+<rect x="954" y="110" width="288" height="464" rx="12" class="col"/>
+<rect x="954" y="110" width="288" height="50" rx="12" class="colh"/>
+<text x="966" y="130" class="cth">Stage  chat · place — 지점</text>
+<text x="966" y="148" class="cts">확정 지역 핀 중심 반경 안에서 고른다</text>
+<text x="1192" y="130" class="tab">상단탭 1</text>
+
+<rect x="966" y="172" width="264" height="46" rx="10" class="b"/>
+<text x="1098" y="191" text-anchor="middle" class="bt">반경 표시 — 확정 지역 중심</text>
+<text x="1098" y="207" text-anchor="middle" class="sub">700m·도보 10분 (1회 1400m 확장) · 밖은 거부</text>
+
+<rect x="966" y="230" width="264" height="46" rx="10" class="q"/>
+<text x="1098" y="249" text-anchor="middle" class="qt">카테고리·검색으로 POI 띄우기</text>
+<text x="1098" y="265" text-anchor="middle" class="sub">누구나 · 목적 카테고리 포커싱 · 가까운/별점순</text>
+
+<rect x="966" y="288" width="264" height="46" rx="10" class="q"/>
+<text x="1098" y="307" text-anchor="middle" class="qt">미리보기 핀 탭 → 후보 등록</text>
+<text x="1098" y="323" text-anchor="middle" class="sub">누구나 · 상한 없음 · 방장·본인 삭제</text>
+
+<rect x="966" y="346" width="264" height="46" rx="10" class="g"/>
+<text x="1098" y="365" text-anchor="middle" class="gt">방장 · AI 지점 추천 (선택)</text>
+<text x="1098" y="381" text-anchor="middle" class="sub">ECO ~9초 · 반경 기준</text>
+
+<rect x="966" y="404" width="264" height="46" rx="10" class="g"/>
+<text x="1098" y="423" text-anchor="middle" class="gt">핀 투표 → 방장 확정</text>
+<text x="1098" y="439" text-anchor="middle" class="sub">지역과 같은 방식 · confirmManual</text>
+
+<text x="1098" y="486" text-anchor="middle" class="al">조회 방법만 다를 뿐(카테고리·검색·AI)</text>
+<text x="1098" y="501" text-anchor="middle" class="al">투표·확정 UI 는 지역 단계와 같다.</text>
+
+<path d="M1242,427 L1258,427" class="arg" marker-end="url(#mg)"/>
+<text x="1250" y="417" text-anchor="middle" class="num">③</text>
+
+<!-- 컬럼 4 : result -->
+<rect x="1262" y="110" width="272" height="464" rx="12" class="col"/>
+<rect x="1262" y="110" width="272" height="50" rx="12" class="colh"/>
+<text x="1274" y="130" class="cth">Stage  result</text>
+<text x="1274" y="148" class="cts">장소가 정해졌다 — 모이는 일만 남았다</text>
+<text x="1492" y="130" class="tab">상단탭 2</text>
+
+<rect x="1274" y="172" width="248" height="46" rx="10" class="b"/>
+<text x="1398" y="191" text-anchor="middle" class="bt">확정 결과 — 지역 / 지점 · 지도</text>
+<text x="1398" y="207" text-anchor="middle" class="sub">이때만 경로 API · 길찾기 링크</text>
+
+<rect x="1274" y="230" width="248" height="46" rx="10" class="b"/>
+<text x="1398" y="249" text-anchor="middle" class="bt">모임 시간 · D-day 표시</text>
+<text x="1398" y="265" text-anchor="middle" class="sub">생성 시 입력값 · 변경만 meetTime</text>
+
+<rect x="1274" y="288" width="248" height="46" rx="10" class="q"/>
+<text x="1398" y="307" text-anchor="middle" class="qt">도착 신호등 — 내 상황 변경</text>
+<text x="1398" y="323" text-anchor="middle" class="sub">당일만 활성 · 노랑=지각(분 공유) · 빨강=불참</text>
+
+<rect x="1274" y="346" width="248" height="46" rx="10" class="n"/>
+<text x="1398" y="365" text-anchor="middle" class="nt">지점 카카오 링크 연결</text>
+<text x="1398" y="381" text-anchor="middle" class="subg">카카오맵 상세로 이동 · 지점 모임만</text>
+
+<rect x="1274" y="404" width="248" height="46" rx="10" class="g"/>
+<text x="1398" y="423" text-anchor="middle" class="gt">방장 · 되돌리기</text>
+<text x="1398" y="439" text-anchor="middle" class="sub">reopen 사다리 — 확정→투표→후보</text>
+
+<text x="1398" y="486" text-anchor="middle" class="al">경로 API 는 확정 후 여기서만 —</text>
+<text x="1398" y="501" text-anchor="middle" class="al">route-detail · route-path.</text>
+<text x="1398" y="516" text-anchor="middle" class="al">'지역까지' 모임: 경로 없이 지도만 —</text>
+<text x="1398" y="531" text-anchor="middle" class="al">방장 '지점도 정하기'로 승격 가능.</text>
+
+<!-- '지역까지' 모임 — 지점 단계 건너뜀 -->
+<path d="M790,574 C790,606 1335,610 1335,575" class="arg" stroke-dasharray="6 5" marker-end="url(#mg)"/>
+<text x="1060" y="590" text-anchor="middle" class="al">'지역까지' 모임 — 지점 단계 건너뜀</text>
+
+<!-- 되돌리기 -->
+<path d="M1398,574 C1398,622 482,622 482,575" class="ard" marker-end="url(#md)"/>
+<text x="940" y="636" text-anchor="middle" class="al">방장의 되돌리기 — <tspan font-weight="700">reopen 사다리</tspan>: 누를 때마다 확정 → 투표 다시 → 후보부터 다시, 한 칸씩. 표는 유지되고 삭제된 후보의 표만 사라진다.</text>
+
+<!-- ══════ 화면 ② 하단 3탭 — 실제 앱처럼 맨 아래 바 ══════ -->
+<rect x="12" y="644" width="1536" height="104" rx="12" class="lane"/>
+<rect x="12" y="644" width="1536" height="30" rx="12" class="hd"/>
+<text x="24" y="664" class="hdt">화면 ② 하단 3탭 — 투표함·모임원은 모임 탭으로 통합 (v6) · 모든 화면 위에 항상 떠 있다</text>
+
+<rect x="96" y="688" width="400" height="42" rx="10" class="pill"/>
+<text x="296" y="714" text-anchor="middle" class="qt">홈  /</text>
+<rect x="580" y="688" width="400" height="42" rx="10" class="pill"/>
+<text x="780" y="714" text-anchor="middle" class="qt">모임  /meetings — 통합 허브</text>
+<rect x="1064" y="688" width="400" height="42" rx="10" class="pill"/>
+<text x="1264" y="714" text-anchor="middle" class="qt">내정보  /me</text>
+
+<!-- 탭 ↔ 화면 연결 (점선) -->
+<path d="M96,709 C46,709 6,700 6,662 C6,624 6,598 34,592" class="ard" marker-end="url(#md)"/>
+
+<text x="296" y="744" text-anchor="middle" class="al">화면 ① 로 — 중간지점 맛보기</text>
+<text x="780" y="744" text-anchor="middle" class="al">만들기·참여 · <tspan font-weight="700">투표할 것 상단 고정</tspan> · 필터 7종(단계4·역할2·지난모임) · 시간순 정렬</text>
+<text x="1264" y="744" text-anchor="middle" class="al">기본 출발지·이동수단 · 로그인/로그아웃 · PIN · 알림 (localStorage)</text>
+
+<!-- ══════ 범례 · 주의 ══════ -->
+<line x1="12" y1="770" x2="1548" y2="770" stroke="#dcdcdc" stroke-width="1"/>
+
+<rect x="16" y="784" width="13" height="13" rx="3" class="q"/><text x="36" y="795" class="leg">참가자가 하는 것</text>
+<rect x="166" y="784" width="13" height="13" rx="3" class="g"/><text x="186" y="795" class="leg">방장만 하는 것 (단계를 넘긴다)</text>
+<rect x="406" y="784" width="13" height="13" rx="3" class="b"/><text x="426" y="795" class="leg">서버가 그려주는 것</text>
+<rect x="576" y="784" width="13" height="13" rx="3" class="n"/><text x="596" y="795" class="leg">외부 링크 · 선택 요소</text>
+
+<text x="16" y="830" class="okt">읽을 때 주의할 것</text>
+<text x="16" y="852" class="sub"><tspan font-weight="700">① 상단 스텝탭은 이동 수단이 아니라 표시다.</tspan> 눌러서 지난 단계를 봐도 <tspan font-weight="700">조회만</tspan> 된다(PastStepView) — 실제 Stage 는 안 바뀐다. 단계를 되돌리는 건 방장의 reopen 뿐이다.</text>
+<text x="16" y="871" class="sub"><tspan font-weight="700">② 지역 투표와 지점 투표는 같은 Stage(chat)다.</tspan> 구분하는 건 aiPhase(region / place)뿐이라, 화면 컴포넌트도 대부분 공유한다. 상단탭 번호도 여기서 계산된다.</text>
+<text x="16" y="890" class="sub"><tspan font-weight="700">③ 앱 안 채팅(AI 파실리테이터)은 현행 설계에서 제외됐다.</tspan> 대화는 카카오톡에서 한다는 전제라, 지금 화면은 <tspan font-weight="700">투표 UI</tspan> 로 그려져 있다. AI 는 방장의 추천 버튼 하나뿐이다.</text>
+<text x="16" y="909" class="sub"><tspan font-weight="700">④ 별점·POI 조회는 카카오 웹 스크래핑</tspan>(web-kakao.ts)으로 확정됐다 — 배포 시 구글 Places 재검토(v13). 브랜치 갈림은 해소됐다.</text>
+<text x="16" y="927" class="sub"><tspan font-weight="700">✎ v2 재배치</tspan> — 모임 시간은 result 입력이 아니라 <tspan font-weight="700">생성 폼 입력</tspan>으로 이동(create 에 meetTime 추가, result 는 표시·변경만). · <tspan font-weight="700">비밀번호 제거</tspan> — 참여는 초대 링크만, join 은 이름·출발지만 받는다.</text>
+<text x="16" y="946" class="sub"><tspan font-weight="700">✎ v3</tspan> — 투표는 <tspan font-weight="700">지도 핑 방식</tspan>(핑=후보 등록, 핀 탭=투표) · AI 추천은 <tspan font-weight="700">방장 버튼(opt-in)</tspan> · 확정 범위(지역까지/지점까지)는 생성 시 설정 · 홈 화면은 카카오 목업(moimer-app-kakao) 기반.</text>
+<text x="16" y="965" class="sub"><tspan font-weight="700">✎ v4 확정</tspan> — 지점 반경 <tspan font-weight="700">700m 고정</tspan> · 동 스냅은 카카오 coord2regioncode(실패 시 좌표 폴백) · 핑은 <tspan font-weight="700">인원당 1개</tspan>(+AI 3) · 동점은 방장이 <tspan font-weight="700">재량 선택 또는 재투표</tspan> · 이름 중복 시 별칭 요청 팝업 · '지역까지' 모임의 reopen 은 지역 투표로.</text>
+<text x="16" y="984" class="sub"><tspan font-weight="700">✎ v5</tspan> — 이동수단은 출발지 입력 옆 <tspan font-weight="700">토글</tspan>(기본 대중교통, 홈·참여 폼 동일) · 홈 출발지는 모임에 <tspan font-weight="700">'미배정 핑'</tspan>으로 남아 참여자가 자기 것을 선택·수정 · <tspan font-weight="700">투표 시작 후 핑 잠금</tspan> · 늦은 참여자는 확정 전 투표 가능, 확정 후엔 열람만.</text>
+<text x="16" y="1003" class="sub"><tspan font-weight="700">✎ v6</tspan> — '가게'는 <tspan font-weight="700">'지점'</tspan>으로 개칭(공원 등 비상업 장소 포함) · 지점 후보는 <tspan font-weight="700">지도 POI 탭·검색</tspan>으로 등록, 총 <tspan font-weight="700">5개</tspan>(인원 제한 없음) · 생성 폼의 <tspan font-weight="700">목적 카테고리</tspan>가 지점 단계에서 기본 포커싱 · 진행률 n/N·미투표자 이름 표시 · 하단 탭 5→3 (투표함·모임원 → 모임 탭: 투표할 것 상단·필터).</text>
+<text x="16" y="1022" class="sub"><tspan font-weight="700">✎ v7</tspan> — <tspan font-weight="700">방장은 카카오 로그인 필수</tspan>(참여자는 이름만·비로그인 — 쿠키 유실 문제 해결) · 지점 후보 <tspan font-weight="700">상한 없음</tspan>(5개 제한 철회), 방장은 임의 후보·본인은 자기 후보 삭제 · 모임 시간 미입력 시 result 에 <tspan font-weight="700">입력 유도 배너 + 신호등 잠금</tspan> · 모임 탭 필터 7종(단계 4·역할 2·지난 모임 1), 시간순 정렬.</text>
+<text x="16" y="1041" class="sub"><tspan font-weight="700">✎ v8</tspan> — 인원 <tspan font-weight="700">8명 제한</tspan>(초과는 유료 구간 구상) · 지점 단계도 '등록 → 투표 시작(잠금) → 투표' 2단계 · AI 호출은 <tspan font-weight="700">후보 등록 단계에서만 · 재호출 무제한</tspan> · 후보 0개면 투표 시작 불가, <tspan font-weight="700">1개면 투표 생략</tspan>(방장 바로 확정), 2개부터 투표.</text>
+<text x="16" y="1060" class="sub"><tspan font-weight="700">✎ v9</tspan> — AI 실패 시 <tspan font-weight="700">토스트 + 재시도</tspan>(스코어러 강등 설계 폐기 — 수동 핑이 대안) · AI 추천 동이 수동 핑과 같으면 <tspan font-weight="700">병합 + 'AI 추천' 태그</tspan> · 미배정 핑은 투표 시작 시 삭제 · <tspan font-weight="700">모임일 다음날부터 '지난 모임'</tspan>(시간 미입력은 마지막 활동 7일 후).</text>
+<text x="16" y="1079" class="sub"><tspan font-weight="700">✎ v10</tspan> — 방장 <tspan font-weight="700">강퇴 가능</tspan>(그 사람의 핑·표 삭제, 재참여는 허용) · 방장 <tspan font-weight="700">모임 삭제 가능</tspan>(확인 팝업) · 카테고리·검색 조회는 <tspan font-weight="700">전원 가능</tspan> — 미리보기 핀을 탭해 후보 등록 · <tspan font-weight="700">reopen 사다리</tspan>: 확정→투표→후보 한 칸씩, 표 유지(삭제 후보 표만 소멸).</text>
+<text x="16" y="1098" class="sub"><tspan font-weight="700">✎ v11</tspan> — 별점 출처 논의(네이버 공식 API 도 별점 없음 — <tspan font-weight="700">v13 에서 카카오 웹 유지로 확정</tspan>) · 방장이 <tspan font-weight="700">'지점도 정하기' 승격</tspan> 가능(역방향 없음) · 지역 result 는 <tspan font-weight="700">경로 없이 지도만</tspan>('지점 카카오 링크' 숨김) · 참여 폼 <tspan font-weight="700">원스텝 필수</tspan>, 자동 채움은 카카오 로그인+기본 출발지 설정자만.</text>
+<text x="16" y="1117" class="sub"><tspan font-weight="700">✎ v12</tspan> — 확정·잠금 순간의 늦은 표·핑은 <tspan font-weight="700">서버 거부 + 토스트</tspan>('단계가 바뀌었어요') · 병합 핑은 <tspan font-weight="700">이탈자 몫만 빠짐</tspan>(마지막 한 명이면 후보 삭제) · 모임 이름·목적 카테고리는 방장이 수정 가능 · 반경 내 POI 0개면 <tspan font-weight="700">선택 팝업</tspan>: 다른 카테고리·검색·AI 유도 vs 반경 확장.</text>
+<text x="16" y="1136" class="sub"><tspan font-weight="700">✎ v13 (미결정 0)</tspan> — 별점: PoC 는 <tspan font-weight="700">카카오 웹 스크래핑 유지</tspan>(배포 시 구글 Places 검토) · 목적 카테고리 <tspan font-weight="700">5종</tspan>: 음식점·카페·술집·문화/놀이·야외 (카카오 분류 코드 매핑) · 확정 범위 기본값 <tspan font-weight="700">'지점까지'</tspan> · 데모: 4인(방장1+참여3) + AI 시연 · 사전 워밍업.</text>
+<text x="16" y="1155" class="sub"><tspan font-weight="700">✎ v14</tspan> — 방장 데이터는 <tspan font-weight="700">생성 폼에 통합</tspan>(출발지·이동수단 포함, 이름은 카카오 프로필 자동+수정 가능) · '지역까지' 모임은 <tspan font-weight="700">신호등도 숨김</tspan>(경로·지점 카카오 링크와 동일) · 출발지 수정은 <tspan font-weight="700">핑 잠금 전까지</tspan> · AI 재호출 시 <tspan font-weight="700">교체/추가 선택 팝업</tspan>(수동 병합 후보는 유지). · 구현 확인: 카카오 OAuth redirect 는 사내망 IP 에서 제약 가능 ⚠.</text>
+<text x="16" y="1174" class="sub"><tspan font-weight="700">✎ v15</tspan> — 홈 경유 생성은 <tspan font-weight="700">폼 출발지 생략</tspan>(방장도 모임 화면에서 미배정 핑 선택) · 반경 확장은 <tspan font-weight="700">누구나·전체 공유·700→1400m 1회 한정</tspan>, 1400 에도 없으면 다른 방법(카테고리·검색·AI) 팝업 · <tspan font-weight="700">개인 PIN 은 비로그인 참여자만</tspan>(카카오 로그인 참여자는 계정 기반 복구) · 재투표 무제한 · '지역까지'면 카테고리 숨김.</text>
+<text x="16" y="1193" class="sub"><tspan font-weight="700">✎ v16 (화면 밖 차원)</tspan> — 알림: 이벤트마다 방장 <tspan font-weight="700">'카카오톡 알리기' 버튼</tspan>(메시지+링크 자동 완성) + 앱 설치자는 <tspan font-weight="700">앱 푸시</tspan> · 지리: 수도권 최적화 + <tspan font-weight="700">도간(ODsay)도 정식 동작</tspan>, 데모 케이스 복수 준비 · 시간: <tspan font-weight="700">과거 입력 불가</tspan>·지난 모임 부활 불가, 대신 <tspan font-weight="700">'데이터 이전 재모임 생성'</tspan> · PIN 시도 <tspan font-weight="700">5회 제한</tspan> · 신호등은 모임 당일만 활성.</text>
+<text x="16" y="1212" class="sub"><tspan font-weight="700">✎ v17 (연결성)</tspan> — 경계 reopen(지점→지역): 지점 데이터 보관, <tspan font-weight="700">같은 동 재확정이면 복원</tspan>·다른 동이면 폐기 · AI 실행 중 '투표 시작' 누르면 <tspan font-weight="700">AI 취소</tspan>(확인 팝업) 후 잠금 · 재모임 이전은 <tspan font-weight="700">카카오 로그인 멤버만 자동</tspan>(비로그인은 재참여) · result 복귀 시 <tspan font-weight="700">신호등 유지</tspan> · <tspan font-weight="700">'선입금' 명칭 폐기 → '지점 카카오 링크 연결'</tspan>.</text>
+<text x="16" y="1231" class="sub"><tspan font-weight="700">✎ v18 (점선 감사)</tspan> — 홈의 '이 출발지들로 모임 만들기'는 <tspan font-weight="700">카카오 로그인 선행 필수</tspan>(비로그인이면 로그인 유도 — 리다이렉트 왕복 보존 문제 자체가 소멸) · 지난 모임 탭 = <tspan font-weight="700">result 읽기 전용</tspan> + 하단 '이 멤버로 재모임 만들기'(방장만) · 카카오톡 알리기는 <tspan font-weight="700">상시 버튼만</tspan>(자동 팝업 없음) · 범례 '보류 항목' 문구 제거.</text>
+<text x="16" y="1250" class="sub"><tspan font-weight="700">✎ v19 (부가 화면)</tspan> — 내정보 구성: <tspan font-weight="700">기본 출발지·이동수단 + 로그인/로그아웃 + 알림 설정</tspan>(약관 등은 운영 전환 시) · PIN 은 <tspan font-weight="700">내정보 기본값 + 모임별 수정</tspan>(참여 폼 자동 채움) · 비로그인→로그인 <tspan font-weight="700">계정 병합 없음</tspan> · 개인 설정 저장은 전부 <tspan font-weight="700">localStorage</tspan> — v11 자동 채움 조건은 '내정보 기본값 존재 시'로 단순화.</text>
+</svg>
+</div></div>
+<script>
+document.documentElement.classList.remove("nojs");
+var W = 1560, H = 1290;                      // svg viewBox 크기
+var vp = document.getElementById("vp"), world = document.getElementById("world");
+var pct = document.getElementById("pct");
+var s = 1, tx = 0, ty = 0;                   // scale · translate
+function apply() {
+  world.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + s + ")";
+  pct.textContent = Math.round(s * 100) + "%";
+}
+function clampScale(v) { return Math.min(6, Math.max(0.15, v)); }
+var userZoomed = false;                       // 사용자가 줌을 잡았으면 창 리사이즈가 덮어쓰지 않는다
+function fit() {                              // 전체가 보이게 + 가운데 정렬
+  var r = vp.getBoundingClientRect();
+  s = clampScale(Math.min(r.width / W, r.height / H));
+  tx = (r.width - W * s) / 2;
+  ty = (r.height - H * s) / 2;
+  userZoomed = false;
+  apply();
+}
+function zoomAt(mx, my, factor) {             // (mx,my) 화면 좌표를 고정점으로 줌
+  var ns = clampScale(s * factor);
+  tx = mx - (mx - tx) * (ns / s);
+  ty = my - (my - ty) * (ns / s);
+  s = ns;
+  userZoomed = true;
+  apply();
+}
+vp.addEventListener("wheel", function (e) {
+  e.preventDefault();
+  zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+}, { passive: false });
+vp.addEventListener("dblclick", function (e) { zoomAt(e.clientX, e.clientY, 1.6); });
+var drag = null;
+vp.addEventListener("pointerdown", function (e) {
+  drag = { x: e.clientX - tx, y: e.clientY - ty };
+  vp.classList.add("drag");
+  vp.setPointerCapture(e.pointerId);
+});
+vp.addEventListener("pointermove", function (e) {
+  if (drag) { tx = e.clientX - drag.x; ty = e.clientY - drag.y; apply(); }
+});
+vp.addEventListener("pointerup", function () { drag = null; vp.classList.remove("drag"); });
+document.getElementById("zi").onclick = function () {
+  var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.25);
+};
+document.getElementById("zo").onclick = function () {
+  var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.25);
+};
+document.getElementById("fit").onclick = fit;
+window.addEventListener("resize", function () { if (!userZoomed) fit(); });
+// ?shot=1 — PNG 캡처용 (줌 버튼·안내 숨김)
+if (new URLSearchParams(location.search).get("shot")) document.documentElement.classList.add("shot");
+// ?z=배율 로 초기 배율을 강제할 수 있다 (검증용) — 없으면 화면 맞춤
+var q = new URLSearchParams(location.search).get("z");
+if (q && !isNaN(parseFloat(q))) { s = clampScale(parseFloat(q)); tx = 20; ty = 20; userZoomed = true; apply(); }
+else { fit(); }
+</script>
+</body>
+</html>
+
