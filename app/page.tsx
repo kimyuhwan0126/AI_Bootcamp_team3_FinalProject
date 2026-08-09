@@ -366,6 +366,12 @@ export default function Home() {
       transport: o.transport,
       status: null,
       etaText: null,
+      // 홈의 가짜 참가자 — 아직 모임이 아니라 PIN·카카오·지각 개념이 없다.
+      // (확정하면 '미배정 핑'으로 모임에 이관되고, 그때 참여자가 자기 것을 고른다 — v5)
+      pin: null,
+      pinFails: 0,
+      kakaoId: null,
+      lateMin: null,
     }));
 
     // 🔴 **거리순도 서버를 거친다.** 예전엔 여기서 `recommendRegions(pseudo)` 를

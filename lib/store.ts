@@ -20,7 +20,10 @@ import type {
   PlaceCandidate,
   ChatMsg,
   MeetingPrefs,
+  MeetingScope,
+  PurposeCategory,
 } from "./types";
+import { MAX_PARTICIPANTS } from "./types";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
 import { hasDb } from "./db";
 import {
@@ -34,6 +37,24 @@ import {
 } from "./persistence";
 
 type Result = { ok: boolean; error?: string };
+
+/**
+ * 모임 시간 정규화 — **과거 시간은 받지 않는다** (v16).
+ *
+ * 빈 값·해석 불가·과거면 `null`(= 미입력)로 떨어뜨린다.
+ * 미입력이면 결과 화면에서 신호등이 잠기고 입력 유도 배너가 뜬다 (v7) —
+ * 그러니 여기서 조용히 버려도 사용자가 모르고 지나가지 않는다.
+ *
+ * ⚠️ 이미 만들어진 모임이 시간이 지나 과거가 되는 건 정상이다(→ '지난 모임').
+ *    이 함수는 **새로 입력하는 값**에만 쓴다.
+ */
+function normalizeMeetTime(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const t = new Date(v);
+  if (Number.isNaN(t.getTime())) return null;
+  if (t.getTime() < Date.now()) return null;
+  return t.toISOString();
+}
 
 // HMR/serverless 재로드에도 살아남도록 globalThis에 보관.
 // DATABASE_URL 미설정 시에는 이 Map 이 유일한 저장소가 된다.
@@ -101,6 +122,17 @@ export async function createMeeting(input: {
   password: string;
   headcount: number;
   leaderName: string;
+  // ── v19 (설계_v19.md §4-④ 생성 폼) ──
+  /** 확정 범위 — 안 주면 기본 `place`("지점까지", v13) */
+  scope?: MeetingScope;
+  /** 목적 카테고리 — `scope==="region"` 이면 무시하고 null 로 둔다 */
+  purposeCategory?: PurposeCategory | null;
+  /** 모임 시간(ISO) — 선택. **과거는 거부**한다 (v16) */
+  meetTime?: string | null;
+  /** 방장 이동수단 — 생성 폼에 통합됨 (v14) */
+  leaderTransport?: Transport;
+  /** 방장 카카오 회원번호 — 방장은 로그인 필수라 정상 경로에선 항상 있다 (v7) */
+  leaderKakaoId?: string | null;
 }): Promise<{ code: string; leaderId: string }> {
   const code = await genCode();
   const leaderId = genId("u_");
@@ -112,15 +144,22 @@ export async function createMeeting(input: {
     origin: null,
     lat: null,
     lng: null,
-    transport: "transit",
+    transport: input.leaderTransport ?? "transit",
     status: null,
     etaText: null,
+    // 방장은 카카오 로그인 필수 → PIN 을 쓰지 않는다 (v15)
+    pin: null,
+    pinFails: 0,
+    kakaoId: input.leaderKakaoId ?? null,
+    lateMin: null,
   };
+  const scope: MeetingScope = input.scope === "region" ? "region" : "place";
   const meeting: Meeting = {
     code,
     name: input.name,
     password: input.password,
-    headcount: Math.max(1, input.headcount || 1),
+    // v19: 정원은 8명 고정 (v8). 입력값이 와도 8을 넘지 않는다.
+    headcount: Math.min(MAX_PARTICIPANTS, Math.max(1, input.headcount || MAX_PARTICIPANTS)),
     leaderName: leader.name,
     stage: "main",
     aiPhase: "region",
@@ -135,6 +174,15 @@ export async function createMeeting(input: {
     placeVotes: {},
     reservation: null,
     createdAt: new Date().toISOString(),
+    // ── v19 ──
+    scope,
+    // '지역까지' 모임은 지점 단계가 없으므로 카테고리를 두지 않는다 (v15)
+    purposeCategory: scope === "region" ? null : (input.purposeCategory ?? null),
+    meetTime: normalizeMeetTime(input.meetTime),
+    placeVoteOpen: false,
+    radiusM: 700,
+    stashedPlaces: null,
+    archivedAt: null,
   };
   // 참가자 행이 모임 행을 참조하므로(FK) 모임을 먼저 넣는다
   await write(meeting);
@@ -145,22 +193,42 @@ export async function createMeeting(input: {
 // ── 참여 (User: 모임이름/코드 + 비번 > 참여) ──
 export async function joinMeeting(input: {
   code: string;
-  password: string;
+  /** @deprecated v2 — 비밀번호 폐기. 값이 와도 검사하지 않는다 */
+  password?: string;
   name: string;
   headcount?: number;
   ignoreCapacity?: boolean;
+  // ── v19 ──
+  /** 개인 PIN — 비로그인 참여자만 (v15) */
+  pin?: string | null;
+  /** 카카오 회원번호 — 로그인 참여자만. 있으면 PIN 을 두지 않는다 */
+  kakaoId?: string | null;
+  transport?: Transport;
 }): Promise<{ ok: true; participantId: string } | { ok: false; error: string }> {
   const m = await read(input.code);
   if (!m) return { ok: false, error: "모임을 찾을 수 없어요. 코드를 확인해 주세요." };
-  if (m.password !== input.password) return { ok: false, error: "비밀번호가 일치하지 않아요." };
-  if (!input.ignoreCapacity && m.participants.length >= m.headcount) {
+  // v2: 비밀번호 검사 없음 — 참여는 초대 링크만으로 한다.
+  // v18: 지난 모임은 읽기 전용이라 새로 들어올 수 없다.
+  if (m.archivedAt) return { ok: false, error: "이미 지난 모임이에요. 새 모임을 만들어 주세요." };
+  // v8: 정원 8명 — 9번째는 입장 거부(초과분은 유료 구간 구상)
+  const cap = Math.min(MAX_PARTICIPANTS, m.headcount || MAX_PARTICIPANTS);
+  if (!input.ignoreCapacity && m.participants.length >= cap) {
     return {
       ok: false,
-      error: `정원이 가득 찼어요 (${m.participants.length}/${m.headcount}명). 방장에게 정원 상향을 요청하세요.`,
+      error: `정원이 가득 찼어요 (${m.participants.length}/${cap}명). 현재 한 모임은 ${MAX_PARTICIPANTS}명까지 참여할 수 있어요.`,
+    };
+  }
+  // v4: 이름 중복이면 별칭을 붙이게 돌려보낸다 (PIN 복구는 별도 경로)
+  const wanted = (input.name || "").trim();
+  if (wanted && m.participants.some((x) => x.name === wanted)) {
+    return {
+      ok: false,
+      error: `이미 '${wanted}' 님이 있어요. 별칭을 붙여 주세요 (예: ${wanted}2).`,
     };
   }
   const id = genId("u_");
-  const name = input.name || `참가자${m.participants.length}`;
+  const name = wanted || `참가자${m.participants.length}`;
+  const kakaoId = input.kakaoId ?? null;
   const p: Participant = {
     id,
     name,
@@ -169,9 +237,14 @@ export async function joinMeeting(input: {
     origin: null,
     lat: null,
     lng: null,
-    transport: "transit",
+    transport: input.transport ?? "transit",
     status: null,
     etaText: null,
+    // v15: PIN 은 비로그인만. 로그인 참여자는 계정 기반 복구라 두지 않는다.
+    pin: kakaoId ? null : (input.pin || null),
+    pinFails: 0,
+    kakaoId,
+    lateMin: null,
   };
   m.participants.push(p);
   await writeParticipant(m, p);
@@ -659,6 +732,14 @@ export async function getState(code: string): Promise<MeetingState | null> {
     originsSet: m.participants.filter((p) => p.lat != null).length,
     totalParticipants: m.participants.length,
     overCapacity: m.participants.length > m.headcount,
+    // ── v19 ── 화면이 확정 범위·단계·읽기전용 여부를 여기서만 읽는다
+    scope: m.scope,
+    purposeCategory: m.purposeCategory,
+    meetTime: m.meetTime,
+    placeVoteOpen: m.placeVoteOpen,
+    radiusM: m.radiusM,
+    archivedAt: m.archivedAt,
+    isPast: m.archivedAt != null,
   };
 }
 

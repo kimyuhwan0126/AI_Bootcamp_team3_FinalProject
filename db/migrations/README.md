@@ -31,4 +31,15 @@ Neon 콘솔 → **SQL Editor** → 파일 내용을 붙여넣고 **Run**.
 
 | 파일 | 내용 | 반영 여부 |
 |---|---|---|
-| (아직 없음) | | |
+| `001_v19_설계정렬.sql` | **v19 설계 확정판** 컬럼 추가 — `meetings`: `scope`·`purpose_category`·`meet_time`·`place_vote_open`·`radius_m`·`stashed_places`·`archived_at` / `participants`: `pin`·`pin_fails`·`kakao_id`·`late_min` (+인덱스 3) | ✅ `schema.sql` 반영됨 |
+
+> 🔴 **팀원은 각자 Neon 콘솔에서 `001_v19_설계정렬.sql` 을 한 번 Run 해야 한다.**
+>
+> **안 돌리면 모임 생성이 실패한다** — 읽기(`select *`)는 없는 컬럼을 기본값으로 흡수하지만,
+> 쓰기(`insert … into scope, meet_time, …`)는 컬럼이 없으면 SQL 오류가 나고
+> `saveMeeting` 이 그대로 던진다("모임 저장 실패").
+>
+> 조용히 반쪽으로 도는 것보다 **바로 터지는 쪽**을 골랐다 — 마이그레이션을 안 돌린 채
+> 시연에 들어가면 "확정 범위를 골랐는데 매번 지점까지로 돌아간다" 같은 걸 발표 중에 발견한다.
+>
+> `DATABASE_URL` 이 없는 인메모리 모드는 영향이 없다 (`saveMeeting` 이 즉시 반환).
