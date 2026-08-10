@@ -164,6 +164,29 @@ export async function geoCacheSet(q: string, c: CachedCoord): Promise<void> {
   await put(`geo:${q}`, { lat: c.lat, lng: c.lng }, GEO_TTL_MS);
 }
 
+// ── 지하철역 스냅 (lib/station-snap.ts) ────────────────────────
+//  "좌표 격자 → 가장 가까운 역{이름,좌표}". 지오코딩과 같은 TTL 을 쓴다 —
+//  역이 새로 생기는 일은 드물고, 생겨도 30일이면 따라잡는다.
+//  ⚠️ 좌표만 담는 `geoCache*` 로는 부족하다. 스냅은 **이름까지** 캐시해야
+//     같은 자리를 다시 찍었을 때 카카오에 또 묻지 않는다.
+
+export interface CachedStation extends CachedCoord {
+  name: string;
+}
+
+export async function stationCacheGet(k: string): Promise<CachedStation | null> {
+  const v = await get(`stn:${k}`);
+  if (!v || typeof v !== "object") return null;
+  const s = v as Partial<CachedStation>;
+  return typeof s.name === "string" && typeof s.lat === "number" && typeof s.lng === "number"
+    ? { name: s.name, lat: s.lat, lng: s.lng }
+    : null;
+}
+
+export async function stationCacheSet(k: string, s: CachedStation): Promise<void> {
+  await put(`stn:${k}`, { name: s.name, lat: s.lat, lng: s.lng }, GEO_TTL_MS);
+}
+
 // ── 이동시간 ──────────────────────────────────────────────────
 
 export async function routeCacheGet(k: string): Promise<number | null> {

@@ -52,7 +52,7 @@ import {
 } from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
 import { FLAGS } from "@/lib/flags";
-import { coord2RegionKakao } from "@/lib/kakao";
+import { snapPing } from "@/lib/station-snap";
 import { aiRegionVote, aiPlaceVote } from "@/lib/ai-vote";
 
 // 인메모리 스토어를 쓰므로 항상 동적 처리 (캐시 금지)
@@ -437,27 +437,21 @@ async function handlePost(req: NextRequest) {
       if (!me) return NextResponse.json({ error: "참가자를 찾을 수 없어요." }, { status: 400 });
 
       // ── v19 §4-⑥ 지도 핑 ──
-      //  이름 없이 좌표만 오면(=지도를 탭한 경우) **동으로 스냅**한다.
-      //  같은 동은 하나로 병합돼야 해서(v4), 좌표 그대로 두면 3m 옆에 찍은 핑이
+      //  이름 없이 좌표만 오면(=지도를 탭한 경우) **무언가로 스냅**한다.
+      //  같은 곳은 하나로 병합돼야 해서(v4), 좌표 그대로 두면 3m 옆에 찍은 핑이
       //  서로 다른 후보가 되고 투표가 갈라진다.
-      //  ⚠️ 스냅 실패(키 없음·API 오류)는 정상 경로다 — **좌표 기반 이름으로 폴백**한다(v4).
+      //
+      //  무엇으로 묶을지(지하철역 / 시·군·구 / 좌표)는 **`lib/station-snap.ts` 가**
+      //  플래그와 폴백 사슬을 보고 정한다. 여기서는 결과만 받는다 —
+      //  `snapPing` 은 실패하지 않는다(마지막 칸이 좌표 이름이라 항상 값이 나온다).
       const hasCoord = typeof body.lat === "number" && typeof body.lng === "number";
       let name = String(body.name || "").trim();
       let hub: { lat: number; lng: number };
 
       if (!name && hasCoord) {
-        const snapped = await coord2RegionKakao({ lat: body.lat as number, lng: body.lng as number });
-        if (snapped) {
-          name = snapped.name;
-          hub = { lat: snapped.lat, lng: snapped.lng };
-        } else {
-          // 폴백: 좌표를 소수 3자리로 끊어 이름을 만든다 —
-          // 같은 자리를 두 번 찍으면 같은 이름이 나와 병합 규칙이 그대로 산다.
-          const la = (body.lat as number).toFixed(3);
-          const ln = (body.lng as number).toFixed(3);
-          name = `지도 ${la}, ${ln}`;
-          hub = { lat: body.lat as number, lng: body.lng as number };
-        }
+        const snapped = await snapPing({ lat: body.lat as number, lng: body.lng as number });
+        name = snapped.name;
+        hub = { lat: snapped.lat, lng: snapped.lng };
       } else {
         if (!name) return NextResponse.json({ error: "지역 이름이 비었어요." }, { status: 400 });
         // 좌표는 지도 검색 결과에서 그대로 받는다(없으면 이름으로 지오코딩)

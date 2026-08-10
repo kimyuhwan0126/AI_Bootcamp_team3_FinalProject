@@ -1458,6 +1458,51 @@ test("상한: 지역 후보는 5개까지 · 6번째는 거부", async ({ reques
   expect((await get(request, code)).regions, "거부됐는데 후보가 늘었다").toHaveLength(5);
 });
 
+test("상한: 6번째가 거부돼도 그 사람의 옛 핑은 그대로 남는다", async ({ request }) => {
+  // 🔴 거절 경로는 `write` 를 하지 않는다. 그런데 인메모리 모드에서는 `read()` 가
+  //    저장소의 **살아 있는 객체**를 그대로 준다 — 이동 처리(옛 후보에서 내 몫 빼기)를
+  //    상한 검사보다 **먼저** 하면, 거절당했는데 내 핑만 조용히 사라진다.
+  //    (역 스냅을 켜면 후보가 잘게 갈려 이 경로를 실제로 밟는다)
+  const { code } = await setup(request);
+  const spots = [
+    { lat: 37.5665, lng: 126.9780 }, { lat: 37.5045, lng: 127.0490 },
+    { lat: 37.5563, lng: 126.9236 }, { lat: 37.5133, lng: 127.1000 },
+    { lat: 37.4765, lng: 126.9816 },
+  ];
+  const ids: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const j = await act(request, { action: "join", code, name: `상한${i + 1}` });
+    ids.push(j.participantId);
+    await act(request, { action: "addRegion", code, participantId: j.participantId, ...spots[i] });
+  }
+  // 5명이 각자 다른 곳 = 후보 5개. 이제 1번이 **아무도 없는 여섯 번째 자리**로 옮기려 한다.
+  // 1번이 떠나도 그 후보는 다른 사람이 없어 사라지므로 개수는 그대로 5개 — 그런데
+  // 새 자리도 5개째라 상한에 걸린다(= 거절돼야 하고, 옛 핑은 살아 있어야 한다).
+  const before = await get(request, code);
+  const mine = before.regions.find((r: { contributors?: string[] }) => r.contributors?.includes(ids[0]));
+  expect(mine, "사전 조건: 1번의 핑이 있어야 한다").toBeTruthy();
+
+  const res = await request.post("/api/meeting", {
+    data: { action: "addRegion", code, participantId: ids[0], lat: 37.6066, lng: 127.0927 },
+  });
+
+  const after = await get(request, code);
+  if (!res.ok()) {
+    // 거절됐다면 **아무것도 바뀌지 않아야** 한다
+    expect(after.regions, "거절됐는데 후보 개수가 변했다").toHaveLength(before.regions.length);
+    expect(
+      after.regions.find((r: { contributors?: string[] }) => r.contributors?.includes(ids[0])),
+      "거절당했는데 내 핑(=표)이 사라졌다"
+    ).toBeTruthy();
+  } else {
+    // 허용됐다면 옮겨간 것이니 새 자리에 내 핑이 있어야 한다
+    expect(
+      after.regions.find((r: { contributors?: string[] }) => r.contributors?.includes(ids[0])),
+      "허용됐는데 내 핑이 어디에도 없다"
+    ).toBeTruthy();
+  }
+});
+
 test("상한: 같은 동 병합은 개수를 늘리지 않으므로 상한과 무관하다", async ({ request }) => {
   // ⚠️ 상한 검사를 병합보다 **앞**에 두면, 다섯 개일 때 같은 동에 합류조차 못 한다.
   const { code, leaderId } = await setup(request);

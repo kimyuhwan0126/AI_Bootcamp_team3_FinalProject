@@ -678,6 +678,31 @@ export async function addRegionCandidate(input: {
     return { ok: true, candidate: dup, existing: true };
   }
 
+  // ── 후보 상한 5개 (2차 그릴링) ──
+  //  같은 동을 찍는 건 새 후보가 아니고(위에서 반환), 이미 찍은 사람이 자리를
+  //  옮기는 것도 개수를 늘리지 않는다 — 내가 혼자 쓰던 후보는 내가 떠나면
+  //  사라지기 때문이다(아래 이동 처리). 그래서 **떠난 뒤의 개수**로 판정한다.
+  //  그냥 `m.regions.length` 로 보면 "다섯 개일 때 내 핑을 옮기지도 못하는" 상태가 된다.
+  //
+  //  🔴 **변형하기 전에 판정한다.** 예전엔 이동 처리를 먼저 하고 여기서 거절했는데,
+  //     거절 경로는 `write` 를 하지 않는다. 인메모리 모드에서는 `read()` 가
+  //     저장소의 **살아 있는 객체**를 그대로 주므로(캐시가 아니다), write 를 안 해도
+  //     이미 뺀 내 핑이 그대로 사라진 채 400 만 나갔다 — **거절당했는데 내 표가 증발**한다.
+  //     역 스냅(`FLAGS.pingSnapStation`)을 켜면 후보가 잘게 갈려 이 경로를 실제로 밟는다.
+  const soloMine =
+    input.participantId &&
+    m.regions.find(
+      (r) =>
+        r.source !== "ai" &&
+        (r.contributors ?? []).length === 1 &&
+        (r.contributors ?? [])[0] === input.participantId
+    );
+  if (m.regions.length - (soloMine ? 1 : 0) >= MAX_CANDIDATES)
+    return {
+      ok: false,
+      error: `후보는 최대 ${MAX_CANDIDATES}개예요 — 하나를 지우고 다시 등록해 주세요.`,
+    };
+
   // v4: 핑은 인원당 1개다 — 이미 찍은 사람은 옮긴다(옛 후보에서 자기 몫을 뺀다).
   if (input.participantId) {
     for (const r of m.regions) {
@@ -691,16 +716,6 @@ export async function addRegionCandidate(input: {
       }
     }
   }
-
-  // ── 후보 상한 5개 (2차 그릴링) ──
-  //  ⚠️ **병합·이동 검사보다 뒤**에 둔다. 같은 동을 찍는 건 새 후보가 아니고(위에서 반환),
-  //     이미 찍은 사람이 자리를 옮기는 것도 개수를 늘리지 않는다(위에서 자기 몫을 뺐다).
-  //     앞에 두면 "다섯 개일 때 내 핑을 옮기지도 못하는" 상태가 된다.
-  if (m.regions.length >= MAX_CANDIDATES)
-    return {
-      ok: false,
-      error: `후보는 최대 ${MAX_CANDIDATES}개예요 — 하나를 지우고 다시 등록해 주세요.`,
-    };
 
   const candidate: RegionCandidate = {
     id: genId("rc_"),

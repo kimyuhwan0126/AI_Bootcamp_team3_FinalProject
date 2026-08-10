@@ -838,7 +838,10 @@ export default function MeetingClient({ code }: { code: string }) {
                 <h2 className="sec" style={{ marginTop: 4 }}>여기로 등록할까요?</h2>
               </div>
               <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-                누른 자리는 <b>동 단위로 정리</b>돼요. 같은 동을 여럿이 찍으면 하나로 합쳐지고,
+                {/* ⚠️ 무엇으로 묶이는지는 플래그에 따라 역/시·군·구/동으로 갈린다
+                    (`lib/station-snap.ts`). 문구에 단위를 박아 두면 화면이 거짓말을
+                    한다 — "동 단위"라고 적힌 채 기본이 시·군·구로 바뀌어 있었다. */}
+                누른 자리는 <b>가까운 지점으로 정리</b>돼요. 같은 곳을 여럿이 찍으면 하나로 합쳐지고,
                 <b> 내 핑은 1개</b>라 다른 곳을 찍으면 그쪽으로 옮겨가요.
               </p>
               <span className="chip line" style={{ alignSelf: "flex-start", fontFamily: "ui-monospace, monospace" }}>

@@ -32,6 +32,7 @@
 // ─────────────────────────────────────────────────────────────
 import { searchByCategoryKakao } from "./kakao";
 import { haversineKm, HUBS, nearCentroidHubs } from "./geo";
+import { normalizeStationName } from "./station-snap";
 
 /** 카카오 카테고리 그룹 코드 — 지하철역. */
 const SUBWAY_CODE = "SW8";
@@ -212,8 +213,18 @@ export async function resolveHubPool(located: Pt[]): Promise<HubPool> {
 
     const picked = dedupeNearby(found, dedupeKmFor(radius)).slice(0, MAX_CANDIDATES);
     if (picked.length >= MIN_CANDIDATES) {
-      // 카카오가 주는 이름은 `도봉산역` 처럼 이미 사람이 읽는 형태다. 그대로 쓴다.
-      const pool = picked.map((s) => ({ name: s.name, hub: { lat: s.lat, lng: s.lng } }));
+      // 카카오가 주는 이름은 `도봉산역` 처럼 대체로 사람이 읽는 형태지만,
+      // 노선이 붙어 오는 경우(`강남역 2호선`)가 있다 — **핑 스냅과 같은 함수로**
+      // 다듬는다.
+      //
+      // ⚠️ 여기만 안 다듬으면 같은 역이 후보 **두 개**가 된다. 후보 병합은
+      //    이름 일치로 판정하는데(`lib/store.ts` `addRegionCandidate`), 홈/추천이
+      //    올린 `강남역 2호선` 과 사람이 찍은 `강남역` 이 서로 다른 이름이라
+      //    안 합쳐진다 — 표를 모으려고 만든 기능이 그 자리에서 표를 쪼갠다.
+      const pool = picked.map((s) => ({
+        name: normalizeStationName(s.name) || s.name,
+        hub: { lat: s.lat, lng: s.lng },
+      }));
       poolCache.set(key, { at: Date.now(), pool });
       return { pool, source: "station" };
     }

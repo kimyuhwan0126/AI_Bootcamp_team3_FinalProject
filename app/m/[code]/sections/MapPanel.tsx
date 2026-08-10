@@ -118,7 +118,10 @@ export default function MapPanel({
             className="chip ok"
             style={{ position: "absolute", top: 8, left: 8, zIndex: 5, fontSize: 11 }}
           >
-            📍 지도를 눌러 후보 등록 (동 단위 · 1인 1개)
+            {/* ⚠️ 묶는 단위를 문구에 박아 두면 안 된다 — 플래그에 따라 역/시·군·구/
+                동으로 갈린다(`lib/station-snap.ts`). 예전 문구 "동 단위"는 기본
+                동작이 시·군·구로 바뀐 뒤에도 그대로 남아 화면이 거짓말을 하고 있었다. */}
+            📍 지도를 눌러 후보 등록 (가까운 지점으로 정리 · 1인 1개)
           </div>
         )}
         {/* 홈과 동일한 지도 조작 — 참가자가 2명 이상 위치를 넣었을 때만 의미가 있다 */}
