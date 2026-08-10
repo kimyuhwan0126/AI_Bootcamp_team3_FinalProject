@@ -27,9 +27,11 @@ export interface ParticipantBarProps {
   state: MeetingState;
   /** 내 participantId (없으면 신원 없는 방문자 — 부모가 이 바를 안 그린다) */
   myId: string | undefined;
+  /** 지역이 한 칸으로 합쳐졌는가 (핑 = 표). 부모가 판단해 넘긴다 */
+  regionMerged: boolean;
 }
 
-export default function ParticipantBar({ step, state, myId }: ParticipantBarProps) {
+export default function ParticipantBar({ step, state, myId, regionMerged }: ParticipantBarProps) {
   const total = state.totalParticipants;
 
   // ── 지역 칸 ──
@@ -46,10 +48,16 @@ export default function ParticipantBar({ step, state, myId }: ParticipantBarProp
   const line = (): [string, string] => {
     switch (step) {
       case "region-register":
+        // 통합 모드(기본)에서는 **핑이 곧 표**다 — 참여자에게 그렇게 말해야
+        // "찍었는데 왜 투표를 또 하지?" 가 안 생긴다 (멘토링 8/6 §2)
         return [
-          `지역 후보 등록 중 · 후보 ${state.regions.length}개`,
+          regionMerged
+            ? `지역 정하는 중 · 후보 ${state.regions.length}개`
+            : `지역 후보 등록 중 · 후보 ${state.regions.length}개`,
           myPing
-            ? `✓ 내 핑: ${myPing.name} — 다른 곳을 누르면 옮겨가요`
+            ? `✓ 내 한 표: ${myPing.name} — 다른 곳을 누르면 옮겨가요`
+            : regionMerged
+            ? "지도를 눌러 주세요 — 누른 곳이 곧 내 한 표예요"
             : "지도를 눌러 만나고 싶은 곳을 찍어 주세요",
         ];
       case "region-vote":

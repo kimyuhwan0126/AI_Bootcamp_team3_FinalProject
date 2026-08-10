@@ -483,7 +483,7 @@ export default function MeetingClient({ code }: { code: string }) {
   const isLeader = !!meRow?.isLeader;
   const role = viewerRoleOf(meRow);
   const step: Step = stepOf(state);
-  const can = abilitiesOf(role, step, state.isPast);
+  const can = abilitiesOf(role, step, state.isPast, state.scope);
   const stage = state.stage;
   const located = state.participants.filter((p) => p.lat != null);
   // 경로 상세의 목적지: 확정 지역 우선, 없으면 1순위 후보
@@ -513,11 +513,28 @@ export default function MeetingClient({ code }: { code: string }) {
   };
 
   // ── 거점 투표 집계 ──
+  // ── 지역 집계 ──
+  //  **통합 모드(기본)에서는 핑이 곧 표다** (멘토링 8/6 §2).
+  //  같은 시·군·구를 여럿이 찍으면 하나로 병합되고 `contributors` 에 사람이 쌓인다 —
+  //  그 인원수가 곧 득표수다. 둘 다 "인원당 1개"라 규칙이 같아 그대로 얹힌다.
+  //  옛 2단계(`NEXT_PUBLIC_FF_REGION_VOTE_STEP=1`)에서는 `regionVotes` 행을 쓴다.
+  const REGION_MERGED = !FLAGS.regionVoteStep;
   const regionVotesMap = state.regionVotes ?? {};
   const regionTally: Record<string, number> = {};
-  for (const rid of Object.values(regionVotesMap)) regionTally[rid] = (regionTally[rid] ?? 0) + 1;
-  const regionVoteCount = Object.keys(regionVotesMap).length;
-  const myRegionVote = me ? regionVotesMap[me.id] : undefined;
+  if (REGION_MERGED) {
+    for (const r of state.regions) regionTally[r.id] = r.contributors?.length ?? 0;
+  } else {
+    for (const rid of Object.values(regionVotesMap)) regionTally[rid] = (regionTally[rid] ?? 0) + 1;
+  }
+  // "몇 명이 의사를 밝혔나" — 통합 모드에선 핑을 찍은 사람 수다
+  const regionVoteCount = REGION_MERGED
+    ? new Set(state.regions.flatMap((r) => r.contributors ?? [])).size
+    : Object.keys(regionVotesMap).length;
+  const myRegionVote = REGION_MERGED
+    ? state.regions.find((r) => r.contributors?.includes(me?.id ?? ""))?.id
+    : me
+    ? regionVotesMap[me.id]
+    : undefined;
   // 동점이면 후보 목록 순서(균형 좋은 순)를 따른다
   const topRegionId =
     state.regions.length === 0
@@ -861,15 +878,25 @@ export default function MeetingClient({ code }: { code: string }) {
             <div className="card stack" style={{ gap: 10 }}>
               <div className="between">
                 <div>
-                  {/* 등록 칸과 투표 칸은 같은 카드를 쓴다 — 제목까지 같으면
-                      "왜 투표 버튼이 없지?" 가 된다 (v19 §5 는 두 칸을 나눈다) */}
-                  <span className="eyebrow">2. {regionRegisterStep ? "거점 후보 등록" : "거점 투표"}</span>
+                  {/* ── 통합 모드(기본): 지역은 **한 칸**이다 (멘토링 8/6 §2) ──
+                      "등록하고 나서 또 투표하세요"가 없어졌다. 지도를 누르는 것이 곧
+                      한 표라, 제목도 그렇게 말한다. 옛 2단계는 문구를 나눠 쓴다. */}
+                  <span className="eyebrow">
+                    2. {REGION_MERGED ? "지역 정하기" : regionRegisterStep ? "거점 후보 등록" : "거점 투표"}
+                  </span>
                   <h2 className="sec" style={{ marginTop: 4 }}>
-                    {regionRegisterStep ? "어디쯤에서 볼까요?" : "어디서 만날까요?"}
+                    {REGION_MERGED
+                      ? "어디쯤에서 볼까요?"
+                      : regionRegisterStep
+                      ? "어디쯤에서 볼까요?"
+                      : "어디서 만날까요?"}
                   </h2>
                 </div>
                 <span className="chip line" style={{ fontSize: 10 }}>
-                  {regionRegisterStep
+                  {REGION_MERGED
+                    // 핑 = 표라 **둘 다** 말해 준다: 몇 명이 찍었나 / 후보가 몇 개인가
+                    ? `${regionVoteCount}/${state.totalParticipants}명 · 후보 ${state.regions.length}/${MAX_CANDIDATES}`
+                    : regionRegisterStep
                     // 상한을 **미리** 보여준다 — 다 차고 나서 거부당하면 늦다 (2차 그릴링)
                     ? `후보 ${state.regions.length}/${MAX_CANDIDATES}`
                     : `${regionVoteCount}/${state.totalParticipants}명 투표`}
@@ -884,6 +911,8 @@ export default function MeetingClient({ code }: { code: string }) {
                   <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
                     {state.originsSet === 0
                       ? "먼저 출발지를 등록해 주세요. 그래야 후보마다 각자 얼마나 걸리는지 보여드릴 수 있어요."
+                      : REGION_MERGED
+                      ? "위 지도에서 만나고 싶은 곳을 눌러 주세요. 누른 것이 곧 한 표예요 — 많이 찍힌 곳이 1위가 돼요."
                       : "아직 후보가 없어요 — 위 지도에서 만나고 싶은 곳을 눌러 후보로 등록해 주세요."}
                   </p>
                   {state.originsSet > 0 && (
@@ -909,7 +938,9 @@ export default function MeetingClient({ code }: { code: string }) {
                     // ⚠️ 등록 단계에서는 투표 버튼을 그리지 않는다 — 서버가 표를
                     //    거부하므로(v12) 누를 때마다 "단계가 바뀌었어요" 만 떴다.
                     //    투표는 방장이 [투표 시작]을 누른 뒤부터다 (v19 §5).
-                    votable={!regionRegisterStep}
+                    //    통합 모드에서도 마찬가지다 — **투표 버튼이 아예 없다.**
+                    //    표를 던지는 방법은 지도를 누르는 것뿐이다(핑 = 표).
+                    votable={!REGION_MERGED && !regionRegisterStep}
                     onVote={(candidateId, candidateName, mine) =>
                       act(
                         { action: "vote", participantId: me?.id, target: "region", candidateId },
@@ -920,11 +951,18 @@ export default function MeetingClient({ code }: { code: string }) {
                     onDelete={deleteRegion}
                   />
                   <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
-                    {regionVoteCount >= state.totalParticipants && state.totalParticipants > 0
+                    {/* ⚠️ 통합 모드에선 **전원이 찍을 때까지 기다릴 필요가 없다.**
+                           멘토링 §2: "참여자는 핑 찍지 않아도 되고, 방장이 다음 단계로
+                           강제로 넘어갈 수 있음." 그래서 문구가 재촉이 아니라 안내다. */}
+                    {REGION_MERGED
+                      ? regionVoteCount >= state.totalParticipants && state.totalParticipants > 0
+                        ? `${state.totalParticipants}명이 모두 찍었어요. 방장이 확정하면 다음으로 넘어가요.`
+                        : `${regionVoteCount}/${state.totalParticipants}명이 찍었어요. 다 안 찍어도 방장이 확정할 수 있어요.`
+                      : regionVoteCount >= state.totalParticipants && state.totalParticipants > 0
                       ? `참여자 ${state.totalParticipants}명이 모두 투표했어요. 방장이 마무리해주세요.`
                       : `참여자 ${state.totalParticipants}명이 모두 투표하면 방장이 확정할 수 있어요.`}
                     {topRegionId && regionVoteCount > 0
-                      ? ` 현재 최다득표: ${state.regions.find((r) => r.id === topRegionId)?.name}`
+                      ? ` 현재 1위: ${state.regions.find((r) => r.id === topRegionId)?.name}`
                       : ""}
                   </p>
                   {voteCardActions("region")}
@@ -1102,7 +1140,7 @@ export default function MeetingClient({ code }: { code: string }) {
       {/* ── 참여자 하단 바 — 담당자 파일: sections/ParticipantBar.tsx ──
            방장 바의 짝이다. 예전엔 참여자 화면 하단이 **비어 있어서**
            지금 무슨 단계인지도, 뭘 해야 하는지도 알 수 없었다 (멘토링 8/6 §1). */}
-      {showParticipantBar && <ParticipantBar step={step} state={state} myId={me?.id} />}
+      {showParticipantBar && <ParticipantBar step={step} state={state} myId={me?.id} regionMerged={REGION_MERGED} />}
 
       {/* ── 방장 컨트롤 바 — 담당자 파일: sections/LeaderBar.tsx ──
            지난 단계를 보는 중엔(viewingPast) 실제 단계에 대한 조작을 의도치 않게
@@ -1113,6 +1151,7 @@ export default function MeetingClient({ code }: { code: string }) {
           state={state}
           busy={busy}
           aiRecommendEnabled={AI_RECOMMEND_ENABLED}
+          regionMerged={REGION_MERGED}
           // v19 §8 — AI 추천은 방장 opt-in. 재호출이면 교체/추가를 먼저 묻는다 (v14).
           onAiRecommend={(hasPrev) => {
             let mode: "replace" | "append" = "replace";

@@ -48,6 +48,11 @@ export interface LeaderBarProps {
    *    서버의 자동 채움이 몰래 메우고 있었다(2026-08-10 "AI 추천은 어디 있냐" 제보).
    */
   aiRecommendEnabled: boolean;
+  /**
+   * 지역이 **한 칸으로 합쳐졌는가** (핑 = 표 · `FLAGS.regionVoteStep` 의 반대).
+   * 부모가 판단해 넘긴다 — 이 컴포넌트가 플래그를 직접 읽으면 테스트가 어려워진다.
+   */
+  regionMerged: boolean;
 }
 
 export default function LeaderBar({
@@ -64,6 +69,7 @@ export default function LeaderBar({
   onOpenManual,
   onAiRecommend,
   aiRecommendEnabled,
+  regionMerged,
 }: LeaderBarProps) {
   /** 최다득표 후보로 확정하는 버튼 — 문구가 투표 진행률을 말한다. */
   const confirmBtn = (target: "region" | "place") => {
@@ -187,6 +193,44 @@ export default function LeaderBar({
     </button>
   );
 
+  /**
+   * 통합 모드의 **지역 확정** 버튼 (멘토링 2026-08-06 §2).
+   *
+   * 지역에는 '투표 시작'이 없다 — 핑이 곧 표다. 방장은 **언제든** 최다 핑 지역으로
+   * 확정할 수 있다("참여자는 핑 찍지 않아도 되고, 방장이 다음 단계로 강제로 넘어갈 수 있음").
+   * 그래서 `confirmBtn` 과 달리 **전원이 찍기를 기다리지 않는다.**
+   */
+  const confirmRegionBtn = () => {
+    const pool = state.regions;
+    const tally = (id: string) =>
+      pool.find((r) => r.id === id)?.contributors?.length ?? 0;
+    const name = pool.find((c) => c.id === topRegionId)?.name;
+    const pinned = new Set(pool.flatMap((r) => r.contributors ?? [])).size;
+    return (
+      <button
+        className={"btn" + (topRegionId ? " ok" : " ghost")}
+        disabled={busy || !topRegionId}
+        title={
+          topRegionId
+            ? `${name} — ${tally(topRegionId)}명이 찍었어요 (전원이 안 찍어도 확정할 수 있어요)`
+            : "아직 아무도 지도를 누르지 않았어요"
+        }
+        onClick={() =>
+          onAction({ action: "confirmManual", participantId, target: "region", id: topRegionId }, `${name}(으)로 정했어요`)
+        }
+      >
+        <span className="lb-sub">
+          {topRegionId
+            ? `${pinned}/${state.totalParticipants}명 찍음 · ${tally(topRegionId)}표`
+            : "지도를 눌러 시작하세요"}
+        </span>
+        <b>
+          {topRegionId ? `📍 ‘${shortName(name)}’ 로 정하기` : "아직 찍힌 곳이 없어요"}
+        </b>
+      </button>
+    );
+  };
+
   return (
     <div className="leaderbar">
       {stage === "main" &&
@@ -201,7 +245,8 @@ export default function LeaderBar({
         ) : (
           <>
             {aiBtn()}
-            {startVoteBtn()}
+            {/* 통합 모드: 지역엔 '투표 시작'이 없다 — 바로 확정한다 */}
+            {regionMerged ? confirmRegionBtn() : startVoteBtn()}
           </>
         ))}
 

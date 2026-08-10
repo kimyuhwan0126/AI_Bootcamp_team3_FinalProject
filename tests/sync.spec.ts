@@ -64,6 +64,24 @@ async function setupFour(request: APIRequestContext) {
  *    "표가 사라지지 않는가"라 후보의 출처는 상관없지만, **실제 경로로 만드는 편이
  *    테스트가 제품에서 멀어지지 않는다.**
  */
+/**
+ * '투표 시작'. **통합 모드의 지역에는 이 절차가 아예 없다** (멘토링 2026-08-06 §2) —
+ * 핑이 곧 표라 잠글 것이 없고, 서버가 거부하는 게 **정상**이다.
+ *
+ * 아래 테스트 대부분은 이 액션 자체를 검사하려는 게 아니라 **다음 칸으로 넘어가려고**
+ * 부른다. 그래서 그 거부만 조용히 넘긴다 — 다른 실패는 그대로 터뜨린다.
+ * (지점에는 여전히 '투표 시작'이 있으므로 그 경로는 그대로 검사된다)
+ */
+async function startVoteIfAny(request: APIRequestContext, code: string, leaderId: string) {
+  const r = await request.post("/api/meeting", {
+    data: { action: "startVote", code, participantId: leaderId },
+  });
+  if (r.ok()) return;
+  const err = (await r.json())?.error ?? "";
+  if (/핑이 곧 표/.test(err)) return; // 통합 모드의 지역 — 넘길 절차가 없다
+  throw new Error(`startVote 실패: ${err}`);
+}
+
 async function seedPings(request: APIRequestContext, code: string, ids: string[]) {
   const spots = [
     { lat: 37.5045, lng: 127.0490 }, // 강남
@@ -83,27 +101,28 @@ async function seedPings(request: APIRequestContext, code: string, ids: string[]
 // 동시 쓰기 — 표가 사라지지 않는가
 // ═══════════════════════════════════════════════════════════════
 
-test("4명이 동시에 투표해도 표가 하나도 안 사라진다", async ({ request }) => {
+test("4명이 동시에 핑을 찍어도 표가 하나도 안 사라진다", async ({ request }) => {
+  // ⚠️ 통합 모드에선 **핑이 곧 표**다 (멘토링 8/6 §2) — 동시 쓰기 위험도 핑으로 옮겨왔다.
+  //    예전엔 `regionVotes` 행을 동시에 썼는데, 이제 같은 위험이 `contributors` 에 있다.
   const { code, ids } = await setupFour(request);
-  const regions = await seedPings(request, code, ids);
-  await act(request, { action: "startVote", code, participantId: ids[0] });
+  const spots = [
+    { lat: 37.5045, lng: 127.0490 }, { lat: 37.5563, lng: 126.9236 },
+    { lat: 37.5133, lng: 127.1000 }, { lat: 37.4765, lng: 126.9816 },
+  ];
 
-  // ⚠️ 순서대로가 아니라 **동시에** 쏜다 — 이게 실제로 표를 잃게 했던 상황이다.
-  //    (모임 행에 표를 같이 담으면 마지막 쓰기가 앞선 쓰기를 덮어쓴다)
+  // 순서대로가 아니라 **동시에** 쏜다 — 이게 실제로 표를 잃게 했던 상황이다
   await Promise.all(
-    ids.map((pid, i) =>
-      act(request, {
-        action: "vote", code, participantId: pid,
-        target: "region", candidateId: regions[i % regions.length].id,
-      })
-    )
+    ids.map((pid, i) => act(request, { action: "addRegion", code, participantId: pid, ...spots[i] }))
   );
 
   const st = await get(request, code);
+  const holders = new Set(
+    (st.regions as { contributors?: string[] }[]).flatMap((r) => r.contributors ?? [])
+  );
   for (const pid of ids) {
-    expect(st.regionVotes[pid], `${pid} 의 표가 사라졌다 — 동시 쓰기 유실`).toBeTruthy();
+    expect(holders.has(pid), `${pid} 의 핑(=표)이 사라졌다 — 동시 쓰기 유실`).toBe(true);
   }
-  expect(Object.keys(st.regionVotes)).toHaveLength(4);
+  expect(holders.size).toBe(4);
 });
 
 test("4명이 동시에 출발지를 바꿔도 아무도 유실되지 않는다", async ({ request }) => {
@@ -127,7 +146,7 @@ test("4명이 동시에 출발지를 바꿔도 아무도 유실되지 않는다"
 test("동시에 같은 지점 후보를 등록해도 중복이 생기지 않는다", async ({ request }) => {
   const { code, ids } = await setupFour(request);
   const regions = await seedPings(request, code, ids);
-  await act(request, { action: "startVote", code, participantId: ids[0] });
+  await startVoteIfAny(request, code, ids[0]);
   await act(request, {
     action: "confirmManual", code, participantId: ids[0],
     target: "region", id: regions[0].id,
@@ -158,10 +177,11 @@ test("동시에 같은 지점 후보를 등록해도 중복이 생기지 않는�
 // 참여자 간 연결 — 남이 한 것이 내 화면에 뜨는가 (1.8초 폴링)
 // ═══════════════════════════════════════════════════════════════
 
-test("한 참여자의 투표가 다른 참여자 화면에 반영된다 (폴링)", async ({ browser, request }) => {
+test("한 참여자의 표가 다른 참여자 화면에 반영된다 (폴링)", async ({ browser, request }) => {
   const { code, ids } = await setupFour(request);
-  const regions = await seedPings(request, code, ids);
-  await act(request, { action: "startVote", code, participantId: ids[0] });
+  // 통합 모드: 핑이 표다. 방장만 먼저 찍어 두고, 아래에서 B 가 찍는 걸 A 가 보는지 본다.
+  await act(request, { action: "addRegion", code, participantId: ids[0], lat: 37.5045, lng: 127.049 });
+  await startVoteIfAny(request, code, ids[0]);
 
   const idents: Ident[] = [
     { id: ids[0], name: "방장", isLeader: true },
@@ -179,17 +199,14 @@ test("한 참여자의 투표가 다른 참여자 화면에 반영된다 (폴링
   await pageA.goto(`/m/${code}`);
   await pageB.goto(`/m/${code}`);
 
-  // B 가 투표하기 전 — A 화면은 0표
-  await expect(pageA.getByText(/0\/4명/).first()).toBeVisible({ timeout: 10_000 });
+  // B 가 찍기 전 — A 화면엔 방장 것 1표만
+  await expect(pageA.getByText(/1\/4명/).first()).toBeVisible({ timeout: 10_000 });
 
-  // B 가 API 로 투표 (화면 조작 대신 — 여기서 볼 것은 "A 에게 보이는가"다)
-  await act(request, {
-    action: "vote", code, participantId: ids[1],
-    target: "region", candidateId: regions[0].id,
-  });
+  // B 가 API 로 다른 곳을 찍는다 (화면 조작 대신 — 여기서 볼 것은 "A 에게 보이는가"다)
+  await act(request, { action: "addRegion", code, participantId: ids[1], lat: 37.5563, lng: 126.9236 });
 
   // A 는 아무것도 안 했는데 폴링(1.8초)으로 표가 올라와야 한다
-  await expect(pageA.getByText(/1\/4명/).first(), "남의 표가 내 화면에 안 들어온다 — 폴링 끊김")
+  await expect(pageA.getByText(/2\/4명/).first(), "남의 표가 내 화면에 안 들어온다 — 폴링 끊김")
     .toBeVisible({ timeout: 10_000 });
 
   await ctxA.close();
@@ -198,7 +215,7 @@ test("한 참여자의 투표가 다른 참여자 화면에 반영된다 (폴링
 
 test("방장이 단계를 넘기면 참여자 화면도 따라 넘어간다", async ({ browser, request }) => {
   const { code, ids } = await setupFour(request);
-  await seedPings(request, code, ids);
+  const regions = await seedPings(request, code, ids);
 
   const idents: Ident[] = [{ id: ids[1], name: "참가자2", isLeader: false }];
   const ctx = await browser.newContext();
@@ -206,14 +223,18 @@ test("방장이 단계를 넘기면 참여자 화면도 따라 넘어간다", as
   await loginAs(page, code, idents, ids[1]);
   await page.goto(`/m/${code}`);
 
-  // 아직 등록 단계 — 참여자 화면에 지도 핑 안내가 있다
+  // 아직 지역 단계 — 참여자 화면에 지도 핑 안내가 있다
   await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
 
-  // 방장이 투표를 시작한다 (다른 기기에서)
-  await act(request, { action: "startVote", code, participantId: ids[0] });
+  // 방장이 지역을 확정한다 (다른 기기에서)
+  //  ⚠️ 통합 모드엔 지역 '투표 시작'이 없다 — 단계를 넘기는 것은 **확정**이다.
+  await startVoteIfAny(request, code, ids[0]);
+  await act(request, {
+    action: "confirmManual", code, participantId: ids[0], target: "region", id: regions[0].id,
+  });
 
-  // 참여자 화면이 투표 단계로 따라 넘어가야 한다
-  await expect(page.getByText(/명 투표/).first(), "방장이 넘긴 단계가 참여자 화면에 안 온다")
+  // 참여자 화면이 지점 단계로 따라 넘어가야 한다 (새로고침 없이)
+  await expect(page.getByText(/지점|가게/).first(), "방장이 넘긴 단계가 참여자 화면에 안 온다")
     .toBeVisible({ timeout: 10_000 });
 
   await ctx.close();

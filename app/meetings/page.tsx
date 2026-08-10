@@ -51,9 +51,15 @@ const FILTER_ROWS: { title: string; items: { key: MeetingFilter; label: string }
 ];
 import { PURPOSE_LABELS } from "@/lib/types";
 import { takeHandoff } from "@/lib/handoff";
+import { FLAGS } from "@/lib/flags";
 
 const STAGE_LABEL: Record<string, { text: string; on: boolean }> = {
-  main: { text: "참석자 모집 중", on: false },
+  // ⚠️ 통합 모드(기본)에서 `main` 은 **지역을 정하는 중**이다 — 핑이 곧 표라
+  //    "모집 중"이 아니라 이미 의사결정이 돌아가고 있다 (멘토링 8/6 §2).
+  //    옛 2단계에서는 `main` 이 정말 등록만 하는 칸이라 문구가 달랐다.
+  main: FLAGS.regionVoteStep
+    ? { text: "참석자 모집 중", on: false }
+    : { text: "지역 정하는 중", on: true },
   chat: { text: "장소 정하는 중", on: true },
   result: { text: "확정 완료", on: false },
 };
@@ -323,8 +329,13 @@ function MeetingsInner() {
    * 지금 투표가 열려 있는 모임 — 내가 아직 안 찍었는지까지는 여기서 알 수 없어
    * (내 participantId 가 모임마다 다르다) **투표가 열린 모임**을 올린다.
    */
+  //  ⚠️ 통합 모드에선 **지역 단계(`main`)도 투표 중**이다 — 지도를 누르는 것이 표다.
+  //     이걸 빼면 "지금 찍어야 할 모임"이 목록에서 안 올라온다.
   const needsVote = byName.filter(
-    (m) => !m.isPast && m.stage === "chat" && (m.aiPhase === "region" || m.placeVoteOpen)
+    (m) =>
+      !m.isPast &&
+      ((m.stage === "chat" && (m.aiPhase === "region" || m.placeVoteOpen)) ||
+        (!FLAGS.regionVoteStep && m.stage === "main"))
   );
 
   return (
@@ -359,6 +370,7 @@ function MeetingsInner() {
                 <div className="i-title">🔔 투표하세요! — {m.name}</div>
                 <div className="i-sub">
                   {m.aiPhase === "place" ? "지점" : "지역"} 투표 진행 중 · {m.totalParticipants}명
+                  {!FLAGS.regionVoteStep && m.aiPhase !== "place" ? " · 지도를 누르면 한 표" : ""}
                 </div>
               </div>
               <span className="faint">›</span>

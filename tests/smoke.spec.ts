@@ -48,6 +48,24 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
+/**
+ * '투표 시작'. **통합 모드의 지역에는 이 절차가 아예 없다** (멘토링 2026-08-06 §2) —
+ * 핑이 곧 표라 잠글 것이 없고, 서버가 거부하는 게 **정상**이다.
+ *
+ * 아래 테스트 대부분은 이 액션 자체를 검사하려는 게 아니라 **다음 칸으로 넘어가려고**
+ * 부른다. 그래서 그 거부만 조용히 넘긴다 — 다른 실패는 그대로 터뜨린다.
+ * (지점에는 여전히 '투표 시작'이 있으므로 그 경로는 그대로 검사된다)
+ */
+async function startVoteIfAny(request: APIRequestContext, code: string, leaderId: string) {
+  const r = await request.post("/api/meeting", {
+    data: { action: "startVote", code, participantId: leaderId },
+  });
+  if (r.ok()) return;
+  const err = (await r.json())?.error ?? "";
+  if (/핑이 곧 표/.test(err)) return; // 통합 모드의 지역 — 넘길 절차가 없다
+  throw new Error(`startVote 실패: ${err}`);
+}
+
 test("홈 화면이 실제로 그려진다", async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto("/");
@@ -119,30 +137,26 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   // 1순위 거점이 화면에 그려져야 한다
   const topRegion: string = regions.regions[0].name;
   await expect(page.getByText(topRegion).filter({ visible: true }).first()).toBeVisible();
-  // ⚠️ 여기는 아직 **후보 등록 칸**이다(투표 시작 전). 2026-08-10 부터 이 칸의 칩은
-  //    '후보 N개'를 말한다 — 예전엔 등록 칸에서도 'n/N명 투표'가 떠서 "왜 투표 버튼이
-  //    없지?" 로 읽혔다. 투표 진행률은 아래 startVote 뒤에 확인한다.
-  await expect(page.getByText(/후보 \d+개/).first()).toBeVisible();
+  // 지역 칸의 칩은 **후보 개수**를 말한다. 통합 모드에선 "몇 명이 찍었나"까지 함께
+  // 말하므로(`n/N명 · 후보 n/5`) 공통부인 `후보 n/` 로 찾는다.
+  await expect(page.getByText(/후보 \d+\/\d+|후보 \d+개/).first()).toBeVisible();
   // 화면이 통째로 비지 않았는지 — 버튼이 하나도 없으면 미렌더다
   expect(await page.getByRole("button").count(), "버튼이 하나도 없다 = 화면 미렌더").toBeGreaterThan(0);
 
-  // ── 3. 투표 시작(= 후보 잠금) → 투표가 서버에 실제로 기록되는지 ──
-  //  v19 §5: 두 단계 모두 '등록 → 투표 시작(잠금) → 투표 → 방장 확정'이다.
-  //  투표 시작 전에는 서버가 표를 **거부한다**(v12 — "단계가 바뀌었어요").
-  //  예전 흐름(등록 화면에서 바로 투표)은 v19 에서 사라졌다.
-  await act(request, { action: "startVote", code, participantId: leaderId });
-  const afterStart = await (await request.get(`/api/meeting?code=${code}`)).json();
-  expect(afterStart.stage, "투표 시작이 지역 투표 단계로 넘기지 못했다").toBe("chat");
+  // ── 3. 지역은 **핑이 곧 표**다 (멘토링 2026-08-06 §2) ──
+  //  통합 모드(기본)에는 '투표 시작'도 별도 투표 칸도 없다. 참여자가 지도를 누르면
+  //  그게 한 표고, 많이 찍힌 곳이 1위다. 방장은 전원을 기다리지 않고 확정할 수 있다.
+  //  ⚠️ 옛 2단계(`NEXT_PUBLIC_FF_REGION_VOTE_STEP=1`)에서는 여기서 잠금이 일어난다 —
+  //     `startVoteIfAny` 가 두 모드를 모두 통과시킨다.
+  await startVoteIfAny(request, code, leaderId);
 
-  await act(request, {
-    action: "vote",
-    code,
-    participantId: leaderId,
-    target: "region",
-    candidateId: regions.regions[0].id,
-  });
-  const afterVote = await (await request.get(`/api/meeting?code=${code}`)).json();
-  expect(afterVote.regionVotes[leaderId]).toBe(regions.regions[0].id);
+  // 참가자2 가 지도를 눌러 한 표를 던진다 (핑 = 표)
+  await act(request, { action: "addRegion", code, participantId: memberId, lat: 37.5665, lng: 126.978 });
+  const afterPing = await (await request.get(`/api/meeting?code=${code}`)).json();
+  const mine = afterPing.regions.find((r: { contributors?: string[] }) =>
+    (r.contributors ?? []).includes(memberId)
+  );
+  expect(mine, "지도를 눌렀는데 내 표가 어디에도 없다").toBeTruthy();
 
   // ── 4. 방장 확정 → result 단계 ──
   await act(request, {
@@ -187,6 +201,7 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   expect(topPlace?.id, "지점 후보 등록이 실패했다").toBeTruthy();
 
   // 후보가 1개면 v8 규칙상 투표를 생략하고 방장이 바로 확정한다
+  //  ⚠️ **지점**에는 '투표 시작'이 그대로 있다 — 통합된 것은 지역뿐이다.
   const started = await act(request, { action: "startVote", code, participantId: leaderId });
   expect(started.skipped, "후보 1개면 투표를 생략해야 한다").toBe(true);
 

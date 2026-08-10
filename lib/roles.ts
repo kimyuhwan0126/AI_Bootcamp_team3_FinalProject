@@ -22,6 +22,7 @@
 //    **판정 규칙은 `phaseStepOf` 와 반드시 같아야 한다** — 어긋나면
 //    "눌리는데 서버가 거부하는" 버튼이 다시 생긴다.
 // ─────────────────────────────────────────────────────────────
+import { FLAGS } from "./flags";
 
 /** v19 §5 — 다섯 칸. `lib/store.ts` 의 `PhaseStep` 과 같은 값이어야 한다. */
 export type Step = "region-register" | "region-vote" | "place-register" | "place-vote" | "result";
@@ -29,7 +30,13 @@ export type Step = "region-register" | "region-vote" | "place-register" | "place
 /** 보는 사람이 누구인가. `guest` = 아직 참여하지 않은 사람(초대 링크만 연 상태). */
 export type ViewerRole = "leader" | "participant" | "guest";
 
-/** `phaseStepOf` 와 같은 판정 — 화면이 가진 조각으로 계산한다. */
+/**
+ * `phaseStepOf` 와 같은 판정 — 화면이 가진 조각으로 계산한다.
+ *
+ * ⚠️ 통합 모드(기본)에서는 **지역에 투표 칸이 없다** — 핑이 곧 표다
+ *    (멘토링 2026-08-06 §2 · `FLAGS.regionVoteStep`). 서버 `phaseStepOf` 와
+ *    **같은 규칙이어야 한다**.
+ */
 export function stepOf(s: {
   stage: "main" | "chat" | "result";
   aiPhase: "region" | "place" | "done";
@@ -37,6 +44,7 @@ export function stepOf(s: {
 }): Step {
   if (s.stage === "result") return "result";
   if (s.aiPhase === "place") return s.placeVoteOpen ? "place-vote" : "place-register";
+  if (!FLAGS.regionVoteStep) return "region-register";
   return s.stage === "chat" ? "region-vote" : "region-register";
 }
 
@@ -89,18 +97,30 @@ const NONE: Abilities = {
  * @param role   보는 사람
  * @param step   지금 어느 칸인가
  * @param isPast 지난 모임이면 **전부 읽기 전용**이다 (v19 §4-⑪ · 부활 불가)
+ * @param scope  확정 범위. 결과 화면에서 **재투표가 무엇을 대상으로 하는지**가
+ *               이 값으로 갈린다 — `지역까지` 모임이면 지역이고, 통합 모드의
+ *               지역에는 재투표가 없다(핑이 곧 표).
  */
-export function abilitiesOf(role: ViewerRole, step: Step, isPast = false): Abilities {
+export function abilitiesOf(
+  role: ViewerRole,
+  step: Step,
+  isPast = false,
+  scope: "region" | "place" = "place"
+): Abilities {
   // 지난 모임 · 신원 없는 사람 → 아무것도 못 한다. 화면은 읽기 전용으로 그린다.
   if (isPast || role === "guest") return NONE;
 
   const leader = role === "leader";
   const registering = step === "region-register" || step === "place-register";
   const voting = step === "region-vote" || step === "place-vote";
+  /** 지역이 한 칸으로 합쳐진 모드인가 (핑 = 표) */
+  const mergedRegion = !FLAGS.regionVoteStep;
 
   return {
     // 등록 칸에서만 잠글 것이 있다. 투표 칸·결과에서는 '투표 시작'이 의미 없다.
-    startVote: leader && registering,
+    // ⚠️ 통합 모드의 **지역에는 '투표 시작'이 아예 없다** — 핑이 곧 표라 잠글 것이 없다.
+    startVote:
+      leader && registering && !(step === "region-register" && !FLAGS.regionVoteStep),
     /**
      * 확정 — **등록 칸에서도 된다.**
      *
@@ -122,7 +142,15 @@ export function abilitiesOf(role: ViewerRole, step: Step, isPast = false): Abili
      * 재투표 — 후보는 두고 표만 지운다. `reopen`(단계를 내리고 표 유지)과 **정반대**다.
      * 표가 있는 칸에서만 말이 된다: 투표 칸(동점 재투표)과 결과(확정을 풀고 다시).
      */
-    revote: leader && (voting || step === "result"),
+    //  ⚠️ 통합 모드의 지역에는 재투표가 없다 — 표를 지우면 곧 핑을 지우는 것이라
+    //     되돌리기와 같아진다. 화면에도 버튼을 안 낸다(서버도 거부한다).
+    revote:
+      leader &&
+      (voting || step === "result") &&
+      // 통합 모드에서 대상이 '지역'이 되는 경우는 재투표가 성립하지 않는다:
+      //  · `region-vote` 칸 자체가 없고
+      //  · `지역까지` 모임의 결과 화면은 되돌리면 지역이다
+      !(mergedRegion && (step === "region-vote" || (step === "result" && scope === "region"))),
     kick: leader,
     manageMeeting: leader,
 
@@ -130,7 +158,8 @@ export function abilitiesOf(role: ViewerRole, step: Step, isPast = false): Abili
     //    (멘토링 §2: "참여자/방장이 지도에 핑을 찍어 지역 후보를 등록")
     ping: step === "region-register",
     addPlace: step === "place-register",
-    // 등록 칸에서는 서버가 표를 거부한다(v12) → 버튼 자체를 그리지 않는다
+    // 등록 칸에서는 서버가 표를 거부한다(v12) → 버튼 자체를 그리지 않는다.
+    // ⚠️ 통합 모드의 지역은 **핑이 표**라, 따로 '투표' 동작이 없다(지도를 누르면 된다).
     vote: voting,
     // 신호등은 확정된 뒤의 이야기다 (당일 여부는 화면이 따로 본다)
     setStatus: step === "result",

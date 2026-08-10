@@ -121,10 +121,9 @@ if ((s0.regions ?? []).length < 2) {
 await visit("⑥ 지역 후보 등록 (핑 2개)", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
 await visit("⑥ 지역 후보 등록 · 참여자 시점", `${B}/m/${code}`, { fn: memberSeed, arg: { c: code, id: j.participantId } });
 
-await api({ action: "startVote", code, participantId: L });
-await visit("⑦ 지역 투표", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
-await visit("⑦ 지역 투표 · 참여자 시점", `${B}/m/${code}`, { fn: memberSeed, arg: { c: code, id: j.participantId } });
-
+// ⚠️ 통합 모드(기본)에서 지역에는 **'투표 시작'도 투표 칸도 없다** (멘토링 8/6 §2).
+//    핑이 곧 표라 위 ⑥ 화면이 곧 투표 화면이다 — 그래서 ⑦ 을 따로 열지 않는다.
+//    (옛 2단계 `NEXT_PUBLIC_FF_REGION_VOTE_STEP=1` 에서는 여기서 잠금이 일어난다)
 const s1 = await st(code);
 await api({ action: "confirmManual", code, participantId: L, target: "region", id: s1.regions[0].id });
 await visit("⑧ 지점 후보 등록", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });

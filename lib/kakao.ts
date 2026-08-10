@@ -2,6 +2,7 @@
 // kakao.ts — 카카오 로그인(OAuth) + 로컬(주소/키워드 → 좌표)
 // 모든 호출은 서버에서만. 키 없으면 null 반환 → 상위에서 mock 폴백.
 // ─────────────────────────────────────────────────────────────
+import { FLAGS } from "./flags";
 import { env } from "./env";
 
 export interface Coord { lat: number; lng: number; }
@@ -91,7 +92,13 @@ export async function coord2RegionKakao(
     // 행정동(H) 우선, 없으면 법정동(B)
     const doc = docs.find((x) => x.region_type === "H") ?? docs[0];
     if (!doc) return null;
-    const name = [doc.region_2depth_name, doc.region_3depth_name].filter(Boolean).join(" ");
+    // ── 묶는 단위 (멘토링 2026-08-06 §2) ──
+    //  기본은 **시·군·구**("강남구"). 동까지 내려가면 너무 잘게 갈려서
+    //  4명이 찍으면 후보가 4개가 되기 쉽고, 표가 흩어져 1위가 안 나온다.
+    //  옛 동작(행정동)은 `.env.local` 에 `NEXT_PUBLIC_FF_PING_SNAP_DONG=1`.
+    const name = FLAGS.pingSnapDong
+      ? [doc.region_2depth_name, doc.region_3depth_name].filter(Boolean).join(" ")
+      : doc.region_2depth_name || doc.region_3depth_name || "";
     if (!name) return null;
     // ⚠️ 좌표는 **동 중심**(카카오가 주는 x/y)을 쓴다. 찍은 자리를 그대로 두면
     //    같은 동인데 후보 위치가 사람마다 달라 지도에서 핀이 흩어진다.

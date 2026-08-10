@@ -162,38 +162,30 @@ check(
 );
 await Promise.all(devs.map((d) => shot(d, "1b-핑등록")));
 
-// ── 연동 ②: 방장이 투표를 시작하면 전원 화면이 따라 넘어가는가 ──
-await d1.page.getByRole("button", { name: /투표 시작/ }).click();
-await d1.page.waitForTimeout(3000);
-let moved = 0;
-for (const d of devs.slice(1)) {
-  const hit = await d.page.getByText(/명 투표/).first().isVisible().catch(() => false);
-  if (hit) moved++;
-}
-check(moved === 3, "방장이 넘긴 단계가 3대에 전부 반영", `${moved}/3대`);
-await Promise.all(devs.map((d) => shot(d, "2-투표시작")));
-
-// ── 연동 ③: 4대가 각자 자기 화면에서 투표 → 표가 서로 보이는가 ──
-const regions = (await state(code)).regions;
-for (const [i, d] of devs.entries()) {
-  const target = regions[i % regions.length].name;
-  const btn = d.page.getByRole("button", { name: "투표" }).nth(i % regions.length);
-  await btn.click().catch(async () => {
-    await d.page.getByText(target).first().click();
-  });
-  await d.page.waitForTimeout(400);
-}
+// ── 연동 ②: 4대가 찍은 표가 서로의 화면에 보이는가 ──
+//  ⚠️ 통합 모드(기본)에선 위 ②-0 의 **핑이 곧 표**다 (멘토링 8/6 §2) —
+//     '투표 시작'도 별도 투표 동작도 없다. 그래서 여기서 확인할 것은
+//     "내가 찍은 것이 남의 화면에 뜨는가"이고, 그건 이미 서버 상태로 확인했다.
+//     화면 쪽은 **4/4명 표시**로 본다.
 await d1.page.waitForTimeout(3000);
 const st2 = await state(code);
-const votes = Object.keys(st2.regionVotes ?? {}).length;
-check(votes === 4, "4대 각자 투표 · 표 유실 없음", `${votes}/4표`);
+const voters = new Set((st2.regions ?? []).flatMap((r) => r.contributors ?? [])).size;
+check(voters === 4, "4대 각자 표(핑) · 유실 없음", `${voters}/4표`);
+
+let moved = 0;
+for (const d of devs.slice(1)) {
+  const hit = await d.page.getByText(/4\/4명/).first().isVisible().catch(() => false);
+  if (hit) moved++;
+}
+check(moved === 3, "남들이 찍은 표가 3대 화면에 전부 반영", `${moved}/3대`);
 
 const banner = await d1.page.getByText(/4\/4명/).first().isVisible().catch(() => false);
-check(banner, "방장 화면에 4/4명 투표 완료 표시");
-await Promise.all(devs.map((d) => shot(d, "3-투표완료")));
+check(banner, "방장 화면에 4/4명 표시");
+await Promise.all(devs.map((d) => shot(d, "2-표집계")));
 
-// ── 연동 ④: 방장이 확정 → 전원 다음 단계로 ────────────────────
-await d1.page.getByRole("button", { name: /투표 종료 및 확정|지금 확정/ }).click();
+// ── 연동 ③: 방장이 확정 → 전원 다음 단계로 ────────────────────
+//  통합 모드의 지역 확정 버튼은 "‘○○구’ 로 정하기" 다 (옛 문구는 '지금 확정').
+await d1.page.getByRole("button", { name: /로 정하기|투표 종료 및 확정|지금 확정/ }).click();
 await d1.page.waitForTimeout(3500);
 for (const d of devs) await d.page.waitForTimeout(1200);
 const st3 = await state(code);

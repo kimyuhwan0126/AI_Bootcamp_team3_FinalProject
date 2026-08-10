@@ -24,6 +24,7 @@ import type {
   PurposeCategory,
 } from "./types";
 import { MAX_PARTICIPANTS, MAX_PIN_FAILS, MAX_CANDIDATES } from "./types";
+import { FLAGS } from "./flags";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
 import { hasDb } from "./db";
 import {
@@ -1394,6 +1395,12 @@ export type PhaseStep =
 export function phaseStepOf(m: Meeting): PhaseStep {
   if (m.stage === "result") return "result";
   if (m.aiPhase === "place") return m.placeVoteOpen ? "place-vote" : "place-register";
+  // ── 핑 = 투표 (멘토링 2026-08-06 §2) ──
+  //  기본값에서는 지역에 **투표 칸이 없다.** 핑 자체가 표이므로 `stage` 가 어떻든
+  //  지역은 늘 한 칸이다. 옛 모임 행이 `stage:"chat"` 인 채로 남아 있어도
+  //  같은 한 칸으로 읽히므로 **마이그레이션 없이** 그대로 열린다.
+  //  옛 2단계는 `NEXT_PUBLIC_FF_REGION_VOTE_STEP=1`.
+  if (!FLAGS.regionVoteStep) return "region-register";
   return m.stage === "chat" ? "region-vote" : "region-register";
 }
 
@@ -1429,6 +1436,10 @@ export async function startVote(input: {
     return { ok: false, error: "이미 투표가 시작됐어요." };
 
   const isRegion = step === "region-register";
+  // 통합 모드에서 지역은 잠글 것이 없다 — 핑이 곧 표라 '투표 시작'이라는 절차가 없다.
+  // 화면에도 버튼을 안 그리지만, 옛 화면이 남아 있을 수 있어 서버에서도 막는다.
+  if (isRegion && !FLAGS.regionVoteStep)
+    return { ok: false, error: "지역은 핑이 곧 표예요 — 바로 확정하면 됩니다." };
   const pool: { id: string }[] = isRegion ? m.regions : m.places;
   const gate = candidateGate(pool.length);
 
@@ -1488,7 +1499,8 @@ export async function reopenStep(input: {
     case "result": {
       // '지역까지' 모임은 지점 단계가 없으니 지역 투표로 (v4)
       if (m.scope === "region") {
-        m.stage = "chat";
+        // 통합 모드엔 지역 투표 칸이 없다 — 핑 화면(main)으로 바로 내려간다
+        m.stage = FLAGS.regionVoteStep ? "chat" : "main";
         m.aiPhase = "region";
         m.winnerRegionId = null;
       } else {
@@ -1520,7 +1532,7 @@ export async function reopenStep(input: {
       m.winnerPlaceId = null;
       m.winnerRegionId = null;
       m.aiPhase = "region";
-      m.stage = "chat";
+      m.stage = FLAGS.regionVoteStep ? "chat" : "main";
       m.radiusM = 700;
       clearPlaceVotes = true;
       break;
@@ -1577,6 +1589,21 @@ export async function revote(input: {
   const step = phaseStepOf(m);
   // 어느 표를 비울 것인가 — 결과 화면이면 그 모임이 마지막으로 정한 것 기준이다
   let target: "region" | "place";
+
+  // ── 통합 모드에서 **지역에는 재투표가 없다** ──
+  //  핑이 곧 표라, "표만 지우고 후보는 남긴다"가 성립하지 않는다 —
+  //  표를 지우면 곧 핑(=후보)을 지우는 것이라 되돌리기와 같아진다.
+  //  대신 각자 핑을 **옮기거나 지우면** 된다(인원당 1개 규칙이 그 역할을 한다).
+  const regionIsMerged = !FLAGS.regionVoteStep;
+  const wouldTargetRegion =
+    step === "region-register" ||
+    step === "region-vote" ||
+    (step === "result" && m.scope === "region");
+  if (regionIsMerged && wouldTargetRegion)
+    return {
+      ok: false,
+      error: "지역은 핑이 곧 표예요 — 재투표 대신 지도에서 핑을 옮기거나 지워 주세요.",
+    };
 
   switch (step) {
     case "result":
