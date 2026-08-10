@@ -855,3 +855,34 @@ test("화면: 기기가 다크 모드여도 라이트로 고정된다", async ({
   // 이 선언이 있어야 안드로이드 크롬이 우리 색 위에 자동 다크를 덧칠하지 않는다
   expect(scheme, "color-scheme 선언이 빠졌다").toContain("light");
 });
+
+test("LAN: /health 에서 두 기기가 서로를 본다", async ({ browser }) => {
+  // ⚠️ 발표 당일 폰에서 "내가 붙었나"를 확인할 유일한 화면이다.
+  //    두 기기가 서로 안 보이면 그 폰은 서버에 못 붙은 것 — 발표가 거기서 멈춘다.
+  const a = await browser.newContext();
+  const b = await browser.newContext();
+  const pa = await a.newPage();
+  const pb = await b.newPage();
+
+  await pa.goto("/health");
+  await pa.getByRole("button", { name: /점검 시작/ }).click();
+  await expect(pa.getByText(/연결된 기기 1대/)).toBeVisible({ timeout: 15_000 });
+
+  // 첫 기기가 만든 링크를 두 번째 기기가 연다 (단톡방에 뿌리는 그 링크)
+  const url = (await pa.locator("code").last().innerText()).trim();
+  await pb.goto(url);
+  await pb.getByRole("button", { name: "참여", exact: true }).click();
+  await expect(pb.getByText(/연결된 기기 2대/)).toBeVisible({ timeout: 15_000 });
+
+  // 첫 기기는 아무것도 안 했는데 폴링으로 2대가 돼야 한다
+  await expect(pa.getByText(/연결된 기기 2대/), "다른 기기가 내 화면에 안 나타난다 — 폴링 끊김")
+    .toBeVisible({ timeout: 15_000 });
+
+  // 각자 자기 기기를 알아볼 수 있어야 한다
+  await expect(pa.getByText("이 기기").first()).toBeVisible();
+  await expect(pb.getByText("이 기기").first()).toBeVisible();
+
+  await pa.getByRole("button", { name: /점검 끝/ }).click();
+  await a.close();
+  await b.close();
+});
