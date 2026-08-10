@@ -1034,3 +1034,31 @@ test("§7 투표가 시작되면 후보를 지울 수 없다", async ({ request 
   });
   expect(fail.error).toContain("투표가 시작돼");
 });
+
+test("§4-⑥ 지도를 눌러도 확인 전에는 후보가 생기지 않는다", async ({ page, request }) => {
+  // ⚠️ 지도를 스크롤·확대하다 손가락이 닿기만 해도 후보가 생겼고 되돌릴 수 없었다
+  //    (2026-08-10 제보). 핑은 1인 1개라 개수가 늘지는 않지만, **내가 만들 생각이
+  //    없던 후보가 생기는 것** 자체가 문제다. [등록]을 눌러야 서버로 간다.
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request);
+  const before = (await get(request, code)).regions.length;
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  // 지도 SDK 가 없는 환경에서는 핑 자체를 테스트할 수 없으므로,
+  // 확인 시트가 열렸을 때의 계약(취소 = 등록 안 됨)만 본다.
+  await page.evaluate(() => {
+    // 지도 탭과 같은 경로로 확인 시트를 연다
+    const btn = document.querySelector<HTMLElement>("[data-ping-test]");
+    btn?.click();
+  });
+
+  // 어떤 경우든 화면을 여는 것만으로 후보가 늘어서는 안 된다
+  const after = (await get(request, code)).regions.length;
+  expect(after, "화면을 열기만 했는데 후보가 늘었다").toBe(before);
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});

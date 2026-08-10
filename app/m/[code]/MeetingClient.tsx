@@ -78,6 +78,14 @@ export default function MeetingClient({ code }: { code: string }) {
    * v19 §4-⑧ 미리보기 핀 — `PlacePicker` 가 조회한 반경 내 장소.
    * 후보가 **아니다**. 지도에 회색으로 뜨고, 탭해야 후보가 된다.
    */
+  /**
+   * v19 §4-⑥ 지도 핑 — **누르자마자 등록하지 않는다.**
+   * 지도를 스크롤·확대하다 손가락이 닿기만 해도 후보가 생겼고, 되돌릴 방법이
+   * 없었다 (2026-08-10 제보). 좌표를 잠깐 들고 있다가 사람이 [등록]을 눌러야
+   * 서버로 보낸다. (핑은 1인 1개라 개수가 늘지는 않지만, **내가 안 만든 후보가
+   * 생기는 것** 자체가 문제다)
+   */
+  const [pendingPing, setPendingPing] = useState<{ lat: number; lng: number } | null>(null);
   const [previewPois, setPreviewPois] = useState<
     { id: string; name: string; lat: number; lng: number; category: string; emoji: string; rating: number; url: string }[]
   >([]);
@@ -608,8 +616,29 @@ export default function MeetingClient({ code }: { code: string }) {
   const deleteRegion = (id: string, name: string) =>
     void act({ action: "removeRegion", participantId: me?.id, regionId: id }, `‘${name}’ 후보를 지웠어요`);
 
+  /** 확인 시트에서 [등록]을 눌렀을 때만 서버로 보낸다 (v19 §4-⑥) */
+  const actPing = (lat: number, lng: number) =>
+    // 이름을 안 보낸다 — 서버가 동으로 스냅한다(실패하면 좌표 이름으로 폴백).
+    // 인원당 1개·같은 동 병합도 서버 규칙이라 여기서 따지지 않는다.
+    act({ action: "addRegion", participantId: me?.id, lat, lng }).then((d: unknown) => {
+      const r = d as { existing?: boolean; candidate?: { name?: string } };
+      // 무엇이 등록됐는지 **이름으로** 알려준다 — 뭐가 생겼는지 모르면 지울 수도 없다.
+      flash(
+        r?.existing
+          ? `‘${r.candidate?.name}’에 핑을 모았어요`
+          : `‘${r?.candidate?.name ?? "후보"}’ 등록 — 아래 목록에서 지울 수 있어요`
+      );
+    });
+
   const voteFromMap = (id: string) => {
     if (!me || busy) return;
+    // ⚠️ 등록 단계에서 지도 위 후보를 누르면 **투표가 아니다.** 서버가 거부해서
+    //    "단계가 바뀌었어요" 400 만 났다 — 눌리는 것처럼 보이는데 절대 안 되는
+    //    상태가 가장 나쁘다. 무엇을 해야 하는지 알려준다 (2026-08-10 실측).
+    if (regionRegisterStep) {
+      flash("아직 등록 단계예요 — 방장이 [투표 시작]을 누르면 투표할 수 있어요");
+      return;
+    }
     // v19 §4-⑧ — 회색 미리보기 핀을 누르면 **투표가 아니라 후보 등록**이다.
     const pv = previewPois.find((p) => p.id === id);
     if (pv) {
@@ -697,20 +726,40 @@ export default function MeetingClient({ code }: { code: string }) {
           //  지역 후보 **등록 단계**에서만 켠다. 투표가 시작되면 서버가 거부하므로
           //  화면에서도 미리 꺼서 "눌리는데 안 되는" 상태를 만들지 않는다 (v5·v12).
           pingMode={!!me && !viewingPast && !state.isPast && stage === "main" && state.aiPhase === "region"}
-          onMapPing={(lat, lng) => {
-            // 이름을 안 보낸다 — 서버가 동으로 스냅한다(실패하면 좌표 이름으로 폴백).
-            // 인원당 1개·같은 동 병합도 서버 규칙이라 여기서 따지지 않는다.
-            void act({ action: "addRegion", participantId: me?.id, lat, lng }).then((d: any) => {
-              // 무엇이 등록됐는지 **이름으로** 알려준다 — 지도를 잘못 눌렀을 때
-              // 뭐가 생겼는지 모르면 지울 수도 없다. 아래 목록의 [지우기] 로 되돌린다.
-              flash(
-                d?.existing
-                  ? `‘${d.candidate?.name}’에 핑을 모았어요`
-                  : `‘${d?.candidate?.name ?? "후보"}’ 등록 — 아래 목록에서 지울 수 있어요`
-              );
-            });
-          }}
+          onMapPing={(lat, lng) => setPendingPing({ lat, lng })}
         />
+
+        {/* 지도 핑 확인 — 여기서 [등록]을 눌러야 후보가 생긴다 */}
+        {pendingPing && (
+          <div className="v8-overlay" onClick={() => setPendingPing(null)}>
+            <div className="v8-modal stack" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
+              <div>
+                <span className="eyebrow">지역 후보 등록</span>
+                <h2 className="sec" style={{ marginTop: 4 }}>여기로 등록할까요?</h2>
+              </div>
+              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+                누른 자리는 <b>동 단위로 정리</b>돼요. 같은 동을 여럿이 찍으면 하나로 합쳐지고,
+                <b> 내 핑은 1개</b>라 다른 곳을 찍으면 그쪽으로 옮겨가요.
+              </p>
+              <span className="chip line" style={{ alignSelf: "flex-start", fontFamily: "ui-monospace, monospace" }}>
+                {pendingPing.lat.toFixed(4)}, {pendingPing.lng.toFixed(4)}
+              </span>
+              <button
+                className="btn"
+                disabled={busy}
+                onClick={() => {
+                  const { lat, lng } = pendingPing;
+                  setPendingPing(null);
+                  // 이름을 안 보낸다 — 서버가 동으로 스냅한다(실패하면 좌표 이름으로 폴백).
+                  void actPing(lat, lng);
+                }}
+              >
+                📍 여기로 등록
+              </button>
+              <button className="btn ghost" onClick={() => setPendingPing(null)}>취소</button>
+            </div>
+          </div>
+        )}
 
         {viewingPast && <PastStepView step={displayStep} state={state} />}
 
@@ -780,6 +829,10 @@ export default function MeetingClient({ code }: { code: string }) {
                     myVote={myRegionVote ?? null}
                     topId={topRegionId}
                     disabled={busy || !me}
+                    // ⚠️ 등록 단계에서는 투표 버튼을 그리지 않는다 — 서버가 표를
+                    //    거부하므로(v12) 누를 때마다 "단계가 바뀌었어요" 만 떴다.
+                    //    투표는 방장이 [투표 시작]을 누른 뒤부터다 (v19 §5).
+                    votable={!regionRegisterStep}
                     onVote={(candidateId, candidateName, mine) =>
                       act(
                         { action: "vote", participantId: me?.id, target: "region", candidateId },

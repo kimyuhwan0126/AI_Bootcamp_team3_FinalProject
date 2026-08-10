@@ -23,6 +23,15 @@ export interface VoteListProps {
   /** 최다득표 후보 id (동점이면 하나만) */
   topId: string | null;
   disabled: boolean;
+  /**
+   * 지금 투표할 수 있는 단계인가 (기본 true).
+   *
+   * ⚠️ `false` 면 투표 버튼을 **아예 그리지 않는다.** 등록 단계(⑥)에서는
+   *    서버가 표를 거부하는데(v12) 화면에는 투표 버튼이 그대로 있어서,
+   *    누를 때마다 "단계가 바뀌었어요" 토스트만 떴다 — 눌러도 되는 것처럼
+   *    보이는 버튼이 절대 안 눌리는 것이 가장 나쁜 상태다 (2026-08-10 실측).
+   */
+  votable?: boolean;
   onVote: (candidateId: string, candidateName: string, isMine: boolean) => void;
   /**
    * v19 §7 후보 삭제 — **방장은 임의 후보, 본인은 자기 후보만.**
@@ -39,6 +48,7 @@ export default function VoteList({
   myVote,
   topId,
   disabled,
+  votable = true,
   onVote,
   canDelete,
   onDelete,
@@ -96,7 +106,7 @@ export default function VoteList({
                 )}
               </div>
               <div className="i-sub">
-                <b>{n}표</b> · {row.sub}
+                {votable && <><b>{n}표</b> · </>}{row.sub}
               </div>
             </div>
             {/* v19 §7 — 잘못 등록한 후보를 지운다. 병합 핑이면 서버가
@@ -113,13 +123,17 @@ export default function VoteList({
                 지우기
               </button>
             )}
-            <button
-              className={"v8-votepill" + (mine ? " voted" : "")}
-              disabled={disabled}
-              onClick={() => onVote(row.id, row.plainName, mine)}
-            >
-              {mine ? "투표함 ✓" : "투표"}
-            </button>
+            {votable ? (
+              <button
+                className={"v8-votepill" + (mine ? " voted" : "")}
+                disabled={disabled}
+                onClick={() => onVote(row.id, row.plainName, mine)}
+              >
+                {mine ? "투표함 ✓" : "투표"}
+              </button>
+            ) : (
+              <span className="chip line" style={{ flexShrink: 0, fontSize: 10 }}>후보</span>
+            )}
           </div>
         );
       })}

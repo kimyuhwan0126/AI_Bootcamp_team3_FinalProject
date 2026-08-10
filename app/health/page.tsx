@@ -65,6 +65,13 @@ function Row({ ok, label, detail, warn }: { ok: boolean; label: string; detail?:
 export default function HealthPage() {
   const [st, setSt] = useState<Status | null>(null);
   const [origin, setOrigin] = useState("");
+  /**
+   * ⚠️ 기기 이름은 **렌더 중에 읽으면 안 된다.** 서버에는 navigator 가 없어
+   *    서버가 그린 HTML("")과 브라우저가 그린 값("윈도우 크롬")이 달라지고,
+   *    React 가 하이드레이션 불일치로 죽는다(#418/#423/#425 · 2026-08-10 실측).
+   *    마운트 후 state 로 채운다.
+   */
+  const [device, setDevice] = useState("");
   const [code, setCode] = useState("");
   const [myId, setMyId] = useState<string | null>(null);
   const [room, setRoom] = useState<State | null>(null);
@@ -77,6 +84,7 @@ export default function HealthPage() {
   // ── 설정 상태 ───────────────────────────────────────────────
   useEffect(() => {
     setOrigin(window.location.origin);
+    setDevice(deviceLabel());
     // 이 기기가 이미 점검방에 들어가 있으면 이어서 본다
     try {
       const raw = localStorage.getItem(KEY);
@@ -181,7 +189,7 @@ export default function HealthPage() {
         <span className="eyebrow" style={{ marginBottom: 6 }}>1 · 이 기기</span>
         <Row ok={!!origin && !origin.includes("localhost")} warn={origin.includes("localhost")}
           label="접속한 주소" detail={origin.replace(/^https?:\/\//, "")} />
-        <Row ok label="기기" detail={typeof navigator !== "undefined" ? deviceLabel() : ""} />
+        <Row ok={!!device} label="기기" detail={device || "확인 중…"} />
         {origin.includes("localhost") && (
           <p className="faint" style={{ fontSize: 11, margin: "8px 0 0" }}>
             ⚠️ <b>방장도 IP 주소로 접속하세요.</b> localhost 로 열면 여기서 만든 초대 링크가
