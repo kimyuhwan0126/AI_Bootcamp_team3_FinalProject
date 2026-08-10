@@ -1209,11 +1209,19 @@ export default function Home() {
       {activeOrigins.length >= 2 && (
         // ⚠️ 래퍼로 감싸고 pointer-events 를 껐다 켜지 말 것 — 클릭이 씹힌다(실측).
         //    앵커 하나를 직접 fixed 로 둔다.
+        // ⚠️ `left:16; right:16` 으로 두면 **화면 전체 폭**으로 늘어난다 —
+        //    이 앱은 가운데 440px 로 세워진 폰 모양 껍데기(`.device`)라, 노트북·태블릿
+        //    처럼 넓은 화면에서 버튼만 껍데기 밖으로 튀어나온다(2026-08-10 실측).
+        //    `position:fixed` 는 껍데기가 아니라 뷰포트 기준이기 때문이다.
+        //    하단 네비(`.v8-bottomnav`)·방장 바(`.leaderbar`)가 쓰는 방식을 그대로 쓴다:
+        //    가운데 정렬 + 껍데기 폭(440) 안쪽으로 좌우 16px 여백.
         <a
           href="/meetings?open=create"
           className="btn primary"
           style={{
-            position: "fixed", left: 16, right: 16, bottom: 78, zIndex: 60,
+            position: "fixed", bottom: 78, zIndex: 60,
+            left: "50%", transform: "translateX(-50%)",
+            width: "calc(100% - 32px)", maxWidth: 408,
             textDecoration: "none", textAlign: "center",
             boxShadow: "0 4px 16px rgba(0,0,0,.18)",
           }}

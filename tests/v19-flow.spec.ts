@@ -671,6 +671,20 @@ test("화면: §4-① 홈에 '이 출발지들로 모임 만들기' 전환 고�
 
   const cta = page.getByRole("link", { name: /이 출발지들로 모임 만들기/ });
   await expect(cta).toBeVisible({ timeout: 10_000 });
+
+  // ⚠️ 넓은 화면(노트북)에서 **껍데기 밖으로 튀어나오지 않아야** 한다.
+  //    `position:fixed` + `left/right:16` 은 뷰포트 기준이라 화면 전체 폭이 된다 —
+  //    가운데 440px 폰 모양(.device) 안에 있어야 한다 (2026-08-10 실측 버그).
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const shell = await page.locator(".device").first().boundingBox();
+  const box = await cta.boundingBox();
+  expect(shell, "폰 모양 껍데기(.device)를 못 찾았다").toBeTruthy();
+  expect(box, "버튼을 못 찾았다").toBeTruthy();
+  expect(box!.x, "버튼 왼쪽이 껍데기 밖으로 나갔다").toBeGreaterThanOrEqual(shell!.x - 1);
+  expect(box!.x + box!.width, "버튼 오른쪽이 껍데기 밖으로 나갔다").toBeLessThanOrEqual(
+    shell!.x + shell!.width + 1
+  );
+
   await cta.click();
   // 생성 모달이 열린 모임 탭으로 간다
   await expect(page).toHaveURL(/\/meetings\?open=create/);

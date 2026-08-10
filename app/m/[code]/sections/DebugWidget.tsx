@@ -28,7 +28,10 @@ export default function DebugWidget({
 }: DebugWidgetProps) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ position: "fixed", right: 16, bottom: isLeader ? 78 : 20, zIndex: 55, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+    // ⚠️ `right:16` 은 **화면**의 오른쪽 끝이다 — 노트북처럼 넓은 화면에서는
+    //    폰 모양 껍데기(`.device`, 440px)를 벗어나 저 멀리 붙는다.
+    //    껍데기 오른쪽 안쪽(16px)에 붙이되, 좁은 화면에서는 그대로 16px 이 되게 한다.
+    <div style={{ position: "fixed", right: "max(16px, calc(50% - 204px))", bottom: isLeader ? 78 : 20, zIndex: 55, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
       {open && (
         <div className="card tight" style={{ width: 210, boxShadow: "var(--shadow)" }}>
           <div className="eyebrow" style={{ fontSize: 10, marginBottom: 8 }}>🐞 빠른 채우기 · {state.stage}</div>

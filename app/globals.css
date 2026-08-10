@@ -1,4 +1,10 @@
 :root{
+  /* 다크 팔레트는 **우리가 직접** 아래 @media 로 정의한다. 그걸 브라우저에 알려서
+     안드로이드 크롬의 '웹 콘텐츠 자동 다크 모드'가 **한 번 더** 덧칠하지 않게 한다.
+     이 선언이 없으면 우리 다크 색 위에 크롬이 자기 반전을 얹어 색이 뭉개진다 —
+     "폰 색이 노트북과 다르다"의 절반이 이것이다 (2026-08-10 팀원 폰 제보).
+     나머지 절반은 정상 동작이다: 폰이 다크 모드면 다크로 보인다. */
+  color-scheme: light dark;
   --bg:#eef1f7; --bg2:#e6eaf3; --panel:#ffffff; --panel2:#f6f8fc;
   --ink:#111a2b; --ink-soft:#54617a; --ink-faint:#8b98ae;
   --hair:#dbe2ee; --hair2:#c9d3e2;
@@ -307,8 +313,13 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 .v8-mapempty small{font-weight:600;color:var(--ink-faint)}
 
 /* 카테고리 탭 + 주변 리스트 */
-.v8-cats{display:flex;gap:7px;padding:12px 16px 8px}
-.v8-cat{border:0;background:var(--panel);color:var(--ink-soft);border-radius:999px;padding:7px 14px;font:inherit;font-size:12px;font-weight:800;box-shadow:var(--shadow);cursor:pointer}
+/* ⚠️ 좁은 폰(390px 이하)에서 칩 6개가 한 줄에 안 들어가면, 예전엔 글자가
+   칩 안에서 두 줄로 접혀("정류장·\A 역") 높이가 들쭉날쭉해졌다.
+   접지 말고 **가로로 밀어서** 본다 — 칩은 원래 옆으로 넘기는 UI다.
+   (2026-08-10 폰 실측) */
+.v8-cats{display:flex;gap:7px;padding:12px 16px 8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.v8-cats::-webkit-scrollbar{display:none}
+.v8-cat{border:0;background:var(--panel);color:var(--ink-soft);border-radius:999px;padding:7px 14px;font:inherit;font-size:12px;font-weight:800;box-shadow:var(--shadow);cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .v8-cat.on{background:var(--ac);color:#fff}
 .v8-list{display:flex;flex-direction:column;gap:8px;padding:2px 16px 12px}
 .v8-item{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:11px 13px;box-shadow:var(--shadow);text-decoration:none;color:inherit}
