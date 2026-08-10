@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>moimer — 카카오 지도 연동 목업</title>
+<!-- ============================================================
+     moimer 목업 — 실제 Kakao Maps 연동판 · 화면 11대
+
+     이 파일에는 폰 껍데기와 화면들이 들어앉을 자리만 있다.
+     스타일과 동작은 옆의 .css / .js 로 나눠 두었다 —
+     한 파일에 다 넣으면 4000줄이 넘고, 한 곳의 오타가 화면 11개를 전부 죽인다.
+
+       moimer-tokens.css   색·간격·타이포 · 폰 크롬
+       moimer-shell.css    지도 오버레이 · 상단 · 바텀시트 · 탭바 · 공용 부품
+       moimer-screens.css  화면별 (접두사 .pg- .hb- .mi- .fm- .vt- .rs- .mo- .rb- .sb-)
+       moimer-core.js      2단계 부트스트랩 · Local/Odsay · 지도 · 시트 엔진 · 모달 · 토스트
+       moimer-store.js     모임 데이터 · 역할 · 시드 · 시뮬 · AI
+       moimer-router.js    해시 라우트 · data-screen/data-layer · 탭바
+       screens/*.js        ①~⑪
+
+     · 모듈(type="module")이 아니라 그냥 <script> 다 — file:// 로 열어도
+       "지도는 되는데 검색만 안 되는" 상태가 진단 배너로 보여야 하기 때문.
+     · 프레임 축소 없음(1:1) — 지도 포인터 좌표를 정확히 유지하기 위함
+     ============================================================ -->
+<link rel="stylesheet" href="moimer-tokens.css">
+<link rel="stylesheet" href="moimer-shell.css">
+<link rel="stylesheet" href="moimer-screens.css">
+</head>
+<body>
+
+<div class="iphone">
+  <span class="btn-side btn-action"></span><span class="btn-side btn-volup"></span>
+  <span class="btn-side btn-voldn"></span><span class="btn-side btn-power"></span>
+  <span class="btn-side btn-cam"></span>
+
+  <div class="display">
+    <div class="device" id="device" data-ui="on" data-tabs="on" data-explore="off" data-layer="map" data-screen="home">
+      <div id="map"></div>
+
+      <!-- ① 전용 상단 — 검색바 + 출발지 슬라이더 (data-layer="page" 면 숨는다) -->
+      <div class="top" id="top">
+        <div class="searchwrap">
+          <div class="searchbar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" id="q" placeholder="출발지 지역을 검색하세요" aria-label="출발지 지역 검색"
+                   autocomplete="off" role="combobox" aria-expanded="false" aria-controls="searchPanel">
+            <span class="wordmark" aria-hidden="true">MOIMER</span>
+          </div>
+          <div class="searchpanel" id="searchPanel" role="listbox" aria-label="검색 결과" hidden></div>
+        </div>
+        <div class="oslider" id="oslider" aria-label="출발지 목록, 옆으로 밀어서 확인"></div>
+        <!-- 중간지점을 무엇으로 정할지 — 거리 기준과 이동시간 기준을 바꿔 가며 비교한다 -->
+        <div class="sortrow">
+          <button class="sortbtn" id="sortToggle" type="button" aria-label="중간지점 기준 전환" title="중간지점 기준 전환">
+            <span id="sortLabel">거리순</span>
+          </button>
+        </div>
+        <!-- 탐색 모드에서 출발지 목록 자리를 대신한다 -->
+        <div class="cslider" id="cslider" role="group" aria-label="중간지점 주변 장소 종류"></div>
+      </div>
+
+      <!-- ⑥⑦⑧⑨⑩ 공통 상단 — 모임 이름 · 단계 · 진행률.
+           ① 의 .top 과 같은 자리를 쓰므로 둘 중 하나만 뜬다. -->
+      <div class="flowtop" id="flowtop" hidden>
+        <!-- 후보 모으는 단계(⑥⑧)에서만 — 투표가 시작되면 후보가 잠기므로 숨는다.
+             ① 탐색 탭과 같은 부품·같은 결과 줄(.sp-row)을 쓴다. -->
+        <div class="searchwrap" id="flowSearchWrap" hidden>
+          <div class="searchbar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" id="fq" placeholder="검색해서 후보 추가" aria-label="후보 검색"
+                   autocomplete="off" role="combobox" aria-expanded="false" aria-controls="flowPanel">
+          </div>
+          <div class="searchpanel" id="flowPanel" role="listbox" aria-label="검색 결과" hidden></div>
+        </div>
+        <div class="stagebar" id="stagebar"></div>
+        <!-- [목업 전용] 역할 전환 · 참여자 추가 · 다음 사람 행동.
+             ① 의 거리순/시간순 버튼이 있던 자리(오른쪽 정렬)를 그대로 쓴다. -->
+        <div class="rolebar" id="rolebar" hidden></div>
+      </div>
+
+      <div class="focus-toast" id="focusToast" role="status" aria-live="polite"></div>
+      <button class="explore" id="explore" type="button" aria-pressed="false" hidden
+              aria-label="중간지점 주변 탐색 모드" title="중간지점 주변 탐색">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 21.5s7-6.9 7-12a7 7 0 1 0-14 0c0 5.1 7 12 7 12z"/>
+          <circle cx="12" cy="9.5" r="2.6"/>
+        </svg>
+      </button>
+      <button class="locate" id="locate" type="button" aria-label="지도 범위 맞추기" title="지도 범위 맞추기">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/>
+          <circle cx="12" cy="12" r="7.6"/>
+          <path d="M12 1.4v3.2M12 19.4v3.2M22.6 12h-3.2M4.6 12H1.4" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+      <div class="sheet animate" id="sheet">
+        <button class="handle" id="handle" type="button" aria-expanded="false" aria-controls="sheetBody" aria-label="정보 시트 펼치기 또는 접기">
+          <span class="grip"></span><span class="hint" id="handleHint">아래로 내리면 요약만 남아요</span>
+        </button>
+        <div class="sheet-mini" id="sheetMini"></div>
+        <div class="sheet-body" id="sheetBody"></div>
+      </div>
+
+      <!-- ②③④⑤⑪ 전면 페이지 (data-layer="map" 이면 숨는다) -->
+      <section class="page" id="page" data-foot="off">
+        <header class="pg-head" id="pageHead"></header>
+        <div class="pg-body" id="pageBody"></div>
+        <div class="pg-foot" id="pageFoot"></div>
+      </section>
+
+      <nav class="tabbar" id="tabbar" aria-label="주요 메뉴">
+        <button type="button" aria-current="page">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.6 8.4 13.9 14 8.4 15.6 10.1 10z"/></svg>탐색
+        </button>
+        <button type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.6-3 2.9-4.6 5.5-4.6S13.9 16 14.5 19"/><circle cx="17" cy="10" r="2.4"/><path d="M16 15c2.2.2 3.8 1.6 4.3 4"/></svg>모임
+        </button>
+        <button type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-4 3.9-6 7.5-6s6.7 2 7.5 6"/></svg>내정보
+        </button>
+      </nav>
+
+      <!-- 동점 · AI · 확인 · 반경 확장 -->
+      <div class="modal" id="modal" role="dialog" aria-modal="true">
+        <div class="mo-box" id="modalBox"></div>
+      </div>
+
+      <div class="diag" id="diag" role="alert"></div>
+
+      <div class="gate" id="gate">
+        <h2>카카오 JS 키가 필요해요</h2>
+        <p>이 화면은 실제 Kakao Maps SDK를 씁니다. 키는 <b>이 브라우저에만</b> 저장되고 어디에도 전송되지 않습니다.</p>
+        <input type="text" id="keyInput" placeholder="JavaScript 키 붙여넣기" aria-label="카카오 JavaScript 키">
+        <button class="cta" type="button" id="keySave">저장하고 지도 열기</button>
+        <button class="skip" type="button" id="gateSkip">키 없이 둘러보기 — 지도만 빈 채로 진행</button>
+        <p style="font-size:12px"><code>mockups/.env.local</code>의 <code>KAKAO_JS_KEY</code>에 넣고
+          <code>node mockups/serve.js</code>로 열면 이 화면이 나오지 않습니다.
+          주소창에 <code>?key=...</code>로 붙여도 됩니다.<br>
+          카카오 개발자 콘솔 → 앱 → <b>플랫폼 &gt; Web</b>에 <code id="originHint">http://localhost:3000</code>을 등록해야 동작합니다.</p>
+      </div>
+    </div>
+
+    <div class="statusbar">
+      <span>9:41</span>
+      <span class="right">
+        <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M1 4.2a10 10 0 0 1 14 0"/><path d="M3.6 7a6.4 6.4 0 0 1 8.8 0"/><circle cx="8" cy="10.2" r="1.1" fill="currentColor" stroke="none"/></svg>
+        <span class="battery"><i></i></span>
+      </span>
+    </div>
+    <div class="island"></div>
+    <div class="homebar"></div>
+  </div>
+</div>
+
+<div class="sidenote">
+  <h1>화면 11대를 도는 길</h1>
+  <ul>
+    <li><b>하단 탭</b> — 탐색(①) · 모임(②) · 내정보(③). 주소가 <code>#/home</code>처럼 남으므로
+        새로고침해도 그 화면으로 돌아옵니다.</li>
+    <li><b>모임 만들기</b>는 ① 중간지점 시트의 버튼이나 ② 모임 탭의 <b>+ 모임 만들기</b>로 들어갑니다.
+        ①에서 들어가면 찍어 둔 출발지들이 그대로 따라갑니다.</li>
+    <li><b>초대 링크</b>(<code>#/join/코드</code>)는 진짜 주소입니다 — 새 탭에 붙여 넣으면
+        참여자 입장이 되고, 그때부터 내가 그 사람이 됩니다.</li>
+    <li><b>왼쪽 위 점선 알약</b>은 목업 전용입니다 — 방장·참여자를 오가고,
+        <b>▶</b>로 다른 사람의 다음 행동(투표·핑·신호등)을 한 칸씩 진행시킵니다.
+        방장 전용 버튼(AI 추천·투표 시작·확정·되돌리기)을 보려면 방장으로 바꿔야 합니다.</li>
+    <li><b>카카오 키가 없어도</b> ② 모임 · ③ 내정보 · ④ 생성 · ⑤ 참여 · ⑪ 지난 모임은
+        전부 볼 수 있습니다. 지도 화면에 들어갈 때만 키를 묻습니다.</li>
+  </ul>
+
+  <h1 style="margin-top:20px">① 지도 위에서 해볼 것</h1>
+  <ul>
+    <li><b>검색창을 누르면</b> 최근 검색이 뜨고, 지역을 입력하면 장소 목록이 나옵니다.
+        <b>목록에서 누르면 곧바로 출발지로 추가</b>됩니다.</li>
+    <li><b>같은 출발지 칩을 반복해서 누르면</b> 3단계로 돕니다 —
+        <b>1번째</b> 지도만 그 사람 위치로 포커싱, <b>2번째</b> 바텀시트 열림,
+        <b>3번째</b> 시트가 아래로 밀려 사라짐.</li>
+    <li><b>출발지 목록 아래 오른쪽 버튼</b>으로 중간지점 기준을 바꿉니다 —
+        <b>거리순</b>은 모두의 거리 기준 무게중심, <b>시간순</b>은 가장 오래 걸리는 사람의 시간을
+        가장 짧게 만드는 지점입니다.</li>
+    <li><b>지도를 한 번 탭하면</b> 범위 버튼만 남고 나머지는 밀려 사라집니다.
+        <b>핀을 끌면</b> 놓는 순간 중간지점과 주변 장소가 다시 계산됩니다.</li>
+    <li><b>중간지점 오버레이</b>는 말풍선이든 핀이든 어디를 눌러도 시트가 열립니다.
+        거기서 <b>주변 탐색</b>이나 오른쪽 <b>핀 버튼</b>으로 탐색 모드에 들어갑니다.</li>
+    <li>탐색 모드에서는 상단이 <b>카페·음식점·술집·주차장·정류장·역</b> 줄로 바뀝니다.
+        <b>정류장만 출처가 다릅니다</b> — 카카오 장소 DB에 없어 <b>ODsay LIVE</b>에서 가져오고,
+        핀을 누르면 지나는 노선까지 보입니다.</li>
+  </ul>
+  <p style="opacity:.75">소요시간은 직선거리 기반 <b>추정값</b>입니다. 실제 대중교통 시간은 ODsay 연동 후에 들어갑니다.</p>
+</div>
+
+<script src="moimer-core.js"></script>
+<script src="moimer-store.js"></script>
+<script src="moimer-router.js"></script>
+<script src="screens/home.js"></script>
+<script src="screens/hub.js"></script>
+<script src="screens/me.js"></script>
+<script src="screens/forms.js"></script>
+<script src="screens/region.js"></script>
+<script src="screens/place.js"></script>
+<script src="screens/result.js"></script>
+<script>MOIMER.boot();</script>
+</body>
+</html>
