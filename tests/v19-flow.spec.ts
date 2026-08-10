@@ -991,3 +991,46 @@ test("화면: 지도 오른쪽 위 전체화면 버튼이 지도를 화면 가�
   const back = await map.boundingBox();
   expect(Math.round(back!.height), "전체화면을 껐는데 안 돌아왔다").toBe(Math.round(before!.height));
 });
+
+test("§7 잘못 찍은 지역 후보를 본인이 지울 수 있다", async ({ request }) => {
+  // ⚠️ v19 §7 은 "후보 삭제 — 방장: 임의 후보 / 참여자: 본인 후보만" 인데
+  //    지점에만 있고 **지역에는 없었다.** 지도를 잘못 눌러 생긴 후보를
+  //    아무도 못 지웠다 (2026-08-10 제보).
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+
+  const mine = await act(request, {
+    action: "addRegion", code, participantId: mate.participantId, lat: 37.5665, lng: 126.978,
+  });
+  expect((await get(request, code)).regions.some((r: { id: string }) => r.id === mine.candidate.id)).toBe(true);
+
+  // 남의 후보는 못 지운다
+  const other = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.4979, lng: 127.0276,
+  });
+  const denied = await actFails(request, {
+    action: "removeRegion", code, participantId: mate.participantId, regionId: other.candidate.id,
+  });
+  expect(denied.error).toContain("내가 등록한 후보만");
+
+  // 내 후보는 지워진다
+  await act(request, { action: "removeRegion", code, participantId: mate.participantId, regionId: mine.candidate.id });
+  const st = await get(request, code);
+  expect(st.regions.some((r: { id: string }) => r.id === mine.candidate.id), "내 후보가 안 지워졌다").toBe(false);
+
+  // 방장은 임의 후보를 지운다
+  await act(request, { action: "removeRegion", code, participantId: leaderId, regionId: other.candidate.id });
+  expect((await get(request, code)).regions.some((r: { id: string }) => r.id === other.candidate.id)).toBe(false);
+});
+
+test("§7 투표가 시작되면 후보를 지울 수 없다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const pinged = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  const fail = await actFails(request, {
+    action: "removeRegion", code, participantId: leaderId, regionId: pinged.candidate.id,
+  });
+  expect(fail.error).toContain("투표가 시작돼");
+});

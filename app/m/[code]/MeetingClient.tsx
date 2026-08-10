@@ -593,6 +593,21 @@ export default function MeetingClient({ code }: { code: string }) {
               }))
             : []),
         ];
+  /**
+   * v19 §7 — 지역 후보 삭제 권한.
+   * 등록 단계에서만, 방장은 임의 후보 / 참여자는 **본인이 찍은 후보**만.
+   * (서버가 같은 판정을 다시 한다 — 화면 잠금은 안내일 뿐이다)
+   */
+  const regionRegisterStep = state.stage === "main" && state.aiPhase === "region";
+  const canDeleteRegion = (id: string) => {
+    if (!me || !regionRegisterStep) return false;
+    if (isLeader) return true;
+    const r = state.regions.find((x) => x.id === id);
+    return !!r?.contributors?.includes(me.id);
+  };
+  const deleteRegion = (id: string, name: string) =>
+    void act({ action: "removeRegion", participantId: me?.id, regionId: id }, `‘${name}’ 후보를 지웠어요`);
+
   const voteFromMap = (id: string) => {
     if (!me || busy) return;
     // v19 §4-⑧ — 회색 미리보기 핀을 누르면 **투표가 아니라 후보 등록**이다.
@@ -686,7 +701,13 @@ export default function MeetingClient({ code }: { code: string }) {
             // 이름을 안 보낸다 — 서버가 동으로 스냅한다(실패하면 좌표 이름으로 폴백).
             // 인원당 1개·같은 동 병합도 서버 규칙이라 여기서 따지지 않는다.
             void act({ action: "addRegion", participantId: me?.id, lat, lng }).then((d: any) => {
-              flash(d?.existing ? `${d.candidate?.name}에 핑을 모았어요` : `${d?.candidate?.name ?? "후보"}를 등록했어요`);
+              // 무엇이 등록됐는지 **이름으로** 알려준다 — 지도를 잘못 눌렀을 때
+              // 뭐가 생겼는지 모르면 지울 수도 없다. 아래 목록의 [지우기] 로 되돌린다.
+              flash(
+                d?.existing
+                  ? `‘${d.candidate?.name}’에 핑을 모았어요`
+                  : `‘${d?.candidate?.name ?? "후보"}’ 등록 — 아래 목록에서 지울 수 있어요`
+              );
             });
           }}
         />
@@ -765,6 +786,8 @@ export default function MeetingClient({ code }: { code: string }) {
                         mine ? "투표를 취소했어요" : `${candidateName}에 투표했어요`
                       )
                     }
+                    canDelete={canDeleteRegion}
+                    onDelete={deleteRegion}
                   />
                   <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
                     {regionVoteCount >= state.totalParticipants && state.totalParticipants > 0

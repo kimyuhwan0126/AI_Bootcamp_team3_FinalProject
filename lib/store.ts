@@ -711,6 +711,63 @@ export async function addRegionCandidate(input: {
   return { ok: true, candidate };
 }
 
+/**
+ * 지역 후보 삭제 — **v19 §7: 방장은 임의 후보, 본인은 자기 후보만.**
+ *
+ * 지점(`removePlaceCandidate`)에는 있었는데 **지역에는 없었다.** 그래서 지도를
+ * 잘못 눌러 생긴 후보를 아무도 못 지웠다 (2026-08-10 제보).
+ *
+ * 병합 규칙은 핑 이동(v12)과 같다:
+ *  · 여러 명이 같은 동을 찍었으면 **내 몫만 빠진다**
+ *  · 마지막 한 명이 빠지면 후보가 사라진다 — 단 **AI 후보는 남는다**(source==="ai")
+ *  · 후보가 사라지면 그 후보에 있던 표도 함께 지운다
+ */
+export async function removeRegionCandidate(input: {
+  code: string;
+  participantId: string;
+  regionId: string;
+}): Promise<{ ok: boolean; error?: string; removed?: boolean }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+
+  // 투표가 시작되면 후보는 잠긴다 (v5·v8) — 등록 단계에서만 지울 수 있다
+  if (phaseStepOf(m) !== "region-register")
+    return { ok: false, error: "투표가 시작돼 후보를 지울 수 없어요." };
+
+  const me = m.participants.find((p) => p.id === input.participantId);
+  if (!me) return { ok: false, error: "참가자를 찾을 수 없어요." };
+
+  const r = m.regions.find((x) => x.id === input.regionId);
+  if (!r) return { ok: false, error: "해당 후보가 없어요." };
+
+  const isMine = (r.contributors ?? []).includes(me.id);
+  if (!me.isLeader && !isMine)
+    return { ok: false, error: "내가 등록한 후보만 지울 수 있어요." };
+
+  // 방장이 남의 후보를 지우면 통째로. 본인이면 내 몫만 빼고 남은 사람이 있으면 유지.
+  const dropWhole = me.isLeader && !isMine;
+  const rest = (r.contributors ?? []).filter((x) => x !== me.id);
+  const keep = !dropWhole && (rest.length > 0 || r.source === "ai");
+
+  if (keep) {
+    r.contributors = rest;
+    await write(m);
+    return { ok: true, removed: false };
+  }
+
+  m.regions = m.regions.filter((x) => x.id !== r.id);
+  // 사라진 후보에 있던 표는 의미가 없다 — 모임 행과 votes 테이블 양쪽에서 지운다
+  const orphans = Object.entries(m.regionVotes ?? {})
+    .filter(([, cid]) => cid === r.id)
+    .map(([pid]) => pid);
+  for (const pid of orphans) delete m.regionVotes[pid];
+  await write(m);
+  for (const pid of orphans) {
+    if (hasDb) await setVote(m.code, "region", pid, null);
+  }
+  return { ok: true, removed: true };
+}
+
 // ── 거점 후보 갱신 (출발지가 바뀌면 재계산) ──
 //  stage 는 건드리지 않는다 — 메인 화면에서도 투표할 수 있게 하기 위함.
 export async function setRegionCandidates(

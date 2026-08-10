@@ -14,6 +14,7 @@ import {
   castVote,
   setRegionCandidates,
   addRegionCandidate,
+  removeRegionCandidate,
   setParticipantStatus,
   updatePrefs,
   getState,
@@ -196,6 +197,16 @@ async function handlePost(req: NextRequest) {
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, candidate: r.candidate, existing: !!r.existing });
+    }
+    // v19 §7: 지역 후보 삭제 — 방장은 임의 후보, 본인은 자기 후보만
+    case "removeRegion": {
+      const r = await removeRegionCandidate({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        regionId: String(body.regionId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, removed: !!r.removed });
     }
     // v7: 방장은 임의 후보, 본인은 자기 후보만 삭제
     case "removePlace": {

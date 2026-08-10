@@ -24,6 +24,12 @@ export interface VoteListProps {
   topId: string | null;
   disabled: boolean;
   onVote: (candidateId: string, candidateName: string, isMine: boolean) => void;
+  /**
+   * v19 §7 후보 삭제 — **방장은 임의 후보, 본인은 자기 후보만.**
+   * 넘기지 않으면 삭제 버튼이 없다(투표 단계에서는 후보가 잠기므로).
+   */
+  canDelete?: (candidateId: string) => boolean;
+  onDelete?: (candidateId: string, candidateName: string) => void;
 }
 
 export default function VoteList({
@@ -34,6 +40,8 @@ export default function VoteList({
   topId,
   disabled,
   onVote,
+  canDelete,
+  onDelete,
 }: VoteListProps) {
   const rows =
     target === "region"
@@ -91,6 +99,20 @@ export default function VoteList({
                 <b>{n}표</b> · {row.sub}
               </div>
             </div>
+            {/* v19 §7 — 잘못 등록한 후보를 지운다. 병합 핑이면 서버가
+                **내 몫만** 빼고, 마지막 한 명이면 후보 자체가 사라진다 (v12). */}
+            {onDelete && canDelete?.(row.id) && (
+              <button
+                className="btn sm ghost"
+                style={{ flexShrink: 0, color: "var(--danger)" }}
+                disabled={disabled}
+                title="내가 등록한 후보 지우기"
+                aria-label={`${row.plainName} 후보 지우기`}
+                onClick={() => onDelete(row.id, row.plainName)}
+              >
+                지우기
+              </button>
+            )}
             <button
               className={"v8-votepill" + (mine ? " voted" : "")}
               disabled={disabled}
