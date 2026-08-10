@@ -718,6 +718,13 @@ export async function setRegionCandidates(
   if (!m) return { ok: false, error: "모임 없음" };
   if (m.winnerRegionId) return { ok: true }; // 이미 확정된 뒤엔 후보를 흔들지 않는다
 
+  // ── v19 §5: 투표가 시작되면 후보는 잠긴다 ──
+  //  `addRegionCandidate` 는 이미 이 관문을 갖고 있는데 여기만 뚫려 있었다.
+  //  뚫린 결과: **투표 중에 누가 출발지를 고치면** 자동 재계산이 돌아 후보 목록이
+  //  갈리고 `clearVotes` 로 **모두의 표가 사라졌다.** 발표 중 한 명이 "아 저 사당이
+  //  아니라 사당역이었어요" 하고 고치는 순간 투표가 초기화된다.
+  if (phaseStepOf(m) !== "region-register") return { ok: true };
+
   // 사람이 등록한 후보(rc_* = 핑·검색)와 **AI 추천 후보(ra_*)** 는
   // 재계산에 밀려 사라지면 안 된다.
   // 호출자(regions 액션)가 지표를 갱신해 함께 넘기는 게 정석이지만,
@@ -732,19 +739,39 @@ export async function setRegionCandidates(
   );
   const nextList = [...regions, ...keptProposals];
 
-  // ⚠️ 자동 후보 id 는 순위(r1·r2·r3)라 후보가 완전히 바뀌어도 그대로다 —
-  //    id 로 비교하면 "달라졌는지"를 절대 감지할 수 없어(예전 버그),
-  //    엉뚱한 지역에 찍힌 표가 그대로 남았다. 지역 이름으로 비교한다.
-  const prev = m.regions.map((r) => r.name).join(",");
-  const next = nextList.map((r) => r.name).join(",");
-  // 후보가 그대로면 쓸 이유가 없다 — 1.8초 폴링마다 DB에 쓰지 않도록 막는다
-  if (prev === next) return { ok: true };
+  // ⚠️ **"후보 목록이 바뀐 것"과 "지표만 갱신된 것"은 다른 사건이다.**
+  //    예전엔 이름만 비교해 둘을 한 덩어리로 봤고, 그래서 이름이 같으면
+  //    **새로 계산한 이동시간을 통째로 버렸다.** 결과:
+  //      2인이 후보를 계산 → 3·4번째가 합류 → 추천 동네 이름은 그대로
+  //      → 저장 안 함 → 늦게 온 두 명은 `perParticipant` 에 영영 없음
+  //      → 결과 화면에서 **"이동시간 없음"** 으로 남는다.
+  //    발표에서 팀원이 한 명씩 들어오는 순서 그대로 재현된다(2026-08-10 실측).
+  //
+  //  · 이름 목록이 달라졌다 → 표가 의미를 잃는다 ⇒ 저장 + 표 비움
+  //    (자동 후보 id 는 순위(r1·r2·r3)라 후보가 완전히 바뀌어도 그대로다.
+  //     id 로 비교하면 달라진 걸 감지할 수 없어 엉뚱한 표가 남았던 버그가 있다)
+  //  · 이름은 같고 지표만 달라졌다 → ⇒ 저장만. **표는 지킨다**
+  const namesOf = (list: RegionCandidate[]) => list.map((r) => r.name).join(",");
+  const metricsOf = (list: RegionCandidate[]) =>
+    list
+      .map(
+        (r) =>
+          `${r.id}:${r.maxMin}/${r.devMin}:` +
+          (r.perParticipant ?? [])
+            .map((x) => `${x.pid}=${x.min}`)
+            .sort()
+            .join("+")
+      )
+      .join(",");
+
+  const listChanged = namesOf(m.regions) !== namesOf(nextList);
+  // 둘 다 그대로면 쓸 이유가 없다 — 폴링마다 DB에 쓰지 않도록 막는다
+  if (!listChanged && metricsOf(m.regions) === metricsOf(nextList)) return { ok: true };
 
   m.regions = nextList;
-  m.regionVotes = {};
+  if (listChanged) m.regionVotes = {};
   await write(m);
-  // 후보가 달라졌으니 기존 표는 의미가 없다 (출발지가 바뀌어 지표가 전부 달라진 상황)
-  await clearVotes(m.code, "region");
+  if (listChanged) await clearVotes(m.code, "region");
   return { ok: true };
 }
 

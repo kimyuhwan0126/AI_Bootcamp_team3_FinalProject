@@ -324,7 +324,32 @@ async function handlePost(req: NextRequest) {
       if (st.participants.filter((p: any) => p.lat != null).length === 0)
         return NextResponse.json({ ok: true, regions: [] });
       const regions = await recommendRegions(st.participants as any);
-      const r = await setRegionCandidates(body.code, regions);
+
+      // 사람이 찍은 핑(rc_*)·AI 후보(ra_*)의 지표도 **함께** 갱신한다.
+      //  자동 후보만 다시 계산하면, 나중에 합류한 사람은 핑 후보에서 빠진 채로
+      //  남아 결과 화면까지 "이동시간 없음"으로 간다 — 지도 핑으로 정한 모임이
+      //  딱 그 경우다.
+      //  💰 이동시간 호출이 늘지만, 성공값이 (출발지,목적지,수단) 단위로 캐시되므로
+      //     실제로 새로 나가는 콜은 **바뀐 사람 몫뿐**이다. 이 액션 자체가
+      //     출발지 구성이 바뀔 때만 호출된다(클라이언트 originSig 가드).
+      const kept = st.regions.filter((x) => x.id.startsWith("rc_") || x.id.startsWith("ra_"));
+      const refreshed = await Promise.all(
+        kept.map(async (x) => {
+          const s = await scoreRegionForParticipants({ lat: x.lat, lng: x.lng }, st.participants as never);
+          return {
+            ...x,
+            maxMin: s.maxMin,
+            devMin: s.devMin,
+            perParticipant: s.perParticipant,
+            // 설명 문구에 숫자가 박혀 있다 — 같이 안 고치면 목록과 설명이 다른 값을 말한다
+            reason: x.proposedBy
+              ? `${x.proposedBy} 님 제안 — 최대 ${s.maxMin}분 · 편차 ${s.devMin}분`
+              : x.reason,
+          };
+        })
+      );
+
+      const r = await setRegionCandidates(body.code, [...regions, ...refreshed]);
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, regions });
     }

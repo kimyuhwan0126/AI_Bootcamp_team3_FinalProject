@@ -760,3 +760,66 @@ test("화면: 지점 등록 단계에 미리보기 목록이 뜨고 탭하면 �
 
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });
+
+// ── 이동시간 유실 · 투표 중 잠금 (2026-08-10 실측) ────────────────
+
+test("시연: 나중에 합류한 사람도 후보 이동시간에 들어온다", async ({ request }) => {
+  // ⚠️ 발표에서 팀원이 한 명씩 들어오는 그 순서다.
+  //    예전엔 후보 **이름**만 비교해 "달라진 게 없다"고 판단하고 새로 계산한
+  //    이동시간을 버렸다 → 늦게 온 사람은 `perParticipant` 에 영영 없고,
+  //    결과 화면에서 "이동시간 없음" 으로 남았다.
+  const { code, leaderId } = await setup(request);
+  const early = await act(request, { action: "join", code, name: "일찍온사람" });
+  await act(request, {
+    action: "origin", code, participantId: early.participantId,
+    origin: "홍대입구", transport: "transit",
+  });
+  await act(request, { action: "regions", code }); // 2명 기준으로 후보가 잡힌다
+
+  for (const [name, origin] of [["늦은1", "잠실"], ["늦은2", "사당"]] as const) {
+    const j = await act(request, { action: "join", code, name });
+    await act(request, { action: "origin", code, participantId: j.participantId, origin, transport: "transit" });
+  }
+  await act(request, { action: "regions", code }); // 화면이 재계산을 요청하는 시점
+
+  const st = await get(request, code);
+  for (const r of st.regions) {
+    const pids = (r.perParticipant ?? []).map((x: { pid: string }) => x.pid);
+    expect(pids, `'${r.name}' 후보에 4명이 다 안 들어왔다 — 결과 화면에서 '이동시간 없음'이 뜬다`)
+      .toHaveLength(4);
+  }
+  expect(leaderId).toBeTruthy();
+});
+
+test("§5 투표 중에 출발지를 고쳐도 후보와 표가 그대로다", async ({ request }) => {
+  // ⚠️ 발표 중 한 명이 "사당이 아니라 사당역이었어요" 하고 고치는 순간
+  //    자동 재계산이 돌아 **전원의 표가 사라졌다.** 투표 시작 = 후보 잠금(v19 §5)이
+  //    후보 등록 쪽에만 걸려 있고 재계산 쪽은 뚫려 있었다.
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  await act(request, { action: "origin", code, participantId: mate.participantId, origin: "홍대입구", transport: "transit" });
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "vote", code, participantId: leaderId, target: "region", candidateId: regions[0].id });
+
+  const before = (await get(request, code)).regions.map((r: { name: string }) => r.name).join(",");
+
+  // 투표 중에 출발지를 크게 바꾼다 (= 추천 결과가 달라질 만한 변경)
+  await act(request, { action: "origin", code, participantId: mate.participantId, origin: "수원역", transport: "transit" });
+  await act(request, { action: "regions", code });
+
+  const after = await get(request, code);
+  expect(after.regions.map((r: { name: string }) => r.name).join(","), "투표 중인데 후보가 바뀌었다").toBe(before);
+  expect(after.regionVotes[leaderId], "투표 중 출발지 수정으로 표가 사라졌다").toBe(regions[0].id);
+});
+
+test("LAN: 카카오 Redirect URI 는 접속한 주소를 따라간다", async ({ request }) => {
+  // ⚠️ 폰이 http://10.x.x.x:3000 으로 들어왔는데 redirect_uri 를 localhost 로
+  //    고정해 보내면, 카카오가 **폰 자신의 localhost** 로 돌려보내 로그인이 끝나지 않는다.
+  //    (2026-08-10 팀원 폰에서 실측)
+  const st = await (await request.get("/api/status")).json();
+  const base = new URL(test.info().project.use.baseURL as string);
+  expect(st.kakaoRedirect, "접속한 호스트가 아니라 고정값을 쓰고 있다").toBe(
+    `${base.origin}/api/auth/kakao/callback`
+  );
+});

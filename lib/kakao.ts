@@ -188,10 +188,43 @@ export async function searchByCategoryKakao(
 }
 
 // ── OAuth: 인가 URL ──
-export function kakaoAuthorizeUrl(): string {
+/**
+ * 이 요청을 보낸 주소 기준의 Redirect URI.
+ *
+ * ⚠️ **발표 시연(LAN)에서 이게 핵심이다.** 팀원 휴대폰은 `http://10.x.x.x:3000` 으로
+ *    들어온다. 그런데 redirect_uri 를 `.env.local` 의 `http://localhost:3000/...` 로
+ *    고정해 보내면, 카카오는 로그인 뒤 **그 휴대폰의 localhost** 로 돌려보낸다 —
+ *    폰 자기 자신이라 아무것도 없다. 로그인이 "안 되는" 실제 이유가 이것이다.
+ *    (2026-08-10 팀원 폰에서 실측)
+ *
+ * 그래서 들어온 주소(Host)를 그대로 써서, 폰에서 시작한 로그인은 폰이 보고 있던
+ * 그 주소로 돌아오게 한다. 인가·토큰교환 **양쪽에 같은 값**을 써야 한다(카카오 요구).
+ *
+ * 물론 그 주소가 카카오 콘솔의 Redirect URI 목록에 **등록돼 있어야** 한다.
+ * 등록 안 된 주소면 KOE006 이 뜨는데, 그건 `/api/auth/kakao?debug=1` 이 알려준다.
+ */
+export function redirectUriFor(origin?: string): string {
+  if (!origin) return env.kakaoRedirect;
+  return `${origin.replace(/\/$/, "")}/api/auth/kakao/callback`;
+}
+
+/**
+ * 브라우저가 **실제로 친 주소**. `new URL(req.url).origin` 을 쓰면 안 된다 —
+ * Next 가 호스트를 정규화해서 `127.0.0.1:3100` 으로 들어온 요청이
+ * `localhost:3100` 으로 나온다(테스트에서 잡힘). 카카오 Redirect URI 는
+ * **글자 단위로** 일치해야 하므로 Host 헤더를 그대로 쓴다.
+ */
+export function originOfRequest(req: Request): string {
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  const proto =
+    req.headers.get("x-forwarded-proto") || new URL(req.url).protocol.replace(":", "");
+  return host ? `${proto}://${host}` : new URL(req.url).origin;
+}
+
+export function kakaoAuthorizeUrl(origin?: string): string {
   const p = new URLSearchParams({
     client_id: env.kakaoRest,
-    redirect_uri: env.kakaoRedirect,
+    redirect_uri: redirectUriFor(origin),
     response_type: "code",
     scope: "profile_nickname",
   });
@@ -205,13 +238,15 @@ export type KakaoExchangeResult =
   | { ok: true; id: string; nickname: string }
   | { ok: false; step: "token" | "user" | "network"; detail: string };
 
-export async function kakaoExchange(code: string): Promise<KakaoExchangeResult> {
+export async function kakaoExchange(code: string, origin?: string): Promise<KakaoExchangeResult> {
   if (!env.kakaoRest) return { ok: false, step: "token", detail: "KAKAO_REST_API_KEY 미설정" };
   try {
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       client_id: env.kakaoRest,
-      redirect_uri: env.kakaoRedirect,
+      // ⚠️ 인가 때 보낸 값과 **글자 그대로 같아야** 한다. 여기만 env 로 두면
+      //    폰(LAN IP)에서 시작한 로그인이 토큰 교환에서 KOE320 으로 떨어진다.
+      redirect_uri: redirectUriFor(origin),
       code,
     });
     const tk = await fetch("https://kauth.kakao.com/oauth/token", {
