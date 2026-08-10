@@ -68,11 +68,21 @@ export default function LeaderBar({
     const name = pool.find((c) => c.id === topId)?.name;
     const allVoted = total > 0 && voteCount >= total;
     const noOrigins = target === "region" && state.originsSet === 0;
+    // v6: 아직 투표하지 않은 사람들 — 방장의 확정 판단 근거
+    const box = target === "region" ? state.regionVotes : state.placeVotes;
+    const pending = state.participants.filter((p) => !box?.[p.id]).map((p) => p.name);
+    const pendingLabel =
+      pending.length === 0 ? "없음"
+        : pending.length <= 2 ? pending.join(", ")
+        : `${pending[0]} 외 ${pending.length - 1}명`;
     return (
       <button
         className={"btn" + (allVoted && topId ? "" : " ghost")}
         disabled={busy || !topId}
-        title={name}
+        title={
+          // v6: 아직 안 찍은 사람 이름 — 방장이 "지금 확정해도 되나"를 판단하는 근거다
+          pending.length > 0 ? `미투표: ${pending.join(", ")}` : name
+        }
         onClick={() =>
           onAction({ action: "confirmManual", participantId, target, id: topId }, `${name}(으)로 확정했어요`)
         }
@@ -82,7 +92,8 @@ export default function LeaderBar({
             ? "후보 준비 중"
             : allVoted
             ? `${voteCount}/${total}명 투표 완료`
-            : `${voteCount}/${total}명 투표 중`}
+            // v6: 숫자만으로는 "누구를 기다리는지" 알 수 없다 — 이름을 함께 보여준다
+            : `${voteCount}/${total}명 · 미투표 ${pendingLabel}`}
         </span>
         <b>
           {noOrigins

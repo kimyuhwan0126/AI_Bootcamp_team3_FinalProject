@@ -13,6 +13,7 @@ import { formatMinutes, formatGap } from "@/lib/format";
 import ChatPanel from "./sections/ChatPanel";
 import VoteList from "./sections/VoteList";
 import PlacePicker from "./sections/PlacePicker";
+import JoinGate from "./sections/JoinGate";
 import PastStepView from "./sections/PastStepView";
 import TravelTimes from "./sections/TravelTimes";
 import AddParticipant from "./sections/AddParticipant";
@@ -412,6 +413,26 @@ export default function MeetingClient({ code }: { code: string }) {
         <div className="spinner" style={{ margin: "0 auto", borderColor: "rgba(47,111,237,.3)", borderTopColor: "#2f6fed" }} />
         <p className="muted" style={{ marginTop: 14, fontSize: 13 }}>모임 불러오는 중…</p>
       </main>
+    );
+  }
+
+  // ── v19 §4-⑤: 초대 링크로 들어왔는데 아직 신원이 없으면 **참여 폼이 먼저다** ──
+  //  이게 없으면 팀원이 카톡 링크를 눌렀을 때 모임 화면만 열리고 자기 자리가 없어
+  //  뭘 해야 할지 모른다(발표 시연 3단계가 여기서 멈춘다).
+  //  ⚠️ 훅보다 **아래**에 둔다 — 조건부 return 위로 올리면 화면이 통째로 안 그려진다
+  //     (이 화면에서 실제로 겪은 사고, app/m/[code]/CLAUDE.md §1).
+  //  지난 모임은 새로 참여할 수 없으므로(v18) 그때는 게이트를 띄우지 않는다.
+  if (!me && !state.isPast) {
+    return (
+      <JoinGate
+        code={code}
+        meetingName={state.name}
+        onJoined={() => {
+          setIds(getIdentities(code));
+          setMe(getActive(code));
+          void load();
+        }}
+      />
     );
   }
 

@@ -579,6 +579,81 @@ test("화면: 생성 폼에 확정 범위 토글이 있고 '지역까지'면 카
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });
 
+// ── 발표 시연 경로 — 여기가 막히면 데모가 멈춘다 ──────────────────
+
+test("시연: 초대 링크로 들어오면 참여 폼이 먼저 뜬다 (신원 없음)", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code } = await setup(request, { name: "초대 테스트" });
+
+  // ⚠️ loginAs 를 **하지 않는다** — 팀원이 카톡 링크를 눌렀을 때와 같은 상태
+  await page.goto(`/m/${code}`);
+
+  await expect(page.getByText("모임 참여")).toBeVisible();
+  await expect(page.getByText("초대 테스트")).toBeVisible();
+  await expect(page.getByPlaceholder("예: 김철수")).toBeVisible();
+  await expect(page.getByPlaceholder("예: 강남역")).toBeVisible();
+
+  // 이름·출발지를 넣으면 참여되고 모임 화면으로 넘어간다 (원스텝, v11)
+  await page.getByPlaceholder("예: 김철수").fill("링크참여자");
+  await page.getByPlaceholder("예: 강남역").fill("홍대입구");
+  await page.getByRole("button", { name: "참여하기" }).click();
+
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  const st = await get(request, code);
+  expect(st.totalParticipants, "참여가 서버에 반영되지 않았다").toBe(2);
+  const joined = st.participants.find((p: { name: string }) => p.name === "링크참여자");
+  expect(joined, "참여자가 없다").toBeTruthy();
+  expect(joined.origin, "출발지까지 원스텝으로 등록돼야 한다").toBeTruthy();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("시연: 생성 폼의 모임 시간이 meetTime 으로 저장된다", async ({ request }) => {
+  // ⚠️ 예전엔 자유 문구를 prefs.timeText 에만 넣어서 meetTime 이 계속 null 이었다.
+  //    그러면 D-day 도, 도착 신호등도, '지난 모임' 전환도 전부 동작하지 않는다.
+  const when = new Date(Date.now() + 2 * 86_400_000);
+  const created = await act(request, {
+    action: "create",
+    name: "시간 테스트",
+    leaderName: "방장",
+    scope: "place",
+    purposeCategory: "food",
+    meetTime: when.toISOString(),
+  });
+
+  const st = await get(request, created.code);
+  expect(st.meetTime, "생성 시 넣은 시간이 저장되지 않았다").toBeTruthy();
+  expect(new Date(st.meetTime).getTime()).toBe(when.getTime());
+});
+
+test("화면: §4-① 홈에 '이 출발지들로 모임 만들기' 전환 고리가 있다", async ({ page }) => {
+  // 출발지 2곳을 심어두고 홈을 연다 (홈은 localStorage 에서 복원한다)
+  // ⚠️ 스플래시도 함께 넘긴다 — 첫 방문이면 전체화면(z-index:100)으로 떠서
+  //    아래 버튼을 덮는다. "이미 한 번 본 사용자" 상태로 맞추는 것이다.
+  //    (발표 때 팀원들은 처음 열면 '시작하기'를 한 번 눌러야 한다 — 정상 동작)
+  await page.addInitScript(() => {
+    localStorage.setItem("moimer:v8:splash", "1");
+    localStorage.setItem(
+      "moimer:v8:origins",
+      JSON.stringify([
+        { id: "o1", name: "강남역", lat: 37.4979, lng: 127.0276, transport: "transit" },
+        { id: "o2", name: "홍대입구", lat: 37.5572, lng: 126.9245, transport: "transit" },
+      ])
+    );
+  });
+  await page.goto("/");
+
+  const cta = page.getByRole("link", { name: /이 출발지들로 모임 만들기/ });
+  await expect(cta).toBeVisible({ timeout: 10_000 });
+  await cta.click();
+  // 생성 모달이 열린 모임 탭으로 간다
+  await expect(page).toHaveURL(/\/meetings\?open=create/);
+  await expect(page.getByText("어디까지 정할까요?")).toBeVisible();
+});
+
 test("화면: §4-② 하단 탭은 3개다 (투표함·모임원은 통합됨)", async ({ page }) => {
   await page.goto("/meetings");
   const nav = page.locator(".v8-bottomnav");

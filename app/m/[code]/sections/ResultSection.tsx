@@ -268,6 +268,38 @@ export default function ResultSection({
         <span className="eyebrow">부가기능</span>
         <button className="btn" onClick={() => openGoogleCalendar(state)}>📅 Google 캘린더에 추가</button>
         <button className="btn ghost" onClick={() => downloadIcs(state)}>📄 .ics 다운로드 (Apple·Outlook용)</button>
+        {/* ── v16·v18: 카카오톡 알리기 — **상시 버튼**이다(자동 팝업 없음) ──
+               메시지와 링크를 자동으로 완성해 공유 시트에 넘긴다.
+               ⚠️ 카카오톡 SDK 연동이 아니라 **OS 공유 시트**다 — 폰에서는 카카오톡이
+                  목록에 뜨고, 데스크톱은 시트가 없어 클립보드 복사로 떨어진다.
+                  (`navigator.share` 는 HTTPS/localhost 에서만 동작한다 — LAN 시연은
+                   http 라 자동으로 복사 경로를 탄다) */}
+        <button
+          className="btn"
+          style={{ background: "#FDD835", color: "#3A2B00", borderColor: "#E5C300" }}
+          onClick={() => {
+            const url = `${location.origin}/m/${state.code}`;
+            const where = state.winnerPlace?.name ?? state.winnerRegion?.name ?? "";
+            const when = state.meetTime
+              ? new Date(state.meetTime).toLocaleString("ko-KR", {
+                  month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+                })
+              : "";
+            const text =
+              `[${state.name}] 장소가 정해졌어요!\n` +
+              (where ? `📍 ${where}\n` : "") +
+              (when ? `🕘 ${when}\n` : "") +
+              url;
+            if (navigator.share) {
+              void navigator.share({ title: state.name, text }).catch(() => {});
+            } else {
+              navigator.clipboard?.writeText(text);
+              onToast("메시지를 복사했어요 — 카카오톡에 붙여넣으세요");
+            }
+          }}
+        >
+          💬 카카오톡 알리기
+        </button>
         <button
           className="btn ghost"
           onClick={() => {
@@ -275,7 +307,7 @@ export default function ResultSection({
             onToast("모임 링크를 복사했어요");
           }}
         >
-          🔗 모임 링크 공유
+          🔗 모임 링크만 복사
         </button>
       </div>
 

@@ -1199,6 +1199,29 @@ export default function Home() {
         </div>
       )}
 
+      {/* ── v19 §4-① 전환 고리: '이 출발지들로 모임 만들기' ──
+             홈은 "맛보기"다. 여기서 모임 생성으로 넘어가는 길이 없으면
+             홈과 모임이 따로 노는 앱이 된다(v19 가 이 버튼을 핵심으로 둔 이유).
+
+             ⚠️ 출발지 2곳 이상일 때만 뜬다 — 중간지점이 계산돼야 넘어갈 의미가 있다.
+             ⚠️ v5 의 '미배정 핑' 이관(홈 출발지를 모임에 넘겨 참여자가 자기 것을 고르는 것)은
+                아직 없다. 지금은 생성 폼으로 이동만 하고, 각자 참여할 때 출발지를 넣는다. */}
+      {activeOrigins.length >= 2 && (
+        // ⚠️ 래퍼로 감싸고 pointer-events 를 껐다 켜지 말 것 — 클릭이 씹힌다(실측).
+        //    앵커 하나를 직접 fixed 로 둔다.
+        <a
+          href="/meetings?open=create"
+          className="btn primary"
+          style={{
+            position: "fixed", left: 16, right: 16, bottom: 78, zIndex: 60,
+            textDecoration: "none", textAlign: "center",
+            boxShadow: "0 4px 16px rgba(0,0,0,.18)",
+          }}
+        >
+          이 출발지들로 모임 만들기
+        </a>
+      )}
+
       <BottomNav active="home" />
     </main>
   );

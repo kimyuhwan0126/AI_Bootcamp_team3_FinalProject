@@ -149,18 +149,16 @@ function MeetingsInner() {
         // ── v19 ──
         scope: cScope,
         purposeCategory: cScope === "region" ? null : cPurpose,
+        // ⚠️ 이 값이 D-day · 도착 신호등 활성 · '지난 모임' 전환의 **유일한 기준**이다.
+        //    예전엔 자유 문구를 prefs.timeText 에만 넣어서, 화면에는 시간이 보이는데
+        //    신호등은 계속 잠겨 있었다(서버는 meetTime 만 본다).
+        meetTime: cTime ? new Date(cTime).toISOString() : null,
       });
       addIdentity(d.code, { id: d.participantId, name: leaderName, isLeader: true });
-      // 모임 시간은 선택 입력 — 비워두면 나중에 홈/결과 화면에서도 정할 수 있다
-      let timeText = "";
-      if (cTime.trim()) {
-        try {
-          await post({ action: "meetTime", code: d.code, participantId: d.participantId, time: cTime.trim() });
-          timeText = cTime.trim();
-        } catch {
-          /* 시간 저장 실패해도 모임 생성 자체는 이미 완료됐으니 무시 */
-        }
-      }
+      // 모임 시간은 선택 입력 — 비워두면 결과 화면에서 방장이 정한다(입력 유도 배너).
+      const timeText = cTime ? new Date(cTime).toLocaleString("ko-KR", {
+        month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+      }) : "";
       const url = `${window.location.origin}/m/${d.code}`;
       setCreated({ code: d.code, name: cName, leaderName, headcount, timeText, url });
       try {
@@ -484,7 +482,19 @@ function MeetingsInner() {
               </div>
               <div>
                 <label className="label">몇 시에 만나요? (선택)</label>
-                <input className="input" value={cTime} onChange={(e) => setCTime(e.target.value)} placeholder="예: 이번 주 토요일 저녁 7시" />
+                {/* v2·v16: 생성 폼에서 받는다 · 과거는 서버가 거부한다.
+                    자유 문구가 아니라 datetime-local 인 이유 — "이번 주 토요일 저녁 7시"
+                    같은 문장은 D-day·신호등 판정에 쓸 수 없다. */}
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={cTime}
+                  min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                  onChange={(e) => setCTime(e.target.value)}
+                />
+                <p className="faint" style={{ fontSize: 10.5, margin: "4px 0 0" }}>
+                  비워두면 나중에 결과 화면에서 정할 수 있어요. (지난 시각은 넣을 수 없어요)
+                </p>
               </div>
               {err && <div className="chip warn" style={{ alignSelf: "flex-start" }}>⚠ {err}</div>}
               {/* v2: 비밀번호가 폐기돼 이름만 있으면 만들 수 있다 */}
