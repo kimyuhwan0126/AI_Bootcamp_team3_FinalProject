@@ -99,12 +99,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ⚠️ **검색어가 있으면 mock 으로 떨어지지 않는다.**
-  //    '당구장'을 검색했는데 못 찾았다고 음식점 샘플을 돌려주면, 화면에는
-  //    검색 전과 똑같은 목록이 남아 **검색이 아예 동작하지 않는 것처럼 보인다**
-  //    (2026-08-10 제보). 못 찾았으면 못 찾았다고 말하고 대안을 주는 게 맞다.
+  // ── mock 은 **키가 아예 없을 때만** 쓴다 ──────────────────────
+  //
+  //  ⚠️ 예전엔 "결과가 0개면" 무조건 mock 이었다. 그래서 **키가 멀쩡한데
+  //     반경 안에 정말 아무것도 없는 경우**까지 샘플 6개로 덮였고,
+  //     화면은 "0개"를 본 적이 없어 **v19 §4-⑧ 의 반경 확장(700→1400m)
+  //     제안이 영영 안 떴다.** "1.4km로 넓히라며?" 의 정확한 원인이다
+  //     (2026-08-10 제보 · 구리한강시민공원 반경 700m 실측).
+  //
+  //  · 키 없음        → mock (팀원이 키 없이도 시연해야 한다 · CLAUDE.md §3-4)
+  //  · 키 있음 + 0건  → **진짜 0건**. 화면이 반경 확장/다른 방법을 제안한다
+  //  · 검색어 + 0건   → 샘플로 덮지 않는다 (검색이 안 먹는 것처럼 보인다)
   const searchedEmpty = !!q && found.length === 0;
-  const isMock = found.length === 0 && !searchedEmpty;
+  const isMock = !env.kakaoRest && found.length === 0 && !searchedEmpty;
   if (isMock) {
     const names = MOCK_NAMES[cat];
     for (let i = 0; i < names.length; i++) {
@@ -160,6 +167,8 @@ export async function GET(req: NextRequest) {
     /** 검색어로 찾았는데 반경 안에 하나도 없었다 — 화면이 다른 문구를 띄운다 */
     searchedEmpty,
     query: q,
+    /** 키가 있는데 반경 안에 정말 0건 — 반경 확장 제안이 떠야 하는 상황 (v12·v15) */
+    reallyEmpty: !!env.kakaoRest && found.length === 0 && !q,
     ratingSource,
     /** 0개면 화면이 확장/다른 방법 팝업을 띄운다 (v12·v15) */
     canExpand: radius < 1400,

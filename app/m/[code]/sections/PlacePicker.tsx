@@ -211,21 +211,30 @@ export default function PlacePicker({ state, isLeader, busy, myId, onAction, onP
 
       {empty ? (
         // v12·v15: 0개면 확장(1회) 또는 다른 방법
+        // v12·v15: 0개면 ① 반경 확장(1회) ② 다른 카테고리·검색·AI
         <div className="stack" style={{ gap: 8 }}>
           <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-            반경 {state.radiusM}m 안에 {PURPOSE_LABELS[cat]}이(가) 없어요.
+            <b>{state.winnerRegion?.name}</b> 반경 {state.radiusM}m 안에
+            {" "}{PURPOSE_LABELS[cat]}이(가) 없어요.
           </p>
           {state.radiusM < 1400 ? (
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() => void onAction({ action: "expandRadius", participantId: myId }, "반경을 1400m로 넓혔어요")}
-            >
-              🔍 반경 넓히기 (700m → 1400m · 1회)
-            </button>
+            <>
+              <button
+                className="btn"
+                disabled={busy}
+                onClick={() => void onAction({ action: "expandRadius", participantId: myId }, "반경을 1400m로 넓혔어요")}
+              >
+                🔍 반경 넓히기 (700m → 1.4km · 딱 한 번)
+              </button>
+              <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
+                한 번 넓히면 되돌릴 수 없고, <b>모든 참여자에게 같이 적용</b>돼요.
+                (누구나 누를 수 있어요)
+              </p>
+            </>
           ) : (
             <p className="faint" style={{ fontSize: 11, margin: 0 }}>
-              이미 최대까지 넓혔어요. 다른 카테고리를 고르거나 이름으로 검색해 보세요.
+              이미 1.4km까지 넓혔어요. 다른 카테고리를 고르거나, 이름으로 검색하거나,
+              방장이 <b>AI 추천</b>을 눌러 보세요.
             </p>
           )}
         </div>

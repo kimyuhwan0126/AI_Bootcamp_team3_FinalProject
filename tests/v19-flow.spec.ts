@@ -944,3 +944,27 @@ test("§4-⑧ 지점 미리보기가 지도에 회색 핀으로 뜨고, 탭하�
 
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });
+
+test("§4-⑧ 반경 안에 정말 0개면 mock 으로 덮지 않고 반경 확장을 제안한다", async ({ request }) => {
+  // ⚠️ 예전엔 "결과 0개면" 무조건 샘플 6개로 채웠다. 그래서 **키가 멀쩡한데
+  //    반경 안에 정말 아무것도 없는 경우**까지 샘플로 덮였고, 화면이 "0개"를
+  //    본 적이 없어 v19 §4-⑧ 의 반경 확장(700→1400m) 제안이 영영 안 떴다.
+  //    (2026-08-10 제보 — "1.4km로 넓히라며?")
+  //    키가 없는 CI 에서는 mock 이 정상 동작이므로, 여기서는 **응답 계약**을 본다.
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  // 키가 없으면 mock, 있으면 실데이터 — 어느 쪽이든 **둘이 동시에 참일 수는 없다**
+  expect(poi.mock && poi.reallyEmpty, "mock 인데 '진짜 0건'이라고도 표시됐다").toBeFalsy();
+  expect(poi.canExpand, "700m 상태면 확장 가능해야 한다").toBe(true);
+
+  // 검색어로 0건이면 그 카테고리 샘플로 덮지 않는다
+  const q = await (await request.get(`/api/place-poi?code=${code}&q=${encodeURIComponent("존재하지않는가게이름zzz")}`)).json();
+  if (q.searchedEmpty) {
+    expect(q.items, "검색 결과가 없는데 샘플이 채워졌다").toHaveLength(0);
+    expect(q.mock, "검색 중에는 mock 으로 떨어지면 안 된다").toBe(false);
+  }
+});
