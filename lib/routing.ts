@@ -114,6 +114,21 @@ function rateGate(): Promise<void> {
   return myTurn;
 }
 
+/**
+ * **같은 구간을 동시에 여러 번 계산하지 않는다.**
+ *
+ * ⚠️ 이게 없으면 `rateGate`(250ms 간격) 대기열이 폭발한다. 모임 상세 화면은
+ *    **참여자 기기마다** 후보 재계산을 요청하는데, 4대가 폴링하면 같은
+ *    (출발지→후보) 쌍이 4벌씩 큐에 쌓인다. 후보 3 × 인원 4 × 기기 4 = 48건이
+ *    250ms 씩 줄을 서면 12초, 곧 그 뒤에 온 요청은 **끝나지 않는다.**
+ *    2026-08-10 4대 리허설에서 확정 시점 재계산이 이 큐에 막혀 통째로 유실됐다
+ *    (그래서 늦게 온 사람이 결과 화면에서 '이동시간 없음' 으로 남았다).
+ *
+ * 같은 키가 이미 날아가 있으면 **그 약속을 같이 기다린다** — 호출 수가 실제
+ * 서로 다른 구간 수로 줄어든다. 캐시(L1/L2)는 "끝난 것", 이건 "가는 중"이다.
+ */
+const inflight = new Map<string, Promise<{ min: number; real: boolean }>>();
+
 export async function travelMinutesEx(
   from: Coord,
   to: Coord,
@@ -124,6 +139,20 @@ export async function travelMinutesEx(
   // 같은 좌표를 반복 호출해도 첫 응답만 계속 돌아온다(값이 안 바뀌는 것처럼 보인다).
   const hit = FLAGS.odsayProbe ? undefined : routeCache.get(key);
   if (hit != null) return { min: hit, real: true };
+
+  const running = inflight.get(key);
+  if (running) return running;
+  const p = travelMinutesUncached(from, to, transport, key).finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+async function travelMinutesUncached(
+  from: Coord,
+  to: Coord,
+  transport: string,
+  key: string
+): Promise<{ min: number; real: boolean }> {
 
   // ── 근거리는 ODsay 를 부르지 않는다 (대중교통일 때만) ──
   //

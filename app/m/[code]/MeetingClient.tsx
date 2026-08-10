@@ -335,6 +335,12 @@ export default function MeetingClient({ code }: { code: string }) {
   );
   const regionsReqRef = useRef("");
   useEffect(() => {
+    // ⚠️ **방장 화면 하나만** 재계산을 요청한다.
+    //    참여자 기기까지 각자 요청하면 같은 계산이 인원수만큼 겹쳐,
+    //    이동시간 호출 대기열(lib/routing.ts rateGate)이 폭발한다 —
+    //    4대 리허설에서 확정 시점 재계산이 그 큐에 막혀 통째로 유실됐다.
+    //    결과는 폴링으로 모두에게 똑같이 전달되므로 한 대만 요청해도 된다.
+    if (!meRow?.isLeader) return;
     if (!originSig || originSig === regionsReqRef.current) return;
     regionsReqRef.current = originSig;
     fetch("/api/meeting", {
@@ -344,7 +350,9 @@ export default function MeetingClient({ code }: { code: string }) {
     })
       .then(() => load())
       .catch(() => {});
-  }, [originSig, code, load]);
+    // 방장 여부는 신원 로딩이 끝나야 확정된다 — 빠뜨리면 방장 화면에서도
+    // 첫 렌더(참여자로 취급)에서만 돌고 다시 안 돈다.
+  }, [originSig, code, load, meRow?.isLeader]);
 
   useEffect(() => {
     if (!routeKey) {

@@ -12,7 +12,8 @@
     "pretest:smoke": "playwright install chromium",
     "test:smoke": "playwright test",
     "verify": "npx tsc --noEmit && npm run build && npm run test:smoke",
-    "check:live": "node scripts/check-live.mjs"
+    "check:live": "node scripts/check-live.mjs",
+    "check:devices": "node scripts/check-devices.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
