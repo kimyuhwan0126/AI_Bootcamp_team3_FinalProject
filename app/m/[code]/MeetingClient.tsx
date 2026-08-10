@@ -89,6 +89,15 @@ export default function MeetingClient({ code }: { code: string }) {
    * 생기는 것** 자체가 문제다)
    */
   const [pendingPing, setPendingPing] = useState<{ lat: number; lng: number } | null>(null);
+  /**
+   * 참여 모달 (멘토링 8/6 §2 — "링크 진입할 때 정보 입력 받지 말고,
+   * **핑 찍은 후 모달로** 추가 정보 수집").
+   *
+   * `joinPin` 은 찍고 들어온 자리다 — 참여가 끝나면 그 자리에 핑까지 이어 찍는다.
+   * `null` 이면 지도 없이 그냥 참여하는 경우('나도 참여' 버튼).
+   */
+  const [showJoin, setShowJoin] = useState(false);
+  const [joinPin, setJoinPin] = useState<{ lat: number; lng: number } | null>(null);
   const [previewPois, setPreviewPois] = useState<
     { id: string; name: string; lat: number; lng: number; category: string; emoji: string; rating: number; url: string }[]
   >([]);
@@ -456,25 +465,27 @@ export default function MeetingClient({ code }: { code: string }) {
     );
   }
 
-  // ── v19 §4-⑤: 초대 링크로 들어왔는데 아직 신원이 없으면 **참여 폼이 먼저다** ──
-  //  이게 없으면 팀원이 카톡 링크를 눌렀을 때 모임 화면만 열리고 자기 자리가 없어
-  //  뭘 해야 할지 모른다(발표 시연 3단계가 여기서 멈춘다).
+  // ── 초대 링크로 들어왔는데 아직 신원이 없을 때 ──────────────
+  //  **기본은 막지 않는다** (멘토링 8/6 §2): 먼저 모임을 구경하고, 지도를 눌러
+  //  핑을 찍는 **그 순간** 모달로 이름·출발지를 받는다. 아래 `guest*` 가 그 흐름이다.
+  //  옛 동작(링크 열자마자 전면 참여 폼)은 `NEXT_PUBLIC_FF_JOIN_GATE=1` 로 돌아온다.
+  //
   //  ⚠️ 훅보다 **아래**에 둔다 — 조건부 return 위로 올리면 화면이 통째로 안 그려진다
   //     (이 화면에서 실제로 겪은 사고, app/m/[code]/CLAUDE.md §1).
-  //  지난 모임은 새로 참여할 수 없으므로(v18) 그때는 게이트를 띄우지 않는다.
-  if (!me && !state.isPast) {
-    return (
-      <JoinGate
-        code={code}
-        meetingName={state.name}
-        onJoined={() => {
-          setIds(getIdentities(code));
-          setMe(getActive(code));
-          void load();
-        }}
-      />
-    );
+  //  지난 모임은 새로 참여할 수 없으므로(v18) 그때는 어느 쪽이든 폼을 띄우지 않는다.
+  const joinedNow = (_id: Identity, pinNote?: string) => {
+    setShowJoin(false);
+    setJoinPin(null);
+    setIds(getIdentities(code));
+    setMe(getActive(code));
+    if (pinNote) flash(pinNote);
+    void load();
+  };
+  if (!me && !state.isPast && FLAGS.joinGate) {
+    return <JoinGate code={code} meetingName={state.name} onJoined={joinedNow} />;
   }
+  /** 아직 참여하지 않고 보고만 있는 사람 (지난 모임은 원래 읽기 전용이다) */
+  const isGuest = !me && !state.isPast;
 
   // ── 역할 · 권한 (멘토링 8/6 §1 — `lib/roles.ts`) ────────────
   //  `isLeader &&` 를 화면 여기저기에 흩뿌리지 않는다. "무엇을 할 수 있는가"는
@@ -760,6 +771,8 @@ export default function MeetingClient({ code }: { code: string }) {
   //   참여자 → `ParticipantBar` : 지금 무슨 칸이고 내가 뭘 해야 하는지 (버튼 없음)
   //   지난 단계를 보는 중이거나 신원이 없으면 둘 다 안 뜬다.
   //  ⚠️ 비활성 버튼으로 방장 기능을 흉내내지 않는다 — 멘토가 명시적으로 불필요하다고 했다.
+  /** 구경 중인 사람이 지금 지도를 눌러 참여할 수 있는 칸인가 (= 지역 등록 칸) */
+  const guestCanPing = isGuest && !viewingPast && stage === "main" && state.aiPhase === "region";
   const showLeaderbar = isLeader && !viewingPast;
   const showParticipantBar = role === "participant" && !viewingPast;
   const showBottomBar = showLeaderbar || showParticipantBar;
@@ -769,6 +782,7 @@ export default function MeetingClient({ code }: { code: string }) {
       <MeetingHeader
         state={state}
         isLeader={isLeader}
+        guest={isGuest}
         identities={ids}
         activeId={me?.id}
         showDebugTools={DEV && FLAGS.debugTools}
@@ -800,8 +814,19 @@ export default function MeetingClient({ code }: { code: string }) {
           // ── v19 §4-⑥ 지도 핑 ──
           //  지역 후보 **등록 단계**에서만 켠다. 투표가 시작되면 서버가 거부하므로
           //  화면에서도 미리 꺼서 "눌리는데 안 되는" 상태를 만들지 않는다 (v5·v12).
-          pingMode={!!me && !viewingPast && !state.isPast && stage === "main" && state.aiPhase === "region"}
-          onMapPing={(lat, lng) => setPendingPing({ lat, lng })}
+          //  ⚠️ **아직 참여 안 한 사람에게도 켠다** (멘토링 8/6 §2). 지도를 누르는
+          //     것이 이 앱의 첫 행동이고, 그 순간에 이름·출발지를 물어본다.
+          pingMode={(!!me || isGuest) && !viewingPast && !state.isPast && stage === "main" && state.aiPhase === "region"}
+          onMapPing={(lat, lng) => {
+            // 신원이 없으면 확인 시트가 아니라 **참여 모달**이 뜬다.
+            // 참여가 끝나면 JoinGate 가 이 좌표로 핑까지 이어서 찍는다.
+            if (!me) {
+              setJoinPin({ lat, lng });
+              setShowJoin(true);
+              return;
+            }
+            setPendingPing({ lat, lng });
+          }}
         />
 
         {/* 지도 핑 확인 — 여기서 [등록]을 눌러야 후보가 생긴다 */}
@@ -836,11 +861,55 @@ export default function MeetingClient({ code }: { code: string }) {
           </div>
         )}
 
+        {/* ── 아직 참여 안 한 사람 (멘토링 8/6 §2 — 링크는 막지 않는다) ──
+               먼저 모임을 보여주고, **행동할 때** 이름·출발지를 묻는다.
+               지역 단계면 지도를 누르는 것이 그 행동이고, 아니면 이 버튼이다. */}
+        {isGuest && (
+          <div className="card stack" style={{ gap: 8 }}>
+            <div>
+              <span className="eyebrow">아직 참여 전</span>
+              <h2 className="sec" style={{ marginTop: 4 }}>구경 중이에요</h2>
+            </div>
+            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+              {guestCanPing
+                ? "위 지도에서 만나고 싶은 곳을 눌러 보세요. 누르면 이름·출발지를 물어보고 참여까지 한 번에 끝나요."
+                : "참여하면 투표하고 결과 알림도 받을 수 있어요."}
+            </p>
+            <button
+              className="btn"
+              onClick={() => {
+                setJoinPin(null);
+                setShowJoin(true);
+              }}
+            >
+              🙋 나도 참여
+            </button>
+          </div>
+        )}
+
+        {/* 참여 모달 — 지도에서 찍고 들어왔으면 그 좌표(joinPin)를 함께 넘긴다 */}
+        {showJoin && isGuest && (
+          <JoinGate
+            asModal
+            code={code}
+            meetingName={state.name}
+            pinned={joinPin}
+            onJoined={joinedNow}
+            onCancel={() => {
+              setShowJoin(false);
+              setJoinPin(null);
+            }}
+          />
+        )}
+
         {viewingPast && <PastStepView step={displayStep} state={state} />}
 
         {/* ══════════════ STAGE: MAIN ══════════════ */}
         {!viewingPast && stage === "main" && (
           <>
+            {/* 출발지는 **참여한 사람의 것**이다. 구경 중인 사람에게 먼저 물어보면
+                (신원이 없어 서버가 거부한다) 링크를 막던 옛 화면으로 되돌아간다. */}
+            {!isGuest && (
             <OriginForm
               myName={myName}
               registered={!!meRow?.origin}
@@ -863,6 +932,7 @@ export default function MeetingClient({ code }: { code: string }) {
                 )
               }
             />
+            )}
 
             <ParticipantList
               state={state}
@@ -981,7 +1051,9 @@ export default function MeetingClient({ code }: { code: string }) {
               <PlacePicker
                 state={state}
                 isLeader={isLeader}
-                busy={busy}
+                // 아직 참여 안 한 사람은 **누를 수 없게** 한다 — 참가자 없이 보내면
+                // 서버가 거부한다. "눌리는데 안 되는" 상태를 만들지 않는다 (v5·v12).
+                busy={busy || isGuest}
                 myId={me?.id}
                 onAction={act}
                 onPreview={setPreviewPois}

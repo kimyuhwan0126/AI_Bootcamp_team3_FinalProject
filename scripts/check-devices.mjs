@@ -91,21 +91,56 @@ const mates = [
   { name: "4도윤", who: "도윤", from: "사당" },
 ];
 const devs = [d1];
-for (const m of mates) {
+// ⚠️ 링크를 열자마자 폼으로 막지 않는다 (멘토링 8/6 §2 — `FLAGS.joinGate` 기본 꺼짐).
+//    먼저 모임을 구경하다가 **지도를 누르는 순간** 이름·출발지 모달이 뜨고,
+//    참여와 핑이 한 번에 끝난다. 여기서 그 순서를 그대로 밟는다.
+let viaMapCount = 0;
+for (const [i, m] of mates.entries()) {
   const d = await device(m.name);
   devs.push(d);
   await d.page.goto(link);                       // 단톡방 링크를 탭한 그 상태
-  await d.page.getByText("모임 참여").waitFor({ timeout: 15000 });
+  await d.page.getByText("구경 중이에요").waitFor({ timeout: 15000 });
+  // 지도를 눌러 참여를 연다. 위쪽을 누른다 — 아래 1/3 은 후보 칩이 깔린다.
+  const gbox = d.page.locator(".map").first();
+  const gb = await gbox.boundingBox().catch(() => null);
+  if (gb) {
+    await gbox
+      .click({ position: { x: gb.width * (0.3 + i * 0.15), y: gb.height * 0.3 }, timeout: 5000 })
+      .catch(() => {});
+    await d.page.waitForTimeout(400);
+  }
+  const viaMap = await d.page.getByPlaceholder("예: 김철수").isVisible().catch(() => false);
+  // 지도가 안 눌린 기기(SDK 초기화 타이밍 등)는 버튼으로도 참여할 수 있어야 한다
+  if (!viaMap) await d.page.getByRole("button", { name: "나도 참여" }).click({ timeout: 5000 });
+  if (viaMap) viaMapCount++;
   await d.page.getByPlaceholder("예: 김철수").fill(m.who);
   await d.page.getByPlaceholder("예: 강남역").fill(m.from);
   await d.page.getByRole("button", { name: "참여하기" }).click();
-  await d.page.getByText("참여자 현황").waitFor({ timeout: 15000 });
-  ok(`${m.name} 초대 링크로 참여`, `${m.who} · ${m.from}`);
+  // ⚠️ '참여자 현황'을 기다리면 안 된다 — **구경 중일 때 이미 보인다.** 그래서
+  //    참여가 끝나기 전에 다음 줄로 넘어가고, 마지막 기기의 핑이 서버에 닿기 전에
+  //    상태를 읽어 "3대 중 2대만 찍혔다"는 유령 실패가 났다 (2026-08-10).
+  //    참여가 실제로 끝난 신호는 헤더 배지가 '구경 중' → '참가자' 로 바뀌는 것이다.
+  await d.page.getByText("🙋 참가자").waitFor({ timeout: 15000 });
+  // 핑이 같이 찍혔는지는 토스트가 말해 준다 — 실패했을 때 이유를 남긴다
+  // (이게 없으면 "3대 중 2대만 찍혔다"는 결과만 보고 원인을 못 찾는다)
+  const note = await d.page.locator(".toast, [role=status]").first().innerText().catch(() => "");
+  ok(
+    `${m.name} 초대 링크로 참여`,
+    `${m.who} · ${m.from}${viaMap ? " · 지도 탭으로" : " · 버튼으로"}${note ? ` · “${note.trim().slice(0, 30)}”` : ""}`
+  );
 }
 
 const st1 = await state(code);
 check(st1.totalParticipants === 4, "4대 전원 참여", `${st1.totalParticipants}/4명`);
 check(st1.originsSet === 4, "출발지 4건 저장", `${st1.originsSet}/4`);
+// 멘토링 8/6 §2 — 지도를 눌러 참여한 기기는 **그 자리에 핑까지** 찍혀 있어야 한다.
+//  (여기서 0이면 "먼저 구경 → 핑 → 모달" 순서가 화면에서 끊긴 것이다)
+const joinPinged = new Set((st1.regions ?? []).flatMap((r) => r.contributors ?? [])).size;
+check(
+  viaMapCount === 3 && joinPinged === 3,
+  "3대가 지도를 눌러 참여 — 참여와 핑이 한 번에",
+  `지도 탭 ${viaMapCount}/3대 · 핑 ${joinPinged}명 · 후보 ${(st1.regions ?? []).length}개`
+);
 
 // ── 연동 ①: 남이 참여한 게 방장 화면에 새로고침 없이 뜨는가 ──
 await d1.page.waitForTimeout(2500);

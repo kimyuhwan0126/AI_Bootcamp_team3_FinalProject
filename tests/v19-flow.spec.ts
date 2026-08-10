@@ -669,7 +669,12 @@ test("시연: 출발지가 바뀌어도 사람이 찍은 핑은 사라지지 않
   ).toBe(true);
 });
 
-test("시연: 초대 링크로 들어오면 참여 폼이 먼저 뜬다 (신원 없음)", async ({ page, request }) => {
+// ─────────────────────────────────────────────────────────────
+// §2 참여 순서 — **링크는 막지 않는다** (멘토링 2026-08-06 §2)
+//   멘토: "링크 진입할 때 정보 입력 받지 말고, 핑 찍은 후 모달로 추가 정보 수집."
+//   옛 동작(링크 열자마자 전면 참여 폼)은 `NEXT_PUBLIC_FF_JOIN_GATE=1` 로 돌아온다.
+// ─────────────────────────────────────────────────────────────
+test("§2 초대 링크로 들어오면 먼저 구경한다 — 정보를 먼저 묻지 않는다", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
 
@@ -678,23 +683,65 @@ test("시연: 초대 링크로 들어오면 참여 폼이 먼저 뜬다 (신원 
   // ⚠️ loginAs 를 **하지 않는다** — 팀원이 카톡 링크를 눌렀을 때와 같은 상태
   await page.goto(`/m/${code}`);
 
-  await expect(page.getByText("모임 참여")).toBeVisible();
-  await expect(page.getByText("초대 테스트")).toBeVisible();
-  await expect(page.getByPlaceholder("예: 김철수")).toBeVisible();
-  await expect(page.getByPlaceholder("예: 강남역")).toBeVisible();
+  // 모임 내용이 먼저 보인다. 이름 입력칸은 **아직 없다**.
+  await expect(page.getByText("초대 테스트").first()).toBeVisible();
+  await expect(page.getByText("구경 중이에요")).toBeVisible();
+  await expect(page.getByText("참여자 현황")).toBeVisible();
+  expect(
+    await page.getByPlaceholder("예: 김철수").isVisible().catch(() => false),
+    "링크를 열자마자 이름을 묻고 있다 — 멘토링 §2 와 어긋난다"
+  ).toBe(false);
 
-  // 이름·출발지를 넣으면 참여되고 모임 화면으로 넘어간다 (원스텝, v11)
+  // '나도 참여' 를 눌러야 그때 폼이 뜬다 (지도를 안 누르는 사람용 통로)
+  await page.getByRole("button", { name: "나도 참여" }).click();
+  await expect(page.getByPlaceholder("예: 김철수")).toBeVisible();
   await page.getByPlaceholder("예: 김철수").fill("링크참여자");
   await page.getByPlaceholder("예: 강남역").fill("홍대입구");
   await page.getByRole("button", { name: "참여하기" }).click();
 
-  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("🙋 참가자")).toBeVisible({ timeout: 10_000 });
 
   const st = await get(request, code);
   expect(st.totalParticipants, "참여가 서버에 반영되지 않았다").toBe(2);
   const joined = st.participants.find((p: { name: string }) => p.name === "링크참여자");
   expect(joined, "참여자가 없다").toBeTruthy();
   expect(joined.origin, "출발지까지 원스텝으로 등록돼야 한다").toBeTruthy();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("§2 지도를 누르면 참여 모달이 뜨고, 참여와 핑이 한 번에 끝난다", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code } = await setup(request, { name: "핑먼저 테스트" });
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("구경 중이에요")).toBeVisible();
+
+  // ⚠️ `locator.click({position})` 은 요소 기준이라 스크롤도 알아서 맞춘다
+  //    (`page.mouse.click` 은 뷰포트 기준이라 지도 아랫부분에서 빗나간다).
+  const box = page.locator(".map").first();
+  const b = await box.boundingBox();
+  expect(b, "지도가 없다 — 구경 중인 사람에게도 지도는 보여야 한다").toBeTruthy();
+  await box.click({ position: { x: b!.width * 0.4, y: b!.height * 0.3 } });
+
+  // 확인 시트가 아니라 **참여 모달**이 뜬다 (신원이 아직 없으므로)
+  await expect(page.getByPlaceholder("예: 김철수")).toBeVisible();
+  await expect(page.getByText(/누른 자리를 후보로 올릴게요/)).toBeVisible();
+
+  await page.getByPlaceholder("예: 김철수").fill("핑먼저");
+  await page.getByPlaceholder("예: 강남역").fill("사당");
+  await page.getByRole("button", { name: "참여하기" }).click();
+  await expect(page.getByText("🙋 참가자")).toBeVisible({ timeout: 10_000 });
+
+  const st = await get(request, code);
+  const joined = st.participants.find((p: { name: string }) => p.name === "핑먼저");
+  expect(joined, "참여가 안 됐다").toBeTruthy();
+  // ⭐ 핵심: 사람이 한 행동(지도를 눌렀다)이 참여 절차에 먹히지 않아야 한다
+  const mine = (st.regions ?? []).find((r: { contributors?: string[] }) =>
+    r.contributors?.includes(joined.id)
+  );
+  expect(mine, "지도를 눌러 참여했는데 그 자리에 핑이 없다").toBeTruthy();
 
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });

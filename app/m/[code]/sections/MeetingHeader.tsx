@@ -25,6 +25,8 @@ import StepIcons from "@/app/components/v8/StepIcons";
 export interface MeetingHeaderProps {
   state: MeetingState;
   isLeader: boolean;
+  /** 아직 참여하지 않고 보고만 있는 사람 — 방장/참가자 어느 쪽도 아니다 */
+  guest?: boolean;
   identities: Identity[];
   activeId: string | undefined;
   /** '+ 참가자' 버튼 — 개발용(FLAGS.debugTools). 기본은 안 보인다 */
@@ -44,6 +46,7 @@ export interface MeetingHeaderProps {
 export default function MeetingHeader({
   state,
   isLeader,
+  guest,
   identities,
   activeId,
   showDebugTools,
@@ -70,7 +73,14 @@ export default function MeetingHeader({
               </div>
             </div>
           </div>
-          {isLeader ? <span className="chip leader">👑 방장</span> : <span className="chip line">🙋 참가자</span>}
+          {/* 구경 중인 사람에게 '참가자' 라고 하면 자기가 이미 들어온 줄 안다 */}
+          {isLeader ? (
+            <span className="chip leader">👑 방장</span>
+          ) : guest ? (
+            <span className="chip line">👀 구경 중</span>
+          ) : (
+            <span className="chip line">🙋 참가자</span>
+          )}
         </div>
 
         {/* 신원 전환 — 이 기기에 신원이 둘 이상일 때만. 발표에서는 한 기기 = 한 사람이라
