@@ -19,6 +19,7 @@
 // ⚠️ 💰 외부 API 를 호출하지 않는다. 만들기·참여·조회만 한다(카카오·ODsay 0콜).
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useRef, useState } from "react";
+import { copyText } from "@/lib/clipboard";
 
 interface Status {
   kakao: boolean; kakaoJs: boolean; kakaoRedirect: string;
@@ -79,7 +80,15 @@ export default function HealthPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
+  /** 복사 결과 안내 — 실패를 조용히 삼키면 "눌렀는데 아무 일도 안 나는" 상태가 된다 */
+  const [copied, setCopied] = useState<string | null>(null);
   const codeRef = useRef("");
+
+  async function copy(text: string, what: string) {
+    const ok = await copyText(text);
+    setCopied(ok ? `${what} 복사됨` : `복사가 막혀 있어요 — ${what}을(를) 길게 눌러 직접 복사하세요`);
+    setTimeout(() => setCopied(null), 2500);
+  }
 
   // ── 설정 상태 ───────────────────────────────────────────────
   useEffect(() => {
@@ -183,6 +192,7 @@ export default function HealthPage() {
       </p>
 
       {err && <div className="chip warn" style={{ marginBottom: 12 }}>⚠ {err}</div>}
+      {copied && <div className="chip ok" style={{ marginBottom: 12 }}>{copied}</div>}
 
       {/* ── 1. 이 기기 ─────────────────────────────────────────── */}
       <div className="card stack" style={{ gap: 0, marginBottom: 12 }}>
@@ -231,7 +241,7 @@ export default function HealthPage() {
             {st.kakaoRedirect}
           </code>
           <button className="btn ghost sm" style={{ alignSelf: "flex-start" }}
-            onClick={() => navigator.clipboard?.writeText(st.kakaoRedirect)}>
+            onClick={() => void copy(st.kakaoRedirect, "Redirect URI")}>
             📋 복사
           </button>
         </div>
@@ -287,8 +297,8 @@ export default function HealthPage() {
                 {joinUrl}
               </code>
               <div className="row" style={{ gap: 6 }}>
-                <button className="btn ghost sm" onClick={() => navigator.clipboard?.writeText(joinUrl)}>📋 링크 복사</button>
-                <button className="btn ghost sm" onClick={() => navigator.clipboard?.writeText(code)}>코드 {code}</button>
+                <button className="btn ghost sm" onClick={() => void copy(joinUrl, "링크")}>📋 링크 복사</button>
+                <button className="btn ghost sm" onClick={() => void copy(code, "코드")}>코드 {code}</button>
               </div>
             </div>
 

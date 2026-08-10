@@ -9,6 +9,7 @@
 //    받지 않고, 실 결제 연동을 추가하지 않는다.
 // ─────────────────────────────────────────────────────────────
 import type { MeetingState, RegionCandidate } from "@/lib/types";
+import { copyText } from "@/lib/clipboard";
 import TravelTimes from "./TravelTimes";
 import ArrivalPanel from "./ArrivalPanel";
 import { openGoogleCalendar, downloadIcs } from "@/lib/calendar";
@@ -293,7 +294,7 @@ export default function ResultSection({
             if (navigator.share) {
               void navigator.share({ title: state.name, text }).catch(() => {});
             } else {
-              navigator.clipboard?.writeText(text);
+              void copyText(text);
               onToast("메시지를 복사했어요 — 카카오톡에 붙여넣으세요");
             }
           }}
@@ -303,7 +304,7 @@ export default function ResultSection({
         <button
           className="btn ghost"
           onClick={() => {
-            navigator.clipboard?.writeText(`${location.origin}/m/${state.code}`);
+            void copyText(`${location.origin}/m/${state.code}`);
             onToast("모임 링크를 복사했어요");
           }}
         >

@@ -10,9 +10,12 @@
 // ─────────────────────────────────────────────────────────────
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const BASE = process.env.BASE || "http://localhost:3000";
-const OUT = new URL("../test-results/devices/", import.meta.url).pathname;
+// ⚠️ 윈도우에서 `new URL(...).pathname` 은 `/C:/…` 를 준다 — 그대로 쓰면
+//    `C:\C:\…` 가 돼 mkdir 이 실패한다 (2026-08-10 팀원 노트북 실측).
+const OUT = fileURLToPath(new URL("../test-results/devices/", import.meta.url));
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 

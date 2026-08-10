@@ -1062,3 +1062,30 @@ test("§4-⑥ 지도를 눌러도 확인 전에는 후보가 생기지 않는다
   expect(after, "화면을 열기만 했는데 후보가 늘었다").toBe(before);
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });
+
+test("복사는 클립보드 권한이 없어도 화면이 죽지 않는다", async ({ page, request }) => {
+  // ⚠️ `navigator.clipboard` 는 **보안 출처(https·localhost)에서만** 존재한다.
+  //    발표는 팀원 폰이 http://10.x.x.x:3000 으로 들어오는 구조라 그 기기에선 없다.
+  //    예전 코드는 거기서 TypeError 로 죽거나(=화면이 멈춤) 조용히 아무 일도
+  //    안 했다 — 초대 링크 공유가 첫 단추라 조용한 실패가 특히 나쁘다.
+  //    (2026-08-10 윈도우 크롬에서 'Write permission denied' 로 실제 발생)
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  // 클립보드 API 를 아예 없앤다 = http 출처의 폰과 같은 상태
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  });
+
+  const { code } = await setup(request);
+  await page.goto("/health");
+  await page.getByRole("button", { name: /점검 시작/ }).click();
+  await expect(page.getByText(/연결된 기기 1대/)).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: /링크 복사/ }).click();
+  // 성공하든(폴백) 실패하든 **사람에게 결과를 알려줘야** 한다
+  await expect(page.getByText(/복사됨|복사가 막혀/)).toBeVisible({ timeout: 5_000 });
+
+  expect(errors, `클립보드가 없을 때 화면이 죽었다: ${errors.join(" / ")}`).toEqual([]);
+  expect(code).toBeTruthy();
+});

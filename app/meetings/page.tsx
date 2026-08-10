@@ -10,6 +10,7 @@ import BottomNav from "../components/v8/BottomNav";
 import V8Header from "../components/v8/V8Header";
 import { IcSearch, IcPeople } from "../components/v8/Icons";
 import { addIdentity, getIdentities } from "@/lib/identity";
+import { copyText } from "@/lib/clipboard";
 import { useSession } from "../components/v8/useSession";
 import type { MeetingState, MeetingScope, PurposeCategory } from "@/lib/types";
 
@@ -56,6 +57,8 @@ function MeetingsInner() {
   const [tab, setTab] = useState<MeetingFilter>("all");
   const [modal, setModal] = useState<"create" | "join" | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 복사 결과 안내 — 조용히 실패하면 "눌렀는데 아무 일도 안 나는" 상태가 된다 */
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // 생성 완료 요약 — 방장이 무엇을 만들었는지 한 화면에서 확인하고 링크를 공유한다.
   // (URL만 던져주면 정원·방장·모임 시간이 제대로 들어갔는지 확인할 데가 없었다)
@@ -161,11 +164,9 @@ function MeetingsInner() {
       }) : "";
       const url = `${window.location.origin}/m/${d.code}`;
       setCreated({ code: d.code, name: cName, leaderName, headcount, timeText, url });
-      try {
-        await navigator.clipboard.writeText(url);
-      } catch {
-        /* 클립보드 권한 없음 — URL 표시로 대체 */
-      }
+      // ⚠️ http(LAN IP)에서는 navigator.clipboard 가 아예 없다 — 폴백까지 가는
+      //    헬퍼를 쓴다. 실패해도 화면에 URL 이 그대로 보이므로 시연은 막히지 않는다.
+      await copyText(url);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "요청 실패");
     } finally {
@@ -405,11 +406,14 @@ function MeetingsInner() {
                   <button
                     className="btn sm"
                     style={{ flexShrink: 0 }}
-                    onClick={() => navigator.clipboard.writeText(created.url).catch(() => {})}
+                    onClick={() => void copyText(created.url).then((ok) => setCopyMsg(ok ? "복사됐어요" : "복사가 막혀 있어요 — 위 주소를 길게 눌러 복사하세요"))}
                   >
                     복사
                   </button>
                 </div>
+                {copyMsg && (
+                  <div className="chip ok" style={{ marginTop: 6, fontSize: 10.5 }}>{copyMsg}</div>
+                )}
               </div>
               <button className="btn" onClick={() => router.push(`/m/${created.code}`)}>모임으로 이동</button>
               <button className="btn ghost" onClick={closeModal}>닫기</button>
