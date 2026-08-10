@@ -160,6 +160,13 @@ export default function MapPanel({
             candidates={mapCandidates}
             onCandidateClick={onCandidateClick}
             onMapClick={pingMode ? onMapPing : undefined}
+            /* 지점 단계에서만 — 지역 단계엔 중심이 없고, 결과에선 이미 정해졌다.
+               `state.radiusM` 을 그대로 쓰므로 확장(700→1400)이 즉시 보인다. */
+            radiusCircle={
+              state.aiPhase === "place" && state.winnerRegion
+                ? { lat: state.winnerRegion.lat, lng: state.winnerRegion.lng, radiusM: state.radiusM }
+                : null
+            }
           />
         ) : (
           <>

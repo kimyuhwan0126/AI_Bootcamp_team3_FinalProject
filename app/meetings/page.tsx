@@ -18,17 +18,39 @@ import type { MeetingState, MeetingScope, PurposeCategory } from "@/lib/types";
 type MeetingFilter =
   | "all" | "gathering" | "region" | "place" | "confirmed" | "leader" | "joined" | "past";
 
-const FILTERS: { key: MeetingFilter; label: string }[] = [
-  { key: "all", label: "전체" },
-  { key: "gathering", label: "모집" },
-  { key: "region", label: "지역" },
-  { key: "place", label: "지점" },
-  { key: "confirmed", label: "확정" },
-  { key: "leader", label: "방장" },
-  { key: "joined", label: "참여" },
-  { key: "past", label: "지난" },
+/**
+ * 필터를 **두 줄**로 나눈다 (2차 그릴링, 2026-08-10 채택).
+ *
+ * 예전엔 8개가 한 줄에 뒤섞여 있었다. 그런데 `지역`(단계)과 `방장`(역할)은
+ * **성격이 다른 축**이라, 섞어 놓으면 "지역이면서 방장인 모임"을 어떻게 보는지
+ * 알 수 없다. 2차가 상태/역할 두 줄로 나눈 이유가 이것이다.
+ *
+ * ⚠️ 2차 원본은 상태를 5개(전체·모집·투표·확정·마감)로 합쳤지만, 여기서는
+ *    v19 의 `지역`/`지점` 구분을 유지했다 — 그게 이 앱의 축이고(확정 범위 분기),
+ *    합치면 "지금 어느 단계인지"를 목록에서 못 읽는다.
+ */
+const FILTER_ROWS: { title: string; items: { key: MeetingFilter; label: string }[] }[] = [
+  {
+    title: "상태",
+    items: [
+      { key: "all", label: "전체" },
+      { key: "gathering", label: "모집" },
+      { key: "region", label: "지역" },
+      { key: "place", label: "지점" },
+      { key: "confirmed", label: "확정" },
+      { key: "past", label: "지난" },
+    ],
+  },
+  {
+    title: "역할",
+    items: [
+      { key: "leader", label: "방장" },
+      { key: "joined", label: "참여" },
+    ],
+  },
 ];
 import { PURPOSE_LABELS } from "@/lib/types";
+import { takeHandoff } from "@/lib/handoff";
 
 const STAGE_LABEL: Record<string, { text: string; on: boolean }> = {
   main: { text: "참석자 모집 중", on: false },
@@ -69,6 +91,8 @@ function MeetingsInner() {
     headcount: number;
     timeText: string;
     url: string;
+    /** 홈에서 넘어온 것 — 무엇이 옮겨졌는지 요약에 보여준다 (v19 §4-①) */
+    carried: string[];
   } | null>(null);
 
   // 생성 폼
@@ -158,12 +182,39 @@ function MeetingsInner() {
         meetTime: cTime ? new Date(cTime).toISOString() : null,
       });
       addIdentity(d.code, { id: d.participantId, name: leaderName, isLeader: true });
+
+      // ── v19 §4-① 홈 인계 (2026-08-10) ──
+      //  홈에서 [이 출발지들로 모임 만들기]를 눌러 왔다면, 거기서 넣은 출발지와
+      //  거기서 본 중간지점을 그대로 옮긴다 (`lib/handoff.ts`).
+      //  ⚠️ **생성 자체를 막으면 안 된다.** 인계는 편의이지 필수가 아니므로
+      //     실패해도 조용히 넘어가고, 무엇이 옮겨졌는지는 아래 요약에 적는다.
+      const handed = takeHandoff();
+      let carried: string[] = [];
+      if (handed?.origin) {
+        try {
+          await post({
+            action: "origin", code: d.code, participantId: d.participantId,
+            origin: handed.origin.name, transport: handed.origin.transport,
+            lat: handed.origin.lat, lng: handed.origin.lng,
+          });
+          carried.push(`출발지 ‘${handed.origin.name}’`);
+        } catch { /* 인계 실패는 생성을 막지 않는다 */ }
+      }
+      if (handed?.seed) {
+        try {
+          await post({
+            action: "addRegion", code: d.code, participantId: d.participantId,
+            lat: handed.seed.lat, lng: handed.seed.lng,
+          });
+          carried.push("중간지점을 첫 지역 후보로");
+        } catch { /* 같음 */ }
+      }
       // 모임 시간은 선택 입력 — 비워두면 결과 화면에서 방장이 정한다(입력 유도 배너).
       const timeText = cTime ? new Date(cTime).toLocaleString("ko-KR", {
         month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
       }) : "";
       const url = `${window.location.origin}/m/${d.code}`;
-      setCreated({ code: d.code, name: cName, leaderName, headcount, timeText, url });
+      setCreated({ code: d.code, name: cName, leaderName, headcount, timeText, url, carried });
       // ⚠️ http(LAN IP)에서는 navigator.clipboard 가 아예 없다 — 폴백까지 가는
       //    헬퍼를 쓴다. 실패해도 화면에 URL 이 그대로 보이므로 시연은 막히지 않는다.
       await copyText(url);
@@ -316,17 +367,25 @@ function MeetingsInner() {
         </div>
       )}
 
-      {/* ── 필터 7종 + 전체 (v7) ── */}
-      <div className="row" style={{ gap: 4, padding: "0 16px 8px", flexWrap: "wrap" }}>
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            className={"chip" + (tab === f.key ? " ok" : " line")}
-            style={{ cursor: "pointer", fontSize: 11.5 }}
-            onClick={() => setTab(f.key)}
-          >
-            {f.label}
-          </button>
+      {/* ── 필터 두 줄: 상태 / 역할 (2차 그릴링) ── */}
+      <div className="stack" style={{ gap: 5, padding: "0 16px 8px" }}>
+        {FILTER_ROWS.map((row) => (
+          <div key={row.title} className="row" style={{ gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+            {/* 줄 이름을 적어야 두 축이 왜 나뉘어 있는지 읽힌다 */}
+            <span className="faint" style={{ fontSize: 10, fontWeight: 800, width: 22, flex: "0 0 auto" }}>
+              {row.title}
+            </span>
+            {row.items.map((f) => (
+              <button
+                key={f.key}
+                className={"chip" + (tab === f.key ? " ok" : " line")}
+                style={{ cursor: "pointer", fontSize: 11.5 }}
+                onClick={() => setTab(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
 
@@ -398,6 +457,14 @@ function MeetingsInner() {
                     {created.timeText || <span className="faint">미정 — 나중에 정해도 돼요</span>}
                   </span>
                 </div>
+                {/* 홈에서 넘어온 것 — 조용히 옮기면 "왜 출발지가 이미 들어가 있지?"가 된다.
+                    무엇이 옮겨졌는지 한 줄로 밝힌다 (v19 §4-①). */}
+                {created.carried.length > 0 && (
+                  <div className="kv">
+                    <span className="k">홈에서 가져옴</span>
+                    <span className="v grow">{created.carried.join(" · ")}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="label">초대 링크</label>

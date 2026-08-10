@@ -680,7 +680,11 @@ test("화면: §4-① 홈에 '이 출발지들로 모임 만들기' 전환 고�
   });
   await page.goto("/");
 
-  const cta = page.getByRole("link", { name: /이 출발지들로 모임 만들기/ });
+  // ⚠️ 2026-08-10부터 문구가 **중간지점을 계산했는지에 따라 달라진다** —
+  //    계산 전에는 "이 출발지들로 모임 만들기", 계산 후에는 "‘홍대입구’ 로 모임 만들기".
+  //    무엇이 딸려가는지 버튼이 미리 말해 주기 때문이다(v19 §4-① 인계).
+  //    그래서 고정 문구가 아니라 공통부로 찾는다.
+  const cta = page.getByRole("link", { name: /모임 만들기/ });
   await expect(cta).toBeVisible({ timeout: 10_000 });
 
   // ⚠️ 넓은 화면(노트북)에서 **껍데기 밖으로 튀어나오지 않아야** 한다.
@@ -1281,4 +1285,148 @@ test("재투표 ≠ 되돌리기: 되돌리기는 표를 지킨다", async ({ re
   expect(after.stage, "되돌리기가 등록 칸으로 내려가지 않았다").toBe("main");
   expect(Object.keys(after.regionVotes ?? {}), "되돌리기가 표를 지웠다 — 재투표와 섞였다")
     .toHaveLength(2);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 후보 상한 5개 (2차 그릴링 — v19 의 "지점 상한 없음"을 되돌림)
+//   근거: "여섯 개를 놓고 고르라고 하면 표가 흩어져 1위가 안 나온다"
+// ═══════════════════════════════════════════════════════════════
+
+test("상한: 지역 후보는 5개까지 · 6번째는 거부", async ({ request }) => {
+  const { code } = await setup(request);
+  // 5명이 각자 다른 곳에 핑을 찍는다 (핑은 인원당 1개라 사람이 그만큼 필요하다)
+  const spots = [
+    { lat: 37.5665, lng: 126.9780 }, { lat: 37.5045, lng: 127.0490 },
+    { lat: 37.5563, lng: 126.9236 }, { lat: 37.5133, lng: 127.1000 },
+    { lat: 37.4765, lng: 126.9816 }, { lat: 37.6066, lng: 127.0927 },
+  ];
+  const ids: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const j = await act(request, { action: "join", code, name: `핑${i + 1}` });
+    ids.push(j.participantId);
+  }
+  for (let i = 0; i < 5; i++) {
+    await act(request, { action: "addRegion", code, participantId: ids[i], ...spots[i] });
+  }
+  expect((await get(request, code)).regions).toHaveLength(5);
+
+  const sixth = await request.post("/api/meeting", {
+    data: { action: "addRegion", code, participantId: ids[5], ...spots[5] },
+  });
+  expect(sixth.ok(), "6번째 후보가 등록됐다 — 상한이 안 걸린다").toBeFalsy();
+  expect((await sixth.json()).error).toContain("최대 5개");
+  expect((await get(request, code)).regions, "거부됐는데 후보가 늘었다").toHaveLength(5);
+});
+
+test("상한: 같은 동 병합은 개수를 늘리지 않으므로 상한과 무관하다", async ({ request }) => {
+  // ⚠️ 상한 검사를 병합보다 **앞**에 두면, 다섯 개일 때 같은 동에 합류조차 못 한다.
+  const { code, leaderId } = await setup(request);
+  const spot = { lat: 37.5665, lng: 126.978 };
+  await act(request, { action: "addRegion", code, participantId: leaderId, ...spot });
+  const mate = await act(request, { action: "join", code, name: "같은동" });
+  await act(request, { action: "addRegion", code, participantId: mate.participantId, ...spot });
+
+  const st = await get(request, code);
+  expect(st.regions, "같은 동인데 후보가 두 개로 갈라졌다").toHaveLength(1);
+  expect(st.regions[0].contributors, "병합인데 사람이 안 쌓였다").toHaveLength(2);
+});
+
+test("상한: 추천도 다섯 자리를 넘겨 채우지 않는다", async ({ request }) => {
+  // "추천은 제안이지 결정이 아니고, 다섯 자리를 AI 가 먼저 차지해서도 안 된다" (2차)
+  const { code, leaderId } = await setup(request);
+  const ids = [leaderId];
+  for (let i = 0; i < 4; i++) {
+    const j = await act(request, { action: "join", code, name: `사람${i + 1}` });
+    ids.push(j.participantId);
+  }
+  const spots = [
+    { lat: 37.5665, lng: 126.9780 }, { lat: 37.5045, lng: 127.0490 },
+    { lat: 37.5563, lng: 126.9236 }, { lat: 37.5133, lng: 127.1000 },
+    { lat: 37.4765, lng: 126.9816 },
+  ];
+  for (let i = 0; i < 5; i++) {
+    await act(request, { action: "addRegion", code, participantId: ids[i], ...spots[i] });
+  }
+  expect((await get(request, code)).regions).toHaveLength(5);
+
+  // 이미 꽉 찼는데 방장이 추천을 눌러도 넘치면 안 된다 (append 로 눌러 본다)
+  await act(request, { action: "suggestRegions", code, participantId: leaderId, mode: "append" });
+  expect((await get(request, code)).regions.length, "추천이 상한을 넘겨 채웠다")
+    .toBeLessThanOrEqual(5);
+});
+
+test("화면: 모임 탭 필터가 상태 / 역할 두 줄로 나뉜다", async ({ page, request }) => {
+  const { code, leaderId } = await setup(request, { name: "두줄 필터" });
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto("/meetings");
+
+  // 줄 이름이 보여야 두 축이 왜 나뉘어 있는지 읽힌다
+  await expect(page.getByText("상태", { exact: true })).toBeVisible();
+  await expect(page.getByText("역할", { exact: true })).toBeVisible();
+  // 칩은 그대로 다 있다 (한 줄 → 두 줄은 배치만 바뀐 것)
+  for (const label of ["전체", "모집", "지역", "지점", "확정", "지난", "방장", "참여"]) {
+    await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 홈 → 생성 인계 (v19 §4-① · 2차 그릴링 seedPings · lib/handoff.ts)
+//   홈은 "맛보기"다. 거기서 넣은 출발지와 본 중간지점이 모임으로 넘어가지 않으면
+//   홈과 모임이 따로 노는 앱이 된다.
+// ═══════════════════════════════════════════════════════════════
+
+test("인계: 홈에서 넘긴 출발지와 중간지점이 새 모임에 들어간다", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  // 홈 버튼이 저장하는 것과 **같은 모양**을 심는다 (sessionStorage · 한 번 쓰고 버림)
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "moimer:handoff",
+      JSON.stringify({
+        origin: { name: "강남역", lat: 37.4979, lng: 127.0276, transport: "transit" },
+        seed: { name: "홍대입구", lat: 37.5572, lng: 126.9245 },
+      })
+    );
+  });
+
+  await page.goto("/meetings?open=create");
+  await page.getByPlaceholder("예: 협성대 브레인파크 모임").fill("인계 테스트");
+  await page.getByRole("button", { name: "만들기", exact: true }).click();
+
+  // 무엇이 옮겨졌는지 요약에 밝혀야 한다 — 조용히 넣으면 "왜 이미 들어가 있지?"가 된다
+  await expect(page.getByText("홈에서 가져옴")).toBeVisible({ timeout: 15_000 });
+
+  // ⚠️ 코드를 `getByText(/^[A-Z0-9]{6}$/)` 로 찾으면 엉뚱한 걸 집는다(실측).
+  //    요약의 **초대 링크 입력칸**에서 뽑는 게 확실하다.
+  const url = await page.locator("input[readonly]").first().inputValue();
+  const code = (url.match(/\/m\/([A-Z0-9]{6})/) ?? [])[1] ?? "";
+  expect(code, `초대 링크에서 코드를 못 뽑았다: ${url}`).toMatch(/^[A-Z0-9]{6}$/);
+  const st = await get(request, code);
+
+  // ① 방장 출발지가 채워져 있다 (모임에서 또 물어보지 않는다)
+  expect(st.originsSet, "인계했는데 방장 출발지가 비어 있다").toBe(1);
+  expect(st.participants[0].origin).toContain("강남역");
+  // ② 홈에서 본 중간지점이 첫 지역 후보로 올라와 있다
+  expect(st.regions.length, "중간지점이 지역 후보로 안 넘어왔다").toBeGreaterThan(0);
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("인계: 한 번 쓰면 사라진다 (다음 모임에 옛 중간지점이 딸려오지 않는다)", async ({ page }) => {
+  // ⚠️ localStorage 에 뒀다면 다음 날 새 모임을 만들 때 어제 본 중간지점이
+  //    후보로 튀어나온다. 읽는 즉시 지우는 계약을 못 박는다.
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "moimer:handoff",
+      JSON.stringify({ seed: { name: "홍대입구", lat: 37.5572, lng: 126.9245 } })
+    );
+  });
+  await page.goto("/meetings?open=create");
+  await page.getByPlaceholder("예: 협성대 브레인파크 모임").fill("인계 1회성");
+  await page.getByRole("button", { name: "만들기", exact: true }).click();
+  await expect(page.getByText("홈에서 가져옴")).toBeVisible({ timeout: 15_000 });
+
+  const left = await page.evaluate(() => sessionStorage.getItem("moimer:handoff"));
+  expect(left, "인계 값이 남아 있다 — 다음 모임에 딸려간다").toBeNull();
 });

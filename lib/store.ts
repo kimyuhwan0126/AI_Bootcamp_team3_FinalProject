@@ -23,7 +23,7 @@ import type {
   MeetingScope,
   PurposeCategory,
 } from "./types";
-import { MAX_PARTICIPANTS, MAX_PIN_FAILS } from "./types";
+import { MAX_PARTICIPANTS, MAX_PIN_FAILS, MAX_CANDIDATES } from "./types";
 import { geocode, recommendRegions, generatePlaces } from "./geo";
 import { hasDb } from "./db";
 import {
@@ -691,6 +691,16 @@ export async function addRegionCandidate(input: {
     }
   }
 
+  // ── 후보 상한 5개 (2차 그릴링) ──
+  //  ⚠️ **병합·이동 검사보다 뒤**에 둔다. 같은 동을 찍는 건 새 후보가 아니고(위에서 반환),
+  //     이미 찍은 사람이 자리를 옮기는 것도 개수를 늘리지 않는다(위에서 자기 몫을 뺐다).
+  //     앞에 두면 "다섯 개일 때 내 핑을 옮기지도 못하는" 상태가 된다.
+  if (m.regions.length >= MAX_CANDIDATES)
+    return {
+      ok: false,
+      error: `후보는 최대 ${MAX_CANDIDATES}개예요 — 하나를 지우고 다시 등록해 주세요.`,
+    };
+
   const candidate: RegionCandidate = {
     id: genId("rc_"),
     name: input.name,
@@ -916,6 +926,9 @@ export async function applyAiCandidates(input: {
         merged++;
         continue;
       }
+      // ⚠️ 추천도 상한을 지킨다 — **AI 가 다섯 자리를 먼저 차지해서는 안 된다**(2차 그릴링).
+      //    남은 자리만큼만 채우고 조용히 멈춘다(호출부가 added 로 몇 개 들어갔는지 안다).
+      if (m.regions.length >= MAX_CANDIDATES) break;
       m.regions.push({ ...cand, id: genId("ra_"), source: "ai", aiSuggested: true, contributors: [] });
       added++;
     }
@@ -939,6 +952,7 @@ export async function applyAiCandidates(input: {
         const d = distanceM(region, { lat: cand.lat, lng: cand.lng });
         if (d > m.radiusM) continue;
       }
+      if (m.places.length >= MAX_CANDIDATES) break;
       m.places.push({ ...cand, id: genId("pa_"), source: "ai", aiSuggested: true });
       added++;
     }
@@ -1292,6 +1306,16 @@ export async function addPlaceCandidate(input: {
   const norm = (s: string) => s.replace(/\s/g, "");
   const dup = m.places.find((p) => norm(p.name) === norm(input.place.name));
   if (dup) return { ok: true, candidate: dup, existing: true };
+
+  // ── 후보 상한 5개 (2차 그릴링) ──
+  //  ⚠️ v19 는 "지점 상한 없음"이었다. 2차가 되돌린 이유는 표 분산이다 —
+  //     4명이 6곳에 찍으면 1표씩 갈려 1위가 안 나온다.
+  //     중복 검사보다 뒤에 둔다: 같은 가게를 두 번 눌러도 개수는 안 는다.
+  if (m.places.length >= MAX_CANDIDATES)
+    return {
+      ok: false,
+      error: `후보는 최대 ${MAX_CANDIDATES}개예요 — 하나를 지우고 다시 등록해 주세요.`,
+    };
 
   const candidate: PlaceCandidate = {
     id: genId("pc_"),

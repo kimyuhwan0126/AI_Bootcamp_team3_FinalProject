@@ -46,7 +46,20 @@ async function visit(label, url, seed) {
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(`💥 ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error") errs.push(`🔴 ${m.text()}`); });
+  // ⚠️ **서버가 정상적으로 거부한 4xx 는 런타임 에러가 아니다.**
+  //    이 스크립트는 화면의 버튼을 무작정 눌러 보는데, 그러다 보면 후보 상한(5개)이나
+  //    단계 규칙에 걸려 **의도된 400** 이 난다. 브라우저는 그것도 콘솔에
+  //    `Failed to load resource: ... 400 (Bad Request)` 로 찍는다.
+  //    그걸 에러로 세면 "예상된 거부"와 "진짜 버그"가 구분되지 않아 검증이 무의미해진다.
+  //    UI 는 이미 토스트로 안내한다 — 사람에게는 정상 동작이다.
+  //    ✅ 여전히 잡는 것: `pageerror`(터진 화면) · 5xx · 그 밖의 콘솔 에러
+  const expected4xx = /Failed to load resource.*\b4\d\d\b/;
+  page.on("console", (m) => {
+    if (m.type() !== "error") return;
+    const t = m.text();
+    if (expected4xx.test(t)) return;
+    errs.push(`🔴 ${t}`);
+  });
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(3000);
   // 화면 안의 버튼을 눌러 보며 렌더 에러를 유도한다 (파괴적인 것은 뺀다)

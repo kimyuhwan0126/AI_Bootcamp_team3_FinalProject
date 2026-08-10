@@ -29,6 +29,7 @@ import LeaderBar from "./sections/LeaderBar";
 import ParticipantBar from "./sections/ParticipantBar";
 import MeetingHeader from "./sections/MeetingHeader";
 import { abilitiesOf, stepOf, viewerRoleOf, type Step } from "@/lib/roles";
+import { MAX_CANDIDATES } from "@/lib/types";
 import { openGoogleCalendar, downloadIcs } from "@/lib/calendar";
 import { FLAGS } from "@/lib/flags";
 
@@ -152,6 +153,18 @@ export default function MeetingClient({ code }: { code: string }) {
     }
   }, [state?.chat]);
 
+  /**
+   * 서버 액션 한 방. **실패해도 throw 하지 않고 `null` 을 돌려준다.**
+   *
+   * ⚠️ 예전에는 실패를 다시 throw 했다. 그런데 이 함수는 대부분
+   *    `void act(...)` / `onClick={() => act(...)}` 처럼 **띄워 보내는** 식으로 쓰인다 —
+   *    그 자리에서 거부되면 **처리되지 않은 promise rejection** 이 돼 콘솔에 에러로 남는다.
+   *    서버가 **정상적으로** 거부하는 경우(후보 상한 초과·단계 변경)에도 그렇다.
+   *    후보 상한 5개를 넣자마자 `check:screens` 가 이걸 런타임 에러로 잡았다(2026-08-10).
+   *    "예상된 거부"와 "진짜 버그"가 콘솔에서 구분되지 않으면 검증이 무의미해진다.
+   *
+   *    결과를 봐야 하는 호출부는 **반환값이 null 인지**로 판단한다(throw 를 기다리지 않는다).
+   */
   async function act(body: any, ok?: string) {
     setBusy(true);
     try {
@@ -171,7 +184,7 @@ export default function MeetingClient({ code }: { code: string }) {
       //    뜻이다. 사람에게 새로고침을 시키지 말고 여기서 바로 최신 상태를 당겨온다.
       //    (안 하면 시연 내내 단계마다 새로고침하게 된다)
       await load().catch(() => {});
-      throw e;
+      return null;
     } finally {
       setBusy(false);
     }
@@ -182,11 +195,9 @@ export default function MeetingClient({ code }: { code: string }) {
     const t = text.trim();
     if (!t || !me) return;
     setChatText("");
-    try {
-      await act({ action: "chat", participantId: me.id, text: t });
-    } catch {
-      setChatText(t); // 실패 시 입력 복원
-    }
+    // `act` 는 실패해도 throw 하지 않는다 — **반환값**으로 판단한다 (위 주석 참고)
+    const sent = await act({ action: "chat", participantId: me.id, text: t });
+    if (!sent) setChatText(t); // 실패 시 입력 복원
   }
 
   // ── 디버그: 일괄 처리 ──
@@ -859,7 +870,8 @@ export default function MeetingClient({ code }: { code: string }) {
                 </div>
                 <span className="chip line" style={{ fontSize: 10 }}>
                   {regionRegisterStep
-                    ? `후보 ${state.regions.length}개`
+                    // 상한을 **미리** 보여준다 — 다 차고 나서 거부당하면 늦다 (2차 그릴링)
+                    ? `후보 ${state.regions.length}/${MAX_CANDIDATES}`
                     : `${regionVoteCount}/${state.totalParticipants}명 투표`}
                 </span>
               </div>

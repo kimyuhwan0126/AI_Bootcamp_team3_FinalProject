@@ -135,6 +135,7 @@ export default function KakaoMap({
   candidates = [],
   onCandidateClick,
   onMapClick,
+  radiusCircle = null,
 }: {
   pins: MapPin[];
   center: MapCenterPin | null;
@@ -155,6 +156,14 @@ export default function KakaoMap({
    *    카카오는 커스텀 오버레이 클릭을 지도 클릭으로 전파하지 않는다.
    */
   onMapClick?: (lat: number, lng: number) => void;
+  /**
+   * 지점 후보를 받는 **반경 원** (2차 그릴링 · 1차 순서도 4번 `반경 700m 표시`).
+   *
+   * 숫자·문구로만 "700m 안에서 고르세요"라고 하면 지도에서 어디까지가 안인지
+   * 알 수 없다 — 반경 밖을 눌러 서버에 거부당하고 나서야 알게 된다.
+   * 중심은 확정된 지역, 반지름은 `radiusM`(700 → 확장 시 1400).
+   */
+  radiusCircle?: { lat: number; lng: number; radiusM: number } | null;
 }) {
   // 호출부는 pins/routes 를 렌더마다 새 배열로 만든다. 모임 상세는 1.8초마다
   // 폴링하므로 배열 참조를 그대로 의존성에 쓰면 오버레이가 계속 지워졌다 다시
@@ -221,6 +230,23 @@ export default function KakaoMap({
     overlaysRef.current = [];
     linesRef.current.forEach((l) => l.setMap(null));
     linesRef.current = [];
+
+    // ── 반경 원 — **가장 아래**에 깐다 (핀·경로가 위에 와야 한다) ──
+    //  `Circle` 도 오버레이라 `linesRef` 로 같이 치운다(따로 두면 지울 때 빠뜨린다).
+    if (radiusCircle) {
+      const circle = new kakao.maps.Circle({
+        center: new kakao.maps.LatLng(radiusCircle.lat, radiusCircle.lng),
+        radius: radiusCircle.radiusM,
+        strokeWeight: 2,
+        strokeColor: "#2F6FED",
+        strokeOpacity: 0.7,
+        strokeStyle: "dashed", // 점선 — "정확한 경계선"이 아니라 안내라는 뜻
+        fillColor: "#2F6FED",
+        fillOpacity: 0.06,
+      });
+      circle.setMap(map);
+      linesRef.current.push(circle);
+    }
 
     // 경로선 — 핀보다 먼저 그려 핀이 위에 오도록
     for (const rt of routes) {
@@ -342,7 +368,9 @@ export default function KakaoMap({
       if (totalPoints === 1) map.setLevel(5);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, sig, view, focusIndex]);
+    // ⚠️ `radiusCircle` 을 의존성에 넣지 않으면 **반경 확장(700→1400)이 지도에 안 보인다**
+    //    — 상태는 바뀌었는데 원은 그대로라 "확장이 안 됐나?" 로 읽힌다.
+  }, [ready, sig, view, focusIndex, radiusCircle?.lat, radiusCircle?.lng, radiusCircle?.radiusM]);
 
   // ⚠️ 카카오 지도는 **컨테이너 크기가 바뀌어도 스스로 다시 그리지 않는다.**
   //    전체화면 토글처럼 박스가 커지면 지도가 옛 크기로 잘린 채 남는다.

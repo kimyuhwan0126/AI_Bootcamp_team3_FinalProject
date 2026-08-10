@@ -13,6 +13,7 @@ import Splash from "./components/v8/Splash";
 import StepIcons from "./components/v8/StepIcons";
 import { IcSearch, IcPlus } from "./components/v8/Icons";
 import { recommendRegions, arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
+import { saveHandoff } from "@/lib/handoff";
 import { formatMinutes, formatGap } from "@/lib/format";
 import type { Participant, RegionCandidate } from "@/lib/types";
 import type { GeoSuggest } from "./api/geocode/route";
@@ -1250,6 +1251,22 @@ export default function Home() {
         <a
           href="/meetings?open=create"
           className="btn primary"
+          // ── v19 §4-① 인계 (2026-08-10) ──
+          //  예전엔 **이동만** 했다 — 방금 넣은 출발지도, 방금 본 중간지점도
+          //  전부 버리고 모임에서 처음부터 다시 넣어야 했다.
+          //  이제 첫 출발지(=내 것)와 중간지점을 넘긴다 (`lib/handoff.ts`).
+          //  ⚠️ 기본 이동은 막지 않는다 — 저장이 실패해도 생성 폼으로는 가야 한다.
+          onClick={() => {
+            const first = activeOrigins[0];
+            saveHandoff({
+              ...(first
+                ? { origin: { name: first.name, lat: first.lat, lng: first.lng, transport: first.transport } }
+                : {}),
+              ...(midpoint
+                ? { seed: { name: midpoint.name, lat: midpoint.lat, lng: midpoint.lng } }
+                : {}),
+            });
+          }}
           style={{
             position: "fixed", bottom: 78, zIndex: 60,
             left: "50%", transform: "translateX(-50%)",
@@ -1258,7 +1275,7 @@ export default function Home() {
             boxShadow: "0 4px 16px rgba(0,0,0,.18)",
           }}
         >
-          이 출발지들로 모임 만들기
+          {midpoint ? `‘${midpoint.name}’ 로 모임 만들기` : "이 출발지들로 모임 만들기"}
         </a>
       )}
 

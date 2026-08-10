@@ -5,7 +5,7 @@
 //
 // 설계_v19.md §4-⑧ — 확정 동 중심 **반경 700m** 안에서 고른다.
 //   · 조회는 **전원 가능** (v10) · 목적 카테고리가 기본 포커싱 (v6)
-//   · **미리보기 핀 탭 → 후보 등록**, 상한 없음 (v7)
+//   · **미리보기 핀 탭 → 후보 등록**, 상한 5개 (v7 은 무제한이었으나 2차 그릴링이 되돌림)
 //   · 삭제는 방장(임의) · 본인(자기 것) (v7)
 //   · 반경 밖은 서버가 거부 · 0개면 확장(700→1400m·1회) 또는 다른 방법 (v12·v15)
 //
@@ -13,6 +13,7 @@
 //    시스템이 후보를 미리 담아두지 않는 것이 v19 의 규칙이다.
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from "react";
+import { MAX_CANDIDATES } from "@/lib/types";
 import type { MeetingState, PurposeCategory } from "@/lib/types";
 import { PURPOSE_LABELS } from "@/lib/types";
 
@@ -305,7 +306,8 @@ export default function PlacePicker({ state, isLeader, busy, myId, onAction, onP
       )}
 
       <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
-        누구나 후보를 등록할 수 있어요 (개수 제한 없음). 방장이 <b>투표 시작</b>을 누르면 후보가 잠겨요.
+        누구나 후보를 등록할 수 있어요 (최대 <b>{MAX_CANDIDATES}개</b> · 지금 {state.places.length}개).
+        방장이 <b>투표 시작</b>을 누르면 후보가 잠겨요.
       </p>
     </div>
   );
