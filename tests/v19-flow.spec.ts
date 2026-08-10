@@ -581,6 +581,29 @@ test("화면: 생성 폼에 확정 범위 토글이 있고 '지역까지'면 카
 
 // ── 발표 시연 경로 — 여기가 막히면 데모가 멈춘다 ──────────────────
 
+test("시연: 출발지가 바뀌어도 사람이 찍은 핑은 사라지지 않는다", async ({ request }) => {
+  // ⚠️ 자동 후보 재계산(`regions`)이 돌 때 사람이 등록한 후보를 밀어내면,
+  //    "AI 추천 → 다른 사람 참여 → 후보 사라짐" 이 발표 중에 그대로 재현된다.
+  const { code, leaderId } = await setup(request);
+  const pinged = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+
+  // 새 참여자가 들어와 출발지를 넣으면 자동 재계산이 돈다
+  const joined = await act(request, { action: "join", code, name: "늦게온사람" });
+  await act(request, {
+    action: "origin", code, participantId: joined.participantId,
+    origin: "잠실", transport: "transit",
+  });
+  await act(request, { action: "regions", code });
+
+  const st = await get(request, code);
+  expect(
+    st.regions.some((r: { id: string }) => r.id === pinged.candidate.id),
+    "출발지 재계산에 사람이 찍은 핑이 밀려 사라졌다"
+  ).toBe(true);
+});
+
 test("시연: 초대 링크로 들어오면 참여 폼이 먼저 뜬다 (신원 없음)", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

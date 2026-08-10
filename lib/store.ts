@@ -718,11 +718,18 @@ export async function setRegionCandidates(
   if (!m) return { ok: false, error: "모임 없음" };
   if (m.winnerRegionId) return { ok: true }; // 이미 확정된 뒤엔 후보를 흔들지 않는다
 
-  // 참가자가 직접 등록한 후보(rc_*)는 재계산에 밀려 사라지면 안 된다.
+  // 사람이 등록한 후보(rc_* = 핑·검색)와 **AI 추천 후보(ra_*)** 는
+  // 재계산에 밀려 사라지면 안 된다.
   // 호출자(regions 액션)가 지표를 갱신해 함께 넘기는 게 정석이지만,
   // 빠뜨린 호출이 있어도 유실되지 않게 여기서 한 번 더 보존한다.
+  //
+  // ⚠️ `ra_`(AI)를 빠뜨렸던 버그: 방장이 AI 추천을 받은 뒤 **누군가 출발지를 바꾸면**
+  //    자동 재계산이 돌면서 AI 후보 3곳이 통째로 사라졌다. 발표 시연에서
+  //    "AI 추천 → 다른 사람 참여 → 후보 사라짐" 순서로 정확히 재현된다.
   const passedIds = new Set(regions.map((r) => r.id));
-  const keptProposals = m.regions.filter((r) => r.id.startsWith("rc_") && !passedIds.has(r.id));
+  const keptProposals = m.regions.filter(
+    (r) => (r.id.startsWith("rc_") || r.id.startsWith("ra_")) && !passedIds.has(r.id)
+  );
   const nextList = [...regions, ...keptProposals];
 
   // ⚠️ 자동 후보 id 는 순위(r1·r2·r3)라 후보가 완전히 바뀌어도 그대로다 —
