@@ -608,6 +608,7 @@ export default function MeetingClient({ code }: { code: string }) {
         isLeader={isLeader}
         identities={ids}
         activeId={me?.id}
+        showDebugTools={DEV && FLAGS.debugTools}
         onSwitch={switchTo}
         onAddParticipant={() => setShowAdd(true)}
         aiChatEnabled={AI_CHAT_ENABLED}

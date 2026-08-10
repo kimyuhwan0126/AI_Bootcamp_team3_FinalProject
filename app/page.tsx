@@ -21,6 +21,7 @@ import type { MeetingState } from "@/lib/types";
 import { loginAsKakao } from "@/lib/session";
 import { useSession } from "./components/v8/useSession";
 import { getIdentities, setActive, type Identity } from "@/lib/identity";
+import { FLAGS } from "@/lib/flags";
 
 // localStorage 에 저장된 내 모임 코드들
 function myCodes(): string[] {
@@ -919,7 +920,12 @@ export default function Home() {
 
           {votePhase < 2 && (
             <>
-              {/* 누구로 투표할까요? — 이 기기의 참가자 신원 (옵션에 현재 선택 표기) */}
+              {/* 누구로 투표할까요? — 이 기기의 참가자 신원 (옵션에 현재 선택 표기)
+                  ⚠️ **이 기기에 신원이 둘 이상일 때만 그린다.** 발표에서는 한 기기 =
+                     한 사람이라, 늘 떠 있으면 시연 화면이 테스트 도구처럼 보인다
+                     (2026-08-10 제보). 개발 중 여러 신원을 오가야 하면
+                     `.env.local` 에 `NEXT_PUBLIC_FF_DEBUG_TOOLS=1`. */}
+              {(voterIds.length > 1 || FLAGS.debugTools) && (
               <div>
                 <label className="label">누구로 투표할까요?</label>
                 <select
@@ -943,6 +949,7 @@ export default function Home() {
                   })}
                 </select>
               </div>
+              )}
 
               {/* 후보 리스트 */}
               <div className="stack" style={{ gap: 8 }}>
