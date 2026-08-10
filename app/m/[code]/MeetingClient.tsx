@@ -803,20 +803,38 @@ export default function MeetingClient({ code }: { code: string }) {
             <div className="card stack" style={{ gap: 10 }}>
               <div className="between">
                 <div>
-                  <span className="eyebrow">2. 거점 투표</span>
-                  <h2 className="sec" style={{ marginTop: 4 }}>어디서 만날까요?</h2>
+                  {/* 등록 칸과 투표 칸은 같은 카드를 쓴다 — 제목까지 같으면
+                      "왜 투표 버튼이 없지?" 가 된다 (v19 §5 는 두 칸을 나눈다) */}
+                  <span className="eyebrow">2. {regionRegisterStep ? "거점 후보 등록" : "거점 투표"}</span>
+                  <h2 className="sec" style={{ marginTop: 4 }}>
+                    {regionRegisterStep ? "어디쯤에서 볼까요?" : "어디서 만날까요?"}
+                  </h2>
                 </div>
                 <span className="chip line" style={{ fontSize: 10 }}>
-                  {regionVoteCount}/{state.totalParticipants}명 투표
+                  {regionRegisterStep
+                    ? `후보 ${state.regions.length}개`
+                    : `${regionVoteCount}/${state.totalParticipants}명 투표`}
                 </span>
               </div>
 
               {state.regions.length === 0 ? (
-                <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-                  {state.originsSet === 0
-                    ? "참여자들이 출발지를 등록하면 모두에게 공평한 거점 후보가 만들어져요."
-                    : "거점 후보를 계산하고 있어요…"}
-                </p>
+                // ⚠️ 예전 문구는 "후보를 계산하고 있어요…" 였다. 서버가 후보를 자동으로
+                //    깔던 시절의 문구다. 이제 후보는 **사람이 찍어야** 생기므로
+                //    (멘토링 8/6 §2), 기다리라고 하면 아무 일도 일어나지 않는다.
+                <div className="stack" style={{ gap: 6 }}>
+                  <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+                    {state.originsSet === 0
+                      ? "먼저 출발지를 등록해 주세요. 그래야 후보마다 각자 얼마나 걸리는지 보여드릴 수 있어요."
+                      : "아직 후보가 없어요 — 위 지도에서 만나고 싶은 곳을 눌러 후보로 등록해 주세요."}
+                  </p>
+                  {state.originsSet > 0 && (
+                    <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
+                      {isLeader
+                        ? "고르기 어려우면 아래 ‘추천’ 버튼을 눌러 공평한 지역 3곳을 후보에 올릴 수 있어요."
+                        : "방장이 추천 후보를 올려 줄 수도 있어요."}
+                    </p>
+                  )}
+                </div>
               ) : (
                 <>
                   {/* 거점 단계와 가게 단계가 같은 목록 컴포넌트를 쓴다 —
@@ -1038,11 +1056,20 @@ export default function MeetingClient({ code }: { code: string }) {
               // 세 갈래(교체 / 추가 / 취소)를 confirm 두 번으로 낸다.
               // ⚠️ '추가'를 고르면 수동 병합 후보는 물론 이전 AI 후보도 남는다.
               const replace = confirm(
-                "AI 후보가 이미 있어요.\n\n[확인] 이전 AI 후보를 교체\n[취소] 이전 것에 추가"
+                "추천 후보가 이미 있어요.\n\n[확인] 이전 추천 후보를 교체\n[취소] 이전 것에 추가"
               );
               mode = replace ? "replace" : "append";
             }
-            void act({ action: "aiRecommend", participantId: me?.id, mode }, "AI 추천을 받았어요");
+            // LLM 이 꺼져 있으면 점수 기반 추천으로 떨어진다 (LeaderBar 주석 참고).
+            // 지점 단계는 LLM 경로에만 있어 버튼 자체가 안 뜨므로 여기 오지 않는다.
+            if (AI_RECOMMEND_ENABLED) {
+              void act({ action: "aiRecommend", participantId: me?.id, mode }, "AI 추천을 받았어요");
+            } else {
+              void act(
+                { action: "suggestRegions", participantId: me?.id, mode },
+                "추천 지역 3곳을 후보에 올렸어요 (이동시간·편차 기준)"
+              );
+            }
           }}
           aiChatEnabled={AI_CHAT_ENABLED}
           topRegionId={topRegionId}

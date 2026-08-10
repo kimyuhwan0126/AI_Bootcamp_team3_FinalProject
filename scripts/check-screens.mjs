@@ -70,7 +70,7 @@ const code = c.code, L = c.participantId;
 await api({ action: "origin", code, participantId: L, origin: "강남역", transport: "transit" });
 const j = await api({ action: "join", code, name: "지민" });
 await api({ action: "origin", code, participantId: j.participantId, origin: "홍대입구", transport: "transit" });
-await api({ action: "regions", code });
+await api({ action: "regions", code });   // 지표 갱신 (후보를 만들지는 않는다)
 
 const leaderSeed = (arg) => {
   localStorage.setItem(`moimer:${arg.c}`, JSON.stringify([{ id: arg.id, name: "유환", isLeader: true }]));
@@ -83,7 +83,22 @@ await visit("모임 생성 폼", `${B}/meetings?open=create`);
 await visit("내정보", `${B}/me`);
 await visit("연결 점검", `${B}/health`);
 await visit("초대 링크(신원 없음)", `${B}/m/${code}`);
-await visit("⑥ 지역 후보 등록", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
+
+// ⚠️ 2026-08-10부터 **후보 0개 화면이 실제로 뜬다.** 서버가 후보를 자동으로 깔지
+//    않기 때문이다(멘토링 8/6 §2 · FLAGS.autoRegions). 예전 이 스크립트는 자동
+//    후보에 기대고 있어서, 바꾸자마자 여기서 죽었다 — 그래서 빈 화면을 **먼저**
+//    한 대 훑고 나서 핑을 찍는다.
+await visit("⑥ 지역 후보 등록 (후보 0개)", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
+
+// 사람이 지도를 눌러 후보를 만든다 (인원당 1개 · 동 스냅)
+await api({ action: "addRegion", code, participantId: L, lat: 37.5011, lng: 127.0396 });
+await api({ action: "addRegion", code, participantId: j.participantId, lat: 37.5563, lng: 126.9236 });
+const s0 = await st(code);
+if ((s0.regions ?? []).length < 2) {
+  console.log(`❌ 핑 등록이 후보로 안 올라옴 (후보 ${(s0.regions ?? []).length}개)`);
+  process.exit(1);
+}
+await visit("⑥ 지역 후보 등록 (핑 2개)", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
 
 await api({ action: "startVote", code, participantId: L });
 await visit("⑦ 지역 투표", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });

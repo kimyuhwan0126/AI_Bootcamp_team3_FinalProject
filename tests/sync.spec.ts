@@ -55,15 +55,37 @@ async function setupFour(request: APIRequestContext) {
   return { code, ids };
 }
 
+/**
+ * 4명이 각자 지도를 눌러 지역 후보를 만든다 (인원당 1개 · 서로 다른 자리).
+ *
+ * ⚠️ 예전엔 `{action:"regions"}` 한 방으로 후보가 생겼다 — 그 액션이 후보를
+ *    **자동으로 깔았기** 때문이다. 2026-08-10 자동 채움을 걷어내면서
+ *    (멘토링 8/6 §2) 후보는 사람이 찍어야 생긴다. 동시성 테스트가 검증하는 것은
+ *    "표가 사라지지 않는가"라 후보의 출처는 상관없지만, **실제 경로로 만드는 편이
+ *    테스트가 제품에서 멀어지지 않는다.**
+ */
+async function seedPings(request: APIRequestContext, code: string, ids: string[]) {
+  const spots = [
+    { lat: 37.5045, lng: 127.0490 }, // 강남
+    { lat: 37.5563, lng: 126.9236 }, // 홍대
+    { lat: 37.5133, lng: 127.1000 }, // 잠실
+    { lat: 37.4765, lng: 126.9816 }, // 사당
+  ];
+  for (const [i, pid] of ids.entries()) {
+    await act(request, { action: "addRegion", code, participantId: pid, ...spots[i % spots.length] });
+  }
+  const st = await get(request, code);
+  expect(st.regions?.length, "핑을 찍었는데 지역 후보가 안 생겼다").toBeGreaterThan(0);
+  return st.regions as { id: string; name: string }[];
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 동시 쓰기 — 표가 사라지지 않는가
 // ═══════════════════════════════════════════════════════════════
 
 test("4명이 동시에 투표해도 표가 하나도 안 사라진다", async ({ request }) => {
   const { code, ids } = await setupFour(request);
-  const r = await act(request, { action: "regions", code });
-  const regions = r.regions as { id: string }[];
-  expect(regions.length, "후보가 없다").toBeGreaterThan(0);
+  const regions = await seedPings(request, code, ids);
   await act(request, { action: "startVote", code, participantId: ids[0] });
 
   // ⚠️ 순서대로가 아니라 **동시에** 쏜다 — 이게 실제로 표를 잃게 했던 상황이다.
@@ -104,11 +126,11 @@ test("4명이 동시에 출발지를 바꿔도 아무도 유실되지 않는다"
 
 test("동시에 같은 지점 후보를 등록해도 중복이 생기지 않는다", async ({ request }) => {
   const { code, ids } = await setupFour(request);
-  const r = await act(request, { action: "regions", code });
+  const regions = await seedPings(request, code, ids);
   await act(request, { action: "startVote", code, participantId: ids[0] });
   await act(request, {
     action: "confirmManual", code, participantId: ids[0],
-    target: "region", id: (r.regions as { id: string }[])[0].id,
+    target: "region", id: regions[0].id,
   });
 
   const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
@@ -138,8 +160,7 @@ test("동시에 같은 지점 후보를 등록해도 중복이 생기지 않는�
 
 test("한 참여자의 투표가 다른 참여자 화면에 반영된다 (폴링)", async ({ browser, request }) => {
   const { code, ids } = await setupFour(request);
-  const r = await act(request, { action: "regions", code });
-  const regions = r.regions as { id: string; name: string }[];
+  const regions = await seedPings(request, code, ids);
   await act(request, { action: "startVote", code, participantId: ids[0] });
 
   const idents: Ident[] = [
@@ -177,7 +198,7 @@ test("한 참여자의 투표가 다른 참여자 화면에 반영된다 (폴링
 
 test("방장이 단계를 넘기면 참여자 화면도 따라 넘어간다", async ({ browser, request }) => {
   const { code, ids } = await setupFour(request);
-  await act(request, { action: "regions", code });
+  await seedPings(request, code, ids);
 
   const idents: Ident[] = [{ id: ids[1], name: "참가자2", isLeader: false }];
   const ctx = await browser.newContext();

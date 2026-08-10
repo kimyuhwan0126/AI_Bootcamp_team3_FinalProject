@@ -50,6 +50,7 @@ import {
   scoreRegionForParticipants,
 } from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
+import { FLAGS } from "@/lib/flags";
 import { coord2RegionKakao } from "@/lib/kakao";
 import { aiRegionVote, aiPlaceVote } from "@/lib/ai-vote";
 
@@ -327,17 +328,27 @@ async function handlePost(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ── 거점 후보 계산 (단계 전환 없음) ──
-    //  메인 화면에서 바로 거점 투표를 하기 위해, 출발지가 등록될 때마다
-    //  클라이언트가 이 액션으로 후보를 갱신한다.
+    // ── 지역 후보 **지표 갱신** (단계 전환 없음) ────────────────
+    //  출발지 구성이 바뀔 때마다 클라이언트(방장 화면 한 대)가 부른다.
+    //
+    //  ⚠️ 이름이 "regions" 라 후보를 만드는 것처럼 보이지만, 기본 동작은
+    //     **이미 있는 후보의 이동시간·편차를 다시 계산하는 것**뿐이다.
+    //
+    //  2026-08-10 (멘토링 8/6 §2 반영): 예전엔 여기서 `recommendRegions` 로
+    //  후보 3곳을 **자동으로 깔았다.** 그래서
+    //    · 아무도 핑을 안 찍어도 후보가 항상 3개 → 이 앱에서 가장 중요한 기능인
+    //      핑이 화면의 주인공이 아니게 됐고,
+    //    · `candidateGate` 의 "0개 = 투표 시작 불가"(v19 §5)가 한 번도 실행되지 않았다.
+    //  이제 후보는 **사람 핑** 과 **방장의 `suggestRegions` 버튼**으로만 생긴다.
+    //  옛 동작이 필요하면 `.env.local` 에 `NEXT_PUBLIC_FF_AUTO_REGIONS=1`.
     case "regions": {
       const st = await getState(body.code);
       if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
       if (st.participants.filter((p: any) => p.lat != null).length === 0)
         return NextResponse.json({ ok: true, regions: [] });
-      const regions = await recommendRegions(st.participants as any);
+      const regions = FLAGS.autoRegions ? await recommendRegions(st.participants as any) : [];
 
-      // 사람이 찍은 핑(rc_*)·AI 후보(ra_*)의 지표도 **함께** 갱신한다.
+      // 사람이 찍은 핑(rc_*)·AI 후보(ra_*)의 지표를 갱신한다.
       //  자동 후보만 다시 계산하면, 나중에 합류한 사람은 핑 후보에서 빠진 채로
       //  남아 결과 화면까지 "이동시간 없음"으로 간다 — 지도 핑으로 정한 모임이
       //  딱 그 경우다.
@@ -364,6 +375,41 @@ async function handlePost(req: NextRequest) {
       const r = await setRegionCandidates(body.code, [...regions, ...refreshed]);
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, regions });
+    }
+
+    // ── 방장: 추천 지역 3곳을 후보에 올린다 (버튼) ───────────────
+    //  멘토링 2026-08-06 §2: "방장은 **AI 추천 버튼으로** 지역 후보를 추가할 수 있음
+    //  (참여자는 조회만)". 자동으로 깔던 것을 그대로 **버튼 뒤로** 옮긴 것이다.
+    //
+    //  `aiRecommend`(LLM · Ollama Cloud)와 다른 액션인 이유:
+    //   · 이건 `lib/scoring` 점수 계산이라 **LLM 을 안 부른다** → 플래그·토큰비 없음
+    //   · `NEXT_PUBLIC_FF_AI_VOTE` 가 꺼져 있어도 방장에게 추천 수단이 있어야 한다
+    //     (그 플래그가 꺼진 채 자동 채움만 돌아서 "AI 추천 버튼이 어디 있냐"는
+    //      제보가 나왔다 — 2026-08-10)
+    //
+    //  권한·단계·병합·표 정리는 전부 `applyAiCandidates` 가 이미 갖고 있다
+    //  (방장만 · 등록 단계만 · 같은 이름은 병합 · replace 는 순수 추천 후보만 제거).
+    //  💰 이동시간 API 를 쓰지만 **자동 호출이던 것을 버튼으로 바꾼 것**이라
+    //     호출 총량은 오히려 줄어든다.
+    case "suggestRegions": {
+      const st = await getState(body.code);
+      if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      if (st.participants.filter((p: any) => p.lat != null).length === 0)
+        return NextResponse.json(
+          { error: "출발지가 하나도 없어요 — 먼저 출발지를 등록해 주세요." },
+          { status: 400 }
+        );
+      const suggested = await recommendRegions(st.participants as any);
+      if (suggested.length === 0)
+        return NextResponse.json({ error: "추천할 지역을 찾지 못했어요." }, { status: 400 });
+      const r = await applyAiCandidates({
+        code: body.code,
+        participantId: String(body.participantId ?? ""),
+        mode: body.mode === "append" ? "append" : "replace",
+        regions: suggested,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, added: r.added, merged: r.merged });
     }
 
     // ── 후보 직접 등록 (방장 포함 누구나) ──

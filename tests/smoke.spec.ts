@@ -101,7 +101,13 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   await page.getByRole("button", { name: /출발지 등록|출발지 수정/ }).click();
   await expect(page.getByText("출발지를 등록했어요")).toBeVisible();
 
-  const regions = await act(request, { action: "regions", code });
+  // 지역 후보를 만든다 — **방장 추천 버튼**(v19 §8)의 서버 액션이다.
+  //  ⚠️ 예전엔 `{action:"regions"}` 만으로 후보가 생겼다. 2026-08-10 자동 채움을
+  //     걷어내면서(멘토링 8/6 §2) 그 액션은 지표만 갱신하고, 후보는 **사람 핑**
+  //     이나 **방장 버튼**으로만 생긴다.
+  await act(request, { action: "suggestRegions", code, participantId: leaderId, mode: "replace" });
+  const seeded = await (await request.get(`/api/meeting?code=${code}`)).json();
+  const regions = { regions: seeded.regions as { id: string; name: string }[] };
   expect(regions.regions.length, "거점 후보가 하나도 안 나왔다").toBeGreaterThan(0);
 
   await expect(page.getByText("스모크 모임").first()).toBeVisible();
@@ -113,8 +119,10 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   // 1순위 거점이 화면에 그려져야 한다
   const topRegion: string = regions.regions[0].name;
   await expect(page.getByText(topRegion).filter({ visible: true }).first()).toBeVisible();
-  // 방장 확정 바가 투표 진행 상황을 말해야 한다
-  await expect(page.getByText(/\d+\/\d+명 투표/).first()).toBeVisible();
+  // ⚠️ 여기는 아직 **후보 등록 칸**이다(투표 시작 전). 2026-08-10 부터 이 칸의 칩은
+  //    '후보 N개'를 말한다 — 예전엔 등록 칸에서도 'n/N명 투표'가 떠서 "왜 투표 버튼이
+  //    없지?" 로 읽혔다. 투표 진행률은 아래 startVote 뒤에 확인한다.
+  await expect(page.getByText(/후보 \d+개/).first()).toBeVisible();
   // 화면이 통째로 비지 않았는지 — 버튼이 하나도 없으면 미렌더다
   expect(await page.getByRole("button").count(), "버튼이 하나도 없다 = 화면 미렌더").toBeGreaterThan(0);
 

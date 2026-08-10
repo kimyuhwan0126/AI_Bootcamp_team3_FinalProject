@@ -24,6 +24,24 @@ function pos(lat: number, lng: number) {
   return { left: `${x}%`, top: `${y}%` };
 }
 
+/**
+ * `pos` 의 역함수 — 폴백 지도를 탭한 자리를 좌표로 되돌린다.
+ *
+ * ⚠️ 이게 없으면 **지도 SDK 가 못 뜬 기기에서는 핑을 아예 못 찍는다.**
+ *    예전엔 서버가 후보를 자동으로 깔아 줘서 그 사실이 가려져 있었는데,
+ *    자동 채움을 걷어내자(2026-08-10) 곧바로 막다른 길이 됐다 —
+ *    카카오 키가 없거나 도메인 등록이 안 된 팀원 폰에서 지역 단계가 통째로 멈춘다.
+ *    "키가 없어도 전체 플로우가 돈다"(CLAUDE.md §3-4)는 규칙의 지도 버전이다.
+ *
+ * 정밀도는 낮다(박스가 수도권 전체다). 그래도 **동 스냅**을 서버가 다시 하므로
+ * 실제로 등록되는 것은 그 근처 행정동이다.
+ */
+function unpos(xPct: number, yPct: number) {
+  const lng = B.lngMin + (xPct / 100) * (B.lngMax - B.lngMin);
+  const lat = B.latMin + (1 - yPct / 100) * (B.latMax - B.latMin);
+  return { lat, lng };
+}
+
 export interface MapPanelProps {
   state: MeetingState;
   /** 출발지를 등록한 참가자만 (핀 순서 = PIN_COLORS 인덱스) */
@@ -93,7 +111,9 @@ export default function MapPanel({
         </button>
         {/* v19 §4-⑥: 핑 모드일 때만 안내를 띄운다 — 지도가 갑자기 눌리는 화면이
             되므로 무엇이 일어나는지 먼저 말해준다. */}
-        {pingMode && !fallback && (
+        {/* ⚠️ 예전엔 `!fallback` 조건이 붙어 있었다 — 폴백에서는 핑을 못 찍었기 때문이다.
+            이제 폴백도 눌리므로(아래 unpos 오버레이) 안내를 똑같이 띄운다. */}
+        {pingMode && (
           <div
             className="chip ok"
             style={{ position: "absolute", top: 8, left: 8, zIndex: 5, fontSize: 11 }}
@@ -145,10 +165,34 @@ export default function MapPanel({
           <>
             <div className="blob" style={{ left: -14, top: 30, width: 110, height: 66, background: "var(--park)" }} />
             <div className="blob" style={{ right: -18, bottom: 20, width: 130, height: 80, background: "var(--water)" }} />
+            {/* 폴백에서도 **핑을 찍을 수 있어야 한다** (unpos 주석 참고).
+                핀·후보 버튼보다 아래(zIndex 1)에 깔아, 그것들을 누르는 건 가리지 않는다. */}
+            {pingMode && onMapPing && (
+              <div
+                role="button"
+                aria-label="지도를 눌러 지역 후보 등록"
+                title="눌러서 이 근처를 지역 후보로 등록"
+                style={{ position: "absolute", inset: 0, zIndex: 1, cursor: "crosshair" }}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  if (!r.width || !r.height) return;
+                  const p = unpos(
+                    ((e.clientX - r.left) / r.width) * 100,
+                    ((e.clientY - r.top) / r.height) * 100
+                  );
+                  onMapPing(p.lat, p.lng);
+                }}
+              />
+            )}
             {located.map((p) => {
               const pp = pos(p.lat as number, p.lng as number);
               return (
-                <div key={p.id} className="pin" style={{ left: pp.left, top: pp.top }}>
+                <div
+                  key={p.id}
+                  className="pin"
+                  // 핑 모드에서는 장식이 클릭을 먹으면 안 된다 (아래 .cpin 주석 참고)
+                  style={{ left: pp.left, top: pp.top, ...(pingMode ? { pointerEvents: "none" as const } : {}) }}
+                >
                   {p.transport === "car" ? "🚗" : "🧑"}
                   <span className="tip">{p.name}</span>
                 </div>
@@ -189,7 +233,12 @@ export default function MapPanel({
             {(state.winnerRegion || centroid) && (
               <div
                 className="cpin"
+                // ⚠️ `.cpin`(z-index 6)·`.cpin .pulse` 는 **지름 64px 이 1.7배까지 커지는**
+                //    장식이다. 핑 오버레이(z-index 1) 위에 앉아 지도 한가운데 클릭을
+                //    통째로 삼킨다 — 4대 리허설에서 정확히 1대가 여기에 막혀
+                //    핑이 안 찍혔다(2026-08-10). 장식은 클릭을 먹으면 안 된다.
                 style={{
+                  ...(pingMode ? { pointerEvents: "none" as const } : {}),
                   left: pos(state.winnerRegion?.lat ?? centroid!.lat, state.winnerRegion?.lng ?? centroid!.lng).left,
                   top: pos(state.winnerRegion?.lat ?? centroid!.lat, state.winnerRegion?.lng ?? centroid!.lng).top,
                 }}

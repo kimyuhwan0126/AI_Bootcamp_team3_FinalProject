@@ -38,9 +38,15 @@ export interface LeaderBarProps {
   onAction: (body: Record<string, unknown>, ok?: string) => Promise<unknown>;
   participantId: string | undefined;
   onOpenManual: (target: "region" | "place") => void;
-  /** v19 §8: AI 추천 (방장 opt-in). `hasPrev` 면 교체/추가를 먼저 묻는다 (v14) */
+  /** v19 §8: 추천 (방장 opt-in). `hasPrev` 면 교체/추가를 먼저 묻는다 (v14) */
   onAiRecommend: (hasPrev: boolean) => void;
-  /** AI 추천 기능이 켜져 있는지 (NEXT_PUBLIC_FF_AI_VOTE) */
+  /**
+   * **LLM** 추천이 켜져 있는지 (`NEXT_PUBLIC_FF_AI_VOTE`).
+   *
+   * ⚠️ 꺼져 있어도 버튼은 사라지지 않는다 — 점수 기반 추천(`suggestRegions`)으로
+   *    떨어질 뿐이다. 예전엔 이 값이 `false` 면 버튼이 통째로 없어졌고, 그 자리를
+   *    서버의 자동 채움이 몰래 메우고 있었다(2026-08-10 "AI 추천은 어디 있냐" 제보).
+   */
   aiRecommendEnabled: boolean;
 }
 
@@ -89,7 +95,7 @@ export default function LeaderBar({
       >
         <span className="lb-sub">
           {!topId
-            ? "후보 준비 중"
+            ? "아직 표 없음"
             : allVoted
             ? `${voteCount}/${total}명 투표 완료`
             // v6: 숫자만으로는 "누구를 기다리는지" 알 수 없다 — 이름을 함께 보여준다
@@ -99,7 +105,9 @@ export default function LeaderBar({
           {noOrigins
             ? "출발지를 등록하면 확정할 수 있어요"
             : !topId
-            ? "후보를 계산하는 중…"
+            // ⚠️ 예전 문구는 "후보를 계산하는 중…" 이었다. 후보는 이미 잠긴 뒤라
+            //    계산 중일 리가 없다 — 기다리면 되는 줄 알게 만드는 문구였다.
+            ? "한 표라도 들어와야 확정할 수 있어요"
             : `${allVoted ? "투표 종료 및 확정" : "지금 확정"} · ‘${shortName(name)}’`}
         </b>
       </button>
@@ -117,27 +125,41 @@ export default function LeaderBar({
   const registerPool = state.aiPhase === "place" ? state.places : state.regions;
 
   /**
-   * v19 §8 — AI 추천. **방장에게만 보이고, 안 누르면 0원이다.**
+   * v19 §8 — 추천 버튼. **방장에게만 보이고, 안 누르면 호출하지 않는다.**
    * 후보 등록 단계에서만 뜨고, 재호출 시 교체/추가를 묻는다 (v14).
    * 로딩(`state.aiBusy`)도 방장 화면에서만 그린다.
+   *
+   * 두 갈래인데 **버튼은 하나다** (부모가 어느 액션을 부를지 고른다):
+   *   · `NEXT_PUBLIC_FF_AI_VOTE=1` → LLM 추천 (💰 Ollama Cloud · 지역 ~25초)
+   *   · 꺼짐(기본)                 → 점수 기반 추천 (`suggestRegions` · 즉시)
+   * 문구를 갈라 놓은 이유: 점수 계산을 "AI 가 골랐다"고 쓰면 과장이다
+   * (루트 `CLAUDE.md` §3-6 — 가짜를 실제처럼 그리지 않는다).
    */
   const aiBtn = () => {
-    if (!aiRecommendEnabled) return null;
     const already = registerPool.some((c) => "aiSuggested" in c && c.aiSuggested);
+    const what = state.aiPhase === "place" ? "지점" : "지역";
+    // 지점 추천은 LLM 경로에만 있다 — 꺼져 있으면 지점 단계에선 버튼을 숨긴다
+    if (!aiRecommendEnabled && state.aiPhase === "place") return null;
     return (
       <button
         className="btn"
         style={{ background: "#F1EDFF", color: "#6C5CE7", borderColor: "#6C5CE7" }}
         disabled={busy || state.aiBusy}
-        title="AI가 후보 3곳을 제안합니다 (방장만 · 안 누르면 호출 안 함)"
+        title={
+          aiRecommendEnabled
+            ? `AI가 ${what} 후보 3곳을 제안합니다 (방장만 · 안 누르면 호출 안 함)`
+            : "모두의 이동시간·편차를 계산해 공평한 지역 3곳을 후보에 올립니다 (방장만)"
+        }
         onClick={() => onAiRecommend(already)}
       >
         {state.aiBusy ? (
           <>
             <span className="spinner" /> AI 추천 중… {state.aiPhase === "place" ? "(~9초)" : "(~25초)"}
           </>
+        ) : aiRecommendEnabled ? (
+          <>🤖 AI {what} 추천{already ? " 다시" : ""}</>
         ) : (
-          <>🤖 AI {state.aiPhase === "place" ? "지점" : "지역"} 추천{already ? " 다시" : ""}</>
+          <>🤖 추천 지역 3곳{already ? " 다시" : ""}</>
         )}
       </button>
     );

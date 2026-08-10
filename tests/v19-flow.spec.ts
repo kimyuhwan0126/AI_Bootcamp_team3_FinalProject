@@ -65,11 +65,22 @@ async function setup(
   return { code, leaderId };
 }
 
-/** 지역 후보를 만들어 두고 첫 후보 id 를 준다 */
+/**
+ * 지역 후보를 만들어 두고 목록을 준다.
+ *
+ * ⚠️ 예전엔 `{action:"regions"}` 한 방이었다 — 그 액션이 후보를 **자동으로 깔았기**
+ *    때문이다. 2026-08-10 자동 채움을 걷어내면서(멘토링 8/6 §2) 그 액션은 이제
+ *    **지표만 갱신**한다. 아래 테스트들이 검증하는 것은 "후보가 어떻게 생겼나"가
+ *    아니라 **투표 잠금·게이트·되돌리기 규칙**이라, 후보는 실제 제품 경로 중
+ *    가장 짧은 것(방장 추천 버튼)으로 채운다. 핑 자체는 `check-devices` 가 화면으로 검증한다.
+ */
 async function seedRegions(request: APIRequestContext, code: string) {
-  const r = await act(request, { action: "regions", code });
-  expect(r.regions?.length, "지역 후보가 하나도 안 나왔다").toBeGreaterThan(0);
-  return r.regions as { id: string; name: string }[];
+  const st = await get(request, code);
+  const leader = st.participants.find((p: { isLeader?: boolean }) => p.isLeader);
+  await act(request, { action: "suggestRegions", code, participantId: leader?.id, mode: "replace" });
+  const after = await get(request, code);
+  expect(after.regions?.length, "지역 후보가 하나도 안 나왔다").toBeGreaterThan(0);
+  return after.regions as { id: string; name: string }[];
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -790,7 +801,10 @@ test("시연: 나중에 합류한 사람도 후보 이동시간에 들어온다"
     action: "origin", code, participantId: early.participantId,
     origin: "홍대입구", transport: "transit",
   });
-  await act(request, { action: "regions", code }); // 2명 기준으로 후보가 잡힌다
+  // 2명이 있을 때 후보가 잡힌다 (핑 1개 + 방장 추천 3곳 — 둘 다 갱신 대상이어야 한다)
+  await act(request, { action: "addRegion", code, participantId: early.participantId, lat: 37.5665, lng: 126.978 });
+  await seedRegions(request, code);
+  await act(request, { action: "regions", code });
 
   for (const [name, origin] of [["늦은1", "잠실"], ["늦은2", "사당"]] as const) {
     const j = await act(request, { action: "join", code, name });
@@ -799,6 +813,9 @@ test("시연: 나중에 합류한 사람도 후보 이동시간에 들어온다"
   await act(request, { action: "regions", code }); // 화면이 재계산을 요청하는 시점
 
   const st = await get(request, code);
+  // ⚠️ 후보가 0개면 아래 루프가 **아무것도 검사하지 않고 통과한다.**
+  //    자동 채움을 걷어낸 뒤 실제로 그렇게 될 뻔했다 (2026-08-10).
+  expect(st.regions.length, "후보가 없어 이 테스트가 아무것도 검증하지 않는다").toBeGreaterThan(0);
   for (const r of st.regions) {
     const pids = (r.perParticipant ?? []).map((x: { pid: string }) => x.pid);
     expect(pids, `'${r.name}' 후보에 4명이 다 안 들어왔다 — 결과 화면에서 '이동시간 없음'이 뜬다`)

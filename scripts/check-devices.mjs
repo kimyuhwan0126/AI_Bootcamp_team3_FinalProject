@@ -113,6 +113,55 @@ const seen = await d1.page.getByText("도윤").count();
 check(seen > 0, "기기1 화면에 다른 기기 참여자가 떴다 (폴링)", "새로고침 없음");
 await Promise.all(devs.map((d) => shot(d, "1-참여")));
 
+// ── 연동 ②-0: 지도 핑 — **이 앱에서 가장 중요한 기능** (멘토링 8/6 §2) ──
+//  2026-08-10 이전엔 서버가 후보를 자동으로 깔아서 이 단계가 없어도 투표가 됐다.
+//  이제 후보는 사람이 찍어야 생긴다 → 4대가 각자 자기 화면에서 지도를 누른다.
+//  (지도 SDK 가 못 뜬 기기도 폴백 지도를 눌러 핑을 찍을 수 있어야 한다)
+const pingHits = [];
+for (const [i, d] of devs.entries()) {
+  const box = d.page.locator(".map").first();
+  const b = await box.boundingBox().catch(() => null);
+  if (!b) { pingHits.push(`${d.name}:지도없음`); continue; }
+  // ⚠️ `page.mouse.click` 은 **뷰포트 좌표**다. 참여 폼을 지나온 기기는 화면이
+  //    스크롤돼 있어 지도 아랫부분이 뷰포트 밖이고, 그 자리를 누르면 클릭이
+  //    빗나간다 — 4대 중 2대가 이것 때문에 핑이 안 찍혔다(2026-08-10).
+  //    `locator.click({position})` 은 요소 기준이고 스크롤도 알아서 맞춘다.
+  // 기기마다 다른 자리를 눌러야 후보가 갈린다 (같은 동이면 서버가 병합한다)
+  // ⚠️ **아래쪽 1/3 은 피한다.** 폴백 지도는 등록된 후보를 하단에 칩으로 깔아 두는데
+  //    (z-index 6), 뒷 순서 기기일수록 칩이 늘어 그 자리를 누르면 핑이 아니라
+  //    칩(=투표)을 누르게 된다 — 4번째 기기가 여기 막혔다(2026-08-10).
+  const px = b.width * (0.2 + i * 0.18);
+  const py = b.height * (0.22 + i * 0.06);
+  // 실패했을 때 "무엇이 클릭을 먹었는지"를 남긴다 — 이게 없으면 원인을 찾는 데
+  // 매번 별도 진단 스크립트를 새로 써야 한다 (실제로 세 번 그랬다).
+  await box.click({ position: { x: px, y: py }, timeout: 5000 }).catch(() => {});
+  await d.page.waitForTimeout(500);
+  // 오등록 방지 확인 시트 — 뜨면 확정한다
+  const confirmBtn = d.page.getByRole("button", { name: /여기로 등록/ });
+  const sheet = await confirmBtn.isVisible().catch(() => false);
+  const enabled = sheet ? await confirmBtn.isEnabled().catch(() => false) : false;
+  await confirmBtn.click({ timeout: 3000 }).catch(() => {});
+  await d.page.waitForTimeout(900);
+  const toast = await d.page.locator(".toast, [role=status]").first().innerText().catch(() => "");
+  pingHits.push(`${d.name}:시트=${sheet}/활성=${enabled}${toast ? `/“${toast.trim().slice(0, 22)}”` : ""}`);
+}
+const stPing = await state(code);
+// ⚠️ "후보가 하나라도 생겼다"로 통과시키면 **절반이 실패해도 초록불**이다.
+//    실제로 4대 중 2대만 등록되던 것을 이 검사로 잡았다 (2026-08-10).
+const pingedIds = new Set((stPing.regions ?? []).flatMap((r) => r.contributors ?? []));
+if (pingedIds.size !== 4) console.log(`\x1b[2m   핑 상세: ${pingHits.join(" · ")}\x1b[0m`);
+check(
+  pingedIds.size === 4,
+  "4대가 각자 핑을 찍었다 (인원당 1개)",
+  `${pingedIds.size}/4명 · 후보 ${(stPing.regions ?? []).length}개`
+);
+check(
+  (stPing.regions ?? []).every((r) => (r.contributors?.length ?? 0) > 0),
+  "후보가 전부 사람이 찍은 것 (자동 채움 없음)",
+  (stPing.regions ?? []).map((r) => r.name).join(", ")
+);
+await Promise.all(devs.map((d) => shot(d, "1b-핑등록")));
+
 // ── 연동 ②: 방장이 투표를 시작하면 전원 화면이 따라 넘어가는가 ──
 await d1.page.getByRole("button", { name: /투표 시작/ }).click();
 await d1.page.waitForTimeout(3000);
