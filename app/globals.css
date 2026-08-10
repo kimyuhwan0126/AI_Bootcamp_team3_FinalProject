@@ -1,10 +1,14 @@
 :root{
-  /* 다크 팔레트는 **우리가 직접** 아래 @media 로 정의한다. 그걸 브라우저에 알려서
-     안드로이드 크롬의 '웹 콘텐츠 자동 다크 모드'가 **한 번 더** 덧칠하지 않게 한다.
-     이 선언이 없으면 우리 다크 색 위에 크롬이 자기 반전을 얹어 색이 뭉개진다 —
-     "폰 색이 노트북과 다르다"의 절반이 이것이다 (2026-08-10 팀원 폰 제보).
-     나머지 절반은 정상 동작이다: 폰이 다크 모드면 다크로 보인다. */
-  color-scheme: light dark;
+  /* ── 라이트 고정 (2026-08-10 팀 결정) ──
+     발표에서 노트북·팀원 폰 여러 대를 동시에 띄우는데, 기기마다 다크/라이트가
+     달라 **같은 화면이 서로 다른 색으로** 보였다. 발표는 화면을 비교하며 보는
+     자리라 이 차이가 곧 "버그처럼" 읽힌다 → 전 기기 라이트로 통일한다.
+
+     `color-scheme: light` 은 두 가지를 동시에 한다:
+       · 브라우저 기본 UI(스크롤바·폼 컨트롤)를 라이트로 그린다
+       · 안드로이드 크롬의 '웹 콘텐츠 자동 다크 모드'가 우리 색 위에
+         자기 반전을 덧칠하는 것을 막는다 (이게 색이 뭉개져 보이던 원인) */
+  color-scheme: light;
   --bg:#eef1f7; --bg2:#e6eaf3; --panel:#ffffff; --panel2:#f6f8fc;
   --ink:#111a2b; --ink-soft:#54617a; --ink-faint:#8b98ae;
   --hair:#dbe2ee; --hair2:#c9d3e2;
@@ -15,16 +19,21 @@
   --shadow:0 1px 2px rgba(16,32,64,.05), 0 12px 30px rgba(16,32,64,.10);
   --sheet:0 -6px 24px rgba(16,32,64,.10);
 }
-@media (prefers-color-scheme:dark){
-  :root{
-    --bg:#0a0f17; --bg2:#0d131d; --panel:#111a26; --panel2:#0e1620;
-    --ink:#eef3fa; --ink-soft:#9dabc0; --ink-faint:#65728a;
-    --hair:#212c3b; --hair2:#2b3849;
-    --ac:#5b93f8; --ac-deep:#4f8ef7; --ac-soft:#182338;
-    --map:#16202e; --park:#16261d; --water:#132433;
-    --ok:#4ade80; --ok-soft:#0f2a1a; --warn:#fbbf24; --warn-soft:#2a1f0c;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5);
-  }
+/* 다크 팔레트 — **지우지 않고 잠가 둔다.**
+   예전엔 `@media (prefers-color-scheme:dark)` 였다. 되살리려면 이 선택자를
+   그 media 로 되돌리면 되고, 지금 당장 한 기기만 다크로 보고 싶으면
+   `<html data-theme="dark">` 를 붙이면 된다.
+   ⚠️ 되살릴 땐 위 `color-scheme` 도 `light dark` 로 함께 되돌린다 —
+      한쪽만 바꾸면 크롬이 우리 다크 색 위에 또 덧칠한다. */
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#0a0f17; --bg2:#0d131d; --panel:#111a26; --panel2:#0e1620;
+  --ink:#eef3fa; --ink-soft:#9dabc0; --ink-faint:#65728a;
+  --hair:#212c3b; --hair2:#2b3849;
+  --ac:#5b93f8; --ac-deep:#4f8ef7; --ac-soft:#182338;
+  --map:#16202e; --park:#16261d; --water:#132433;
+  --ok:#4ade80; --ok-soft:#0f2a1a; --warn:#fbbf24; --warn-soft:#2a1f0c;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box}
 /* 화면 하단에 고정 네비(v8-bottomnav, 방장 leaderbar)가 항상 떠 있어서,

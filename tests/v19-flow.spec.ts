@@ -837,3 +837,21 @@ test("LAN: 카카오 Redirect URI 는 접속한 주소를 따라간다", async (
     `${base.origin}/api/auth/kakao/callback`
   );
 });
+
+test("화면: 기기가 다크 모드여도 라이트로 고정된다", async ({ page }) => {
+  // ⚠️ 발표에서 노트북·팀원 폰을 나란히 띄우는데 기기마다 색이 달라지면
+  //    같은 화면이 서로 다르게 보인다 — 2026-08-10 팀 결정으로 라이트 고정.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+
+  const ink = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--ink").trim()
+  );
+  expect(ink, "기기 다크 모드를 따라가고 있다 — 라이트 고정이 풀렸다").toBe("#111a2b");
+
+  const scheme = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).colorScheme
+  );
+  // 이 선언이 있어야 안드로이드 크롬이 우리 색 위에 자동 다크를 덧칠하지 않는다
+  expect(scheme, "color-scheme 선언이 빠졌다").toContain("light");
+});
