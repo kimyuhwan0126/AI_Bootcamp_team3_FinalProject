@@ -254,16 +254,36 @@ export default function LeaderBar({
       )}
 
       {stage === "result" && !state.isPast && (
-        // v10: 되돌리기는 **사다리 한 칸**이다. 예전의 '처음부터'(backToMain)는
-        // 표를 통째로 날려서 v19 의 "표는 유지된다"와 어긋난다 — 그래서 뺐다.
-        <button
-          className="btn ghost"
-          disabled={busy}
-          title="확정 → 투표 → 후보, 한 칸씩 되돌립니다 (표는 유지돼요)"
-          onClick={() => onAction({ action: "reopenStep", participantId }, "이전 단계로 돌아갔어요")}
-        >
-          🔄 되돌리기 (한 단계)
-        </button>
+        // ── 멘토링 8/6 §3: "결과 보고 **끝나는 흐름 방지**" ──
+        //  결과 화면에서 빠져나갈 문이 두 개다. 헷갈리기 쉬워 **문구로 갈라 놓는다**:
+        //   · 되돌리기 = "**후보**가 마음에 안 든다" → 한 칸 내려간다 · 표는 남는다
+        //   · 재투표   = "후보는 괜찮은데 **표**가 이상하다" → 후보 그대로 · 표만 지운다
+        //  v10: 예전의 '처음부터'(backToMain)는 표를 통째로 날려서 v19 의
+        //  "표는 유지된다"와 어긋났다 — 그래서 뺐다.
+        <>
+          <button
+            className="btn ghost"
+            disabled={busy}
+            title="확정 → 투표 → 후보, 한 칸씩 되돌립니다 (표는 유지돼요)"
+            onClick={() => onAction({ action: "reopenStep", participantId }, "이전 단계로 돌아갔어요")}
+          >
+            <span className="lb-sub">후보부터 다시</span>
+            <b>🔄 되돌리기</b>
+          </button>
+          <button
+            className="btn ghost"
+            disabled={busy}
+            title="후보는 그대로 두고 표만 지웁니다 — 같은 후보로 다시 투표해요"
+            onClick={() => {
+              // 네이티브 confirm 은 마크다운을 못 그린다 — 평문으로 쓴다
+              if (!confirm("재투표를 열까요?\n\n후보는 그대로 두고 표만 초기화됩니다.\n(후보부터 바꾸려면 '되돌리기'를 쓰세요)")) return;
+              void onAction({ action: "revote", participantId }, "재투표를 열었어요 — 표가 초기화됐어요");
+            }}
+          >
+            <span className="lb-sub">표만 초기화</span>
+            <b>🗳️ 재투표</b>
+          </button>
+        </>
       )}
     </div>
   );

@@ -531,6 +531,20 @@ export default function MeetingClient({ code }: { code: string }) {
           (placeTally[p.id] ?? 0) > (placeTally[best.id] ?? 0) ? p : best
         ).id;
 
+  /**
+   * 1위가 **둘 이상**인가 (1차 순서도 4번의 `동점?` 분기).
+   *
+   * ⚠️ 표가 하나도 없으면 전부 0표라 "동점"처럼 보이지만, 그건 아직 아무도 안 찍은
+   *    것이지 동점이 아니다. 그때 재투표 버튼을 내면 눌러도 지울 표가 없다.
+   */
+  const isTied = (target: "region" | "place") => {
+    const tally = target === "region" ? regionTally : placeTally;
+    const pool = target === "region" ? state.regions : state.places;
+    const counts = pool.map((c) => tally[c.id] ?? 0);
+    const top = Math.max(0, ...counts);
+    return top > 0 && counts.filter((n) => n === top).length > 1;
+  };
+
   // ── ＋ 다른 후보 등록 (누구나) ────────────────────────────────
   const openAddRegion = () => {
     setRegionQuery("");
@@ -577,6 +591,23 @@ export default function MeetingClient({ code }: { code: string }) {
       {can.confirm && (
         <button className="btn ghost sm" disabled={busy} onClick={() => openManualConfirm(target)}>
           ✍ 다른 후보로 확정
+        </button>
+      )}
+      {/* ── 1차 순서도 4번: `동점? → 방장 재량 선택 **또는 재투표**` ──
+             예전엔 재량 확정만 있어서, 동점이면 방장이 혼자 고르는 수밖에 없었다.
+             동점일 때만 낸다 — 늘 떠 있으면 "표를 지우는 버튼"이 상시 노출돼
+             실수로 누르기 쉽다. */}
+      {can.revote && isTied(target) && (
+        <button
+          className="btn ghost sm"
+          disabled={busy}
+          title="후보는 그대로 두고 표만 지웁니다"
+          onClick={() => {
+            if (!confirm("동점이에요. 재투표를 열까요?\n\n후보는 그대로 두고 표만 초기화됩니다.")) return;
+            void act({ action: "revote", participantId: me?.id }, "재투표를 열었어요 — 표가 초기화됐어요");
+          }}
+        >
+          🗳️ 재투표 (동점)
         </button>
       )}
     </div>

@@ -57,8 +57,10 @@ export interface Abilities {
   startVote: boolean;
   /** 최다득표 확정 · 다른 후보로 확정 */
   confirm: boolean;
-  /** 되돌리기 사다리 (확정→투표→후보) */
+  /** 되돌리기 사다리 (확정→투표→후보) — **표는 유지** */
   reopen: boolean;
+  /** 재투표 — 후보는 유지, **표만 초기화**. `reopen` 과 정반대다 */
+  revote: boolean;
   /** 추천 받기 (LLM 이든 점수 기반이든) */
   recommend: boolean;
   /** 강퇴 */
@@ -78,7 +80,7 @@ export interface Abilities {
 }
 
 const NONE: Abilities = {
-  startVote: false, confirm: false, reopen: false, recommend: false,
+  startVote: false, confirm: false, reopen: false, revote: false, recommend: false,
   kick: false, manageMeeting: false,
   ping: false, addPlace: false, vote: false, setStatus: false,
 };
@@ -116,6 +118,11 @@ export function abilitiesOf(role: ViewerRole, step: Step, isPast = false): Abili
     // 결과에서도 한 칸 되돌릴 수 있어야 한다 (멘토: "결과에서 끝나지 않게")
     reopen: leader && (voting || step === "result"),
     recommend: leader && registering,
+    /**
+     * 재투표 — 후보는 두고 표만 지운다. `reopen`(단계를 내리고 표 유지)과 **정반대**다.
+     * 표가 있는 칸에서만 말이 된다: 투표 칸(동점 재투표)과 결과(확정을 풀고 다시).
+     */
+    revote: leader && (voting || step === "result"),
     kick: leader,
     manageMeeting: leader,
 

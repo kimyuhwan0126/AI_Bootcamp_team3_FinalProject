@@ -1518,6 +1518,85 @@ export async function reopenStep(input: {
   return { ok: true, step: next };
 }
 
+/**
+ * 재투표 — **후보는 그대로 두고 표만 지운다** (멘토링 2026-08-06 §3 · 2차 그릴링).
+ *
+ * `reopenStep` 과 헷갈리기 쉬운데 **정반대**다:
+ *
+ * | | 단계 | 후보 | 표 |
+ * |---|---|---|---|
+ * | `reopenStep` (되돌리기) | 한 칸 **내려간다** | 유지 | **유지** |
+ * | `revote` (재투표)       | 투표 칸에 **머문다** | **유지** | **지운다** |
+ *
+ * 왜 둘 다 필요한가
+ *   · 되돌리기 = "후보가 마음에 안 든다" → 후보를 다시 고른다
+ *   · 재투표   = "**후보는 괜찮은데 표가 이상하다**" → 같은 후보로 다시 찍는다
+ *   1차 순서도 4번의 `동점? → 재량 선택 **또는 재투표**` 가 이 갈래고,
+ *   멘토링 §3 의 "투표 마음에 안 들면 재투표"(결과 화면 흡수 장치)도 같은 동작이다.
+ *   예전엔 방장 재량 확정만 있어서, 동점이면 **방장이 혼자 고르는 수밖에** 없었다.
+ *
+ * 어디서 부를 수 있나
+ *   · 투표 칸  → 그 자리에서 표만 비운다 (동점 재투표)
+ *   · 결과 화면 → 확정을 풀고 **그 단계의 투표 칸으로** 내려가며 표를 비운다
+ *   · 등록 칸  → 아직 표가 없다. 거부한다
+ */
+export async function revote(input: {
+  code: string;
+  participantId: string;
+}): Promise<{ ok: boolean; error?: string; step?: PhaseStep; cleared?: number }> {
+  const m = await read(input.code);
+  if (!m) return { ok: false, error: "모임 없음" };
+  const p = m.participants.find((x) => x.id === input.participantId);
+  if (!p?.isLeader) return { ok: false, error: "방장만 재투표를 열 수 있어요." };
+  if (m.archivedAt) return { ok: false, error: "지난 모임은 되돌릴 수 없어요." };
+
+  const step = phaseStepOf(m);
+  // 어느 표를 비울 것인가 — 결과 화면이면 그 모임이 마지막으로 정한 것 기준이다
+  let target: "region" | "place";
+
+  switch (step) {
+    case "result":
+      if (m.scope === "region") {
+        // '지역까지' 모임은 지점 단계가 없다 (v19 §3)
+        target = "region";
+        m.stage = "chat";
+        m.aiPhase = "region";
+        m.winnerRegionId = null;
+      } else {
+        target = "place";
+        m.stage = "chat";
+        m.aiPhase = "place";
+        m.placeVoteOpen = true;
+        m.winnerPlaceId = null;
+      }
+      break;
+    case "region-vote":
+      target = "region";
+      m.winnerRegionId = null;
+      break;
+    case "place-vote":
+      target = "place";
+      m.winnerPlaceId = null;
+      break;
+    default:
+      // 등록 칸 — 표가 없으니 재투표라는 말이 성립하지 않는다
+      return { ok: false, error: "아직 투표가 시작되지 않았어요." };
+  }
+
+  const box = target === "region" ? m.regionVotes : m.placeVotes;
+  const cleared = Object.keys(box ?? {}).length;
+  if (target === "region") m.regionVotes = {};
+  else m.placeVotes = {};
+
+  const next = phaseStepOf(m);
+  pushMsg(m, "system", "", `🗳️ 방장이 재투표를 열었어요 — 후보는 그대로고 표만 초기화됐어요 (${STEP_LABEL[next]}).`);
+  await write(m);
+  // ⚠️ 모임 행만 비우면 안 된다 — 표는 별도 행에 산다(동시 쓰기 보호).
+  //    여기서 안 지우면 폴링이 옛 표를 다시 실어 온다.
+  await clearVotes(m.code, target);
+  return { ok: true, step: next, cleared };
+}
+
 const STEP_LABEL: Record<PhaseStep, string> = {
   "region-register": "지역 후보 등록",
   "region-vote": "지역 투표",

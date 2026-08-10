@@ -1180,3 +1180,105 @@ test("역할: 투표가 시작되면 '투표 시작'이 사라지고 확정만 �
   expect(await page.getByRole("button", { name: /투표 시작/ }).count()).toBe(0);
   await expect(page.getByRole("button", { name: /다른 후보로 확정/ })).toBeVisible();
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 재투표 (멘토링 2026-08-06 §3 · 1차 순서도 4번 `동점? → 재량 또는 재투표`)
+//   reopenStep(되돌리기): 단계를 내리고 **표는 유지**
+//   revote(재투표)      : 단계는 그대로, **표만 초기화** — 정반대다
+// ═══════════════════════════════════════════════════════════════
+
+/** 지역 투표 칸까지 밀어 놓고, 두 명이 서로 다른 후보에 찍어 동점을 만든다 */
+async function twoWayTie(request: APIRequestContext) {
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  await act(request, {
+    action: "origin", code, participantId: mate.participantId,
+    origin: "홍대입구", transport: "transit",
+  });
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "vote", code, participantId: leaderId, target: "region", candidateId: regions[0].id });
+  await act(request, { action: "vote", code, participantId: mate.participantId, target: "region", candidateId: regions[1].id });
+  return { code, leaderId, mateId: mate.participantId as string, regions };
+}
+
+test("재투표: 후보는 그대로 남고 표만 지워진다 (되돌리기와 정반대)", async ({ request }) => {
+  const { code, leaderId, regions } = await twoWayTie(request);
+
+  const before = await get(request, code);
+  expect(Object.keys(before.regionVotes ?? {}), "사전 조건: 2표가 있어야 한다").toHaveLength(2);
+
+  const r = await act(request, { action: "revote", code, participantId: leaderId });
+  expect(r.cleared, "지운 표 수를 알려주지 않는다").toBe(2);
+
+  const after = await get(request, code);
+  expect(Object.keys(after.regionVotes ?? {}), "재투표인데 표가 남았다").toHaveLength(0);
+  // ⭐ 이게 되돌리기와 갈리는 지점이다 — 후보는 **그대로** 있어야 한다
+  expect(after.regions.map((x: { id: string }) => x.id), "재투표인데 후보가 사라졌다")
+    .toEqual(regions.map((x) => x.id));
+  // 단계도 그대로 (투표 칸에 머문다)
+  expect(after.stage, "재투표가 단계를 움직였다").toBe("chat");
+});
+
+test("재투표: 결과 화면에서 누르면 확정이 풀리고 투표 칸으로 내려간다", async ({ request }) => {
+  const { code, leaderId, regions } = await twoWayTie(request);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const confirmed = await get(request, code);
+  expect(confirmed.stage, "사전 조건: 지역까지 모임이 아니라 지점 단계로 갔어야 한다").toBe("chat");
+  expect(confirmed.winnerRegion?.id).toBe(regions[0].id);
+
+  // 지점 투표까지 밀어 둔다 (결과 화면을 만들려면 지점도 확정해야 한다)
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  const p0 = poi.items?.[0];
+  test.skip(!p0, "POI 가 하나도 없어 지점 단계를 만들 수 없다");
+  await act(request, {
+    action: "addPlace", code, participantId: leaderId,
+    name: p0.name, category: p0.category, lat: p0.lat, lng: p0.lng,
+  });
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  const withPlaces = await get(request, code);
+  await act(request, {
+    action: "confirmManual", code, participantId: leaderId,
+    target: "place", id: withPlaces.places[0].id,
+  });
+  expect((await get(request, code)).stage, "사전 조건: 결과 화면이어야 한다").toBe("result");
+
+  await act(request, { action: "revote", code, participantId: leaderId });
+  const after = await get(request, code);
+  expect(after.stage, "결과에서 재투표했는데 결과에 머물렀다").toBe("chat");
+  expect(after.placeVoteOpen, "지점 투표 칸으로 내려가야 한다").toBe(true);
+  expect(after.winnerPlace, "지점 확정이 안 풀렸다").toBeFalsy();
+  // 지역은 그대로 확정 상태여야 한다 — 재투표는 한 칸만 되돌린다
+  expect(after.winnerRegion?.id, "지역 확정까지 풀려버렸다").toBe(regions[0].id);
+  // 후보는 남는다
+  expect(after.places.length, "재투표인데 지점 후보가 사라졌다").toBeGreaterThan(0);
+});
+
+test("재투표: 방장만 · 등록 칸에서는 거부", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  await seedRegions(request, code);
+
+  // 등록 칸 — 아직 표가 없다
+  const early = await request.post("/api/meeting", { data: { action: "revote", code, participantId: leaderId } });
+  expect(early.ok(), "등록 칸에서 재투표가 열렸다").toBeFalsy();
+
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  const byMate = await request.post("/api/meeting", {
+    data: { action: "revote", code, participantId: mate.participantId },
+  });
+  expect(byMate.ok(), "참여자가 재투표를 열 수 있었다").toBeFalsy();
+  expect((await byMate.json()).error).toContain("방장만");
+});
+
+test("재투표 ≠ 되돌리기: 되돌리기는 표를 지킨다", async ({ request }) => {
+  // 두 동작이 헷갈리기 쉬워, **같은 상황에서 다르게 동작한다**는 것을 못 박는다.
+  const { code, leaderId } = await twoWayTie(request);
+  await act(request, { action: "reopenStep", code, participantId: leaderId });
+
+  const after = await get(request, code);
+  expect(after.stage, "되돌리기가 등록 칸으로 내려가지 않았다").toBe("main");
+  expect(Object.keys(after.regionVotes ?? {}), "되돌리기가 표를 지웠다 — 재투표와 섞였다")
+    .toHaveLength(2);
+});

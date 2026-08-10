@@ -21,6 +21,7 @@ import {
   promoteToPlace,
   startVote,
   reopenStep,
+  revote,
   addPlaceCandidate,
   removePlaceCandidate,
   expandRadius,
@@ -298,6 +299,20 @@ async function handlePost(req: NextRequest) {
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, step: r.step });
+    }
+
+    // ── 방장: 재투표 — **후보는 그대로, 표만 초기화** ─────────────
+    //  `reopenStep`(되돌리기)과 정반대다: 되돌리기는 단계를 내리고 표를 지키고,
+    //  재투표는 투표 칸에 머물며 표를 지운다. 1차 순서도 4번의
+    //  `동점? → 재량 또는 **재투표**` 갈래이자, 멘토링 8/6 §3 의
+    //  "투표 마음에 안 들면 재투표"(결과 화면 흡수 장치)다.
+    case "revote": {
+      const r = await revote({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, step: r.step, cleared: r.cleared });
     }
     // v11: '지점도 정하기' 승격 — '지역까지' 모임을 '지점까지'로. 역방향 없음.
     case "promoteToPlace": {
