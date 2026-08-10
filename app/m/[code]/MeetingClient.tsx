@@ -998,8 +998,11 @@ export default function MeetingClient({ code }: { code: string }) {
         />
       )}
 
-      {/* ── 디버그 위젯 (개발 빌드에서만) — 담당자 파일: sections/DebugWidget.tsx ── */}
-      {DEV && (
+      {/* ── 디버그 위젯 — 담당자 파일: sections/DebugWidget.tsx ──
+             개발 빌드 **이면서** 플래그를 켠 사람에게만. 기본은 꺼져 있다.
+             ⚠️ 발표는 `npm run dev:lan`(개발 모드)으로 도는데, 예전엔 `DEV` 만
+                보고 떠서 **시연 화면에 🐞 버튼이 그대로 있었다.** */}
+      {DEV && FLAGS.debugTools && (
         <DebugWidget
           state={state}
           isLeader={isLeader}

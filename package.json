@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "dev:lan": "next dev -H 0.0.0.0 -p 3000",
+    "dev:lan": "node scripts/dev-lan.mjs",
+    "ip": "node scripts/dev-lan.mjs --print-only",
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "next lint",

@@ -42,6 +42,17 @@ export const FLAGS = {
    */
   placeRating: process.env.NEXT_PUBLIC_FF_PLACE_RATING === "1",
 
+  /**
+   * 개발용 '빠른 채우기' 위젯(`app/m/[code]/sections/DebugWidget.tsx`).
+   *
+   * **기본 꺼짐.** 예전엔 `NODE_ENV !== "production"` 만 보고 떴는데,
+   * 발표는 `npm run dev:lan`(= 개발 모드)으로 돌리므로 **시연 화면에 🐞 버튼이
+   * 그대로 떠 있었다** (2026-08-10 제보). 개발 중 필요한 사람만 켠다:
+   *   `.env.local` 에 `NEXT_PUBLIC_FF_DEBUG_TOOLS=1`
+   * ⚠️ 운영 빌드에서는 이 플래그를 켜도 뜨지 않는다(호출부에서 한 번 더 막는다).
+   */
+  debugTools: process.env.NEXT_PUBLIC_FF_DEBUG_TOOLS === "1",
+
   /** 날씨 조건을 추천 점수에 반영. 끄면 ScoreContext.weather 가 undefined. */
   weather: process.env.NEXT_PUBLIC_FF_WEATHER === "1",
 
