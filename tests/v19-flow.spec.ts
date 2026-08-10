@@ -968,3 +968,26 @@ test("§4-⑧ 반경 안에 정말 0개면 mock 으로 덮지 않고 반경 확�
     expect(q.mock, "검색 중에는 mock 으로 떨어지면 안 된다").toBe(false);
   }
 });
+
+test("화면: 지도 오른쪽 위 전체화면 버튼이 지도를 화면 가득 채운다", async ({ page, request }) => {
+  // ⚠️ v19 §4-⑥⑧ 의 후보 등록·투표가 **지도 위 탭**이라, 340px 카드 안에서는
+  //    핀이 서로 겹쳐 누르기 어렵다(특히 폰). 전체화면이 그 탈출구다.
+  const { code, leaderId } = await setup(request);
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/m/${code}`);
+
+  const map = page.locator(".map").first();
+  await expect(map).toBeVisible({ timeout: 10_000 });
+  const before = await map.boundingBox();
+
+  await page.getByRole("button", { name: "지도 전체화면으로 보기" }).click();
+  const after = await map.boundingBox();
+  expect(after!.height, "전체화면인데 지도가 안 커졌다").toBeGreaterThan(before!.height);
+  expect(after!.height).toBeGreaterThan(700);   // 844 뷰포트를 거의 채워야 한다
+
+  // 다시 누르면 원래대로
+  await page.getByRole("button", { name: "지도 전체화면 끄기" }).click();
+  const back = await map.boundingBox();
+  expect(Math.round(back!.height), "전체화면을 껐는데 안 돌아왔다").toBe(Math.round(before!.height));
+});

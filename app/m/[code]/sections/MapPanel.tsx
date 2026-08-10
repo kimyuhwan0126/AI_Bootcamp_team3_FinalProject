@@ -12,6 +12,7 @@
 // ⚠️ 경로 폴리라인이 직선 근사일 때는 `real: false` 로 내려오고, 아래 안내에
 //    "점선은 직선 근사"라고 밝힌다. 가짜를 실제처럼 그리지 않는다 (CLAUDE.md §6).
 // ─────────────────────────────────────────────────────────────
+import { useEffect, useState } from "react";
 import type { MeetingState, Participant } from "@/lib/types";
 import KakaoMap, { pinColor, type MapRoute, type MapCandidate } from "@/app/components/KakaoMap";
 
@@ -63,8 +64,33 @@ export default function MapPanel({
   pingMode,
   onMapPing,
 }: MapPanelProps) {
+  /** 전체화면 — 카드(340px) 안에서는 후보 핀이 겹쳐 못 누른다(특히 폰) */
+  const [full, setFull] = useState(false);
+  // Esc 로 닫는다 — 폰에서 뒤로가기 대신 쓸 수 있는 탈출구
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFull(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
+
   return (
-      <div className="map" style={pingMode ? { cursor: "crosshair" } : undefined}>
+      <div
+        className={"map" + (full ? " map-fs" : "")}
+        style={pingMode ? { cursor: "crosshair" } : undefined}
+      >
+        {/* 지도 전체화면 토글 — 오른쪽 위 (v19 §4-⑥⑧ 이 지도 위 탭 조작이라
+            좁은 카드에서는 핀이 서로 겹쳐 누르기 어렵다) */}
+        <button
+          type="button"
+          className="map-fsbtn"
+          style={{ position: "absolute", top: 9, right: 9, zIndex: 11, margin: 0 }}
+          aria-label={full ? "지도 전체화면 끄기" : "지도 전체화면으로 보기"}
+          title={full ? "전체화면 끄기 (Esc)" : "전체화면으로 보기"}
+          onClick={() => setFull((v) => !v)}
+        >
+          {full ? "✕" : "⛶"}
+        </button>
         {/* v19 §4-⑥: 핑 모드일 때만 안내를 띄운다 — 지도가 갑자기 눌리는 화면이
             되므로 무엇이 일어나는지 먼저 말해준다. */}
         {pingMode && !fallback && (
@@ -77,7 +103,7 @@ export default function MapPanel({
         )}
         {/* 홈과 동일한 지도 조작 — 참가자가 2명 이상 위치를 넣었을 때만 의미가 있다 */}
         {!fallback && located.length > 0 && (
-          <div className="v8-maplayer">
+          <div className="v8-maplayer" style={{ right: 52 }}>
             <div className="seg2">
               <button className={view === "me" ? "on" : ""} onClick={() => onViewChange("me")}>내 위치 보기</button>
               <button className={view === "all" ? "on" : ""} onClick={() => onViewChange("all")}>전체 위치 보기</button>

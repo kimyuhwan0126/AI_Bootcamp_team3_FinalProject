@@ -314,6 +314,21 @@ h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
 /* 지도 — 이 앱의 메인 화면이므로 카테고리 리스트 첫 줄 근처까지 크게 잡는다 */
 .v8-mapwrap{position:relative;margin:0 16px;height:420px;border-radius:16px;overflow:hidden;border:1px solid var(--hair);background:var(--map)}
 .v8-maplayer{position:absolute;top:9px;left:9px;right:9px;display:flex;gap:6px;z-index:10}
+
+/* ── 지도 전체화면 ────────────────────────────────────────────
+   지도가 카드 안에 갇혀 있으면 후보 핀이 서로 겹쳐 못 누른다(특히 폰).
+   같은 지도를 화면 가득 띄우는 토글 — 홈(.v8-mapwrap)과 모임 상세(.map)가
+   같은 클래스를 쓴다.
+   ⚠️ 카카오 지도는 컨테이너 크기가 바뀌어도 스스로 다시 그리지 않는다.
+      `KakaoMap` 안의 ResizeObserver 가 relayout 을 부른다. */
+.map-fs{position:fixed;inset:0;z-index:80;margin:0;height:100%;width:100%;border-radius:0;border:0}
+body:has(.map-fs){overflow:hidden}
+.map-fsbtn{
+  border:0;background:var(--panel);color:var(--ink);border-radius:999px;
+  width:34px;height:34px;display:grid;place-items:center;cursor:pointer;
+  box-shadow:var(--shadow);font-size:15px;line-height:1;flex-shrink:0;margin-left:auto
+}
+.map-fsbtn:hover{color:var(--ac-deep)}
 .v8-maplayer .seg2{display:flex;background:var(--panel);border-radius:999px;padding:2px;box-shadow:var(--shadow)}
 .v8-maplayer .seg2 button{border:0;background:none;padding:5px 10px;border-radius:999px;font:inherit;font-size:10.5px;font-weight:800;color:var(--ink-soft);cursor:pointer}
 .v8-maplayer .seg2 button.on{background:var(--ac);color:#fff}

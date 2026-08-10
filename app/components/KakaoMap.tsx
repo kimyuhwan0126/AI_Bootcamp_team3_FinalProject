@@ -344,6 +344,31 @@ export default function KakaoMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, sig, view, focusIndex]);
 
+  // ⚠️ 카카오 지도는 **컨테이너 크기가 바뀌어도 스스로 다시 그리지 않는다.**
+  //    전체화면 토글처럼 박스가 커지면 지도가 옛 크기로 잘린 채 남는다.
+  //    크기 변화를 감지해 relayout + 다시 맞춤. (전체화면 버튼의 전제 조건)
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!ready || !box || typeof ResizeObserver === "undefined") return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (t) clearTimeout(t);
+      // 연속 리사이즈(애니메이션)마다 부르지 않도록 살짝 모아서 한 번
+      t = setTimeout(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        const c = map.getCenter();
+        map.relayout();
+        map.setCenter(c);
+      }, 60);
+    });
+    ro.observe(box);
+    return () => {
+      if (t) clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [ready]);
+
   return (
     <>
       <div ref={boxRef} style={{ position: "absolute", inset: 0 }} />

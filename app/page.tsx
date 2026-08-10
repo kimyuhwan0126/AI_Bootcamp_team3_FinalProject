@@ -92,6 +92,8 @@ export default function Home() {
   const [nearbyMock, setNearbyMock] = useState(false);
   /** 지도 보기 범위 — me: 내 출발지 중심 / all: 전체가 보이게 */
   const [mapView, setMapView] = useState<"me" | "all">("all");
+  /** 지도 전체화면 — 카드 안에서는 후보 핀이 겹쳐 못 누른다(특히 폰) */
+  const [mapFull, setMapFull] = useState(false);
   // 출발지가 여러 개면 경로선이 다 겹쳐 스파게티처럼 보인다 — 칩을 눌러 특정
   // 출발지 하나만 진하게 보고, 나머지는 옅게 뺀다. null이면 아무도 포커스 안 한 상태.
   const [focusOriginId, setFocusOriginId] = useState<string | null>(null);
@@ -105,6 +107,14 @@ export default function Home() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // + 칩이 검색창으로 데려다줄 때 쓰는 ref
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 전체화면은 Esc 로 닫는다 — 폰에서는 뒤로가기 대신 쓸 수 있는 유일한 탈출구다
+  useEffect(() => {
+    if (!mapFull) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMapFull(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mapFull]);
 
   // 저장된 출발지 복원 + 카카오 로그인 콜백(?name=) → 정식회원 세션 승격
   useEffect(() => {
@@ -776,7 +786,7 @@ export default function Home() {
       </div>
 
       {/* 지도 */}
-      <div className="v8-mapwrap">
+      <div className={"v8-mapwrap" + (mapFull ? " map-fs" : "")}>
         <div className="v8-maplayer">
           {/* 기준 선택은 비회원 탐색 전용 — 모임 후보는 서버가 계산한다 */}
           {!selectedMeeting && (
@@ -812,6 +822,17 @@ export default function Home() {
               </button>
             </div>
           )}
+          {/* 지도 전체화면 — 오른쪽 끝 (margin-left:auto). 카드 안에서는 후보 핀이
+              서로 겹쳐 못 누른다. 같은 지도를 화면 가득 띄운다. */}
+          <button
+            type="button"
+            className="map-fsbtn"
+            aria-label={mapFull ? "지도 전체화면 끄기" : "지도 전체화면으로 보기"}
+            title={mapFull ? "전체화면 끄기 (Esc)" : "전체화면으로 보기"}
+            onClick={() => setMapFull((v) => !v)}
+          >
+            {mapFull ? "✕" : "⛶"}
+          </button>
         </div>
         {activeOrigins.length === 0 ? (
           <div className="v8-mapempty">
