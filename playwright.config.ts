@@ -1,6 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// 스모크 전용 포트 — 개발 서버(3000)와 부딪히지 않게 따로 쓴다.
+// 스모크 전용 포트 — **개발 서버(3000)와 부딪히지 않게 따로 쓴다.**
+//
+// ⚠️ 두 포트를 같게 두지 마라. 아래 `reuseExistingServer` 가 로컬에서 켜져 있어,
+//    `npm run dev` 를 띄운 채 `npm run verify` 를 돌리면 **빌드 결과물이 아니라
+//    개발 서버를 재사용**한다 — "빌드에서만 나는 오류"를 못 잡게 된다.
+//    (한때 dev 가 3100 이라 실제로 겹쳤다. dev=3000 / smoke=3100 이 원래 설계다)
 const PORT = Number(process.env.SMOKE_PORT || 3100);
 const BASE = `http://127.0.0.1:${PORT}`;
 

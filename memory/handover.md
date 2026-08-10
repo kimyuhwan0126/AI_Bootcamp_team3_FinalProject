@@ -29,7 +29,7 @@ git checkout claude/moimer-app-foundation-design-ac8zwj
 node -v          # v22 여야 한다 (.nvmrc)
 npm install
 npm run verify   # tsc + build + 테스트 33개 (인터넷 필요 — 크롬 자동 설치)
-npm run dev      # http://localhost:3100
+npm run dev      # http://localhost:3000
 ```
 
 > **`.env.local` 은 만들지 않아도 된다.** 키가 하나도 없으면 지도·장소·경로가
@@ -44,8 +44,8 @@ npm run dev      # http://localhost:3100
 ## 🔴 발표 전 반드시 — 코드가 아니라 준비
 
 1. **카카오 개발자 콘솔 등록 2곳** (`docs/발표_로컬시연.md` §3)
-   - 플랫폼 > Web > 사이트 도메인 → `http://<노트북IP>:3100` (지도 SDK)
-   - 카카오 로그인 > Redirect URI → `http://<노트북IP>:3100/api/auth/kakao/callback`
+   - 플랫폼 > Web > 사이트 도메인 → `http://<노트북IP>:3000` (지도 SDK)
+   - 카카오 로그인 > Redirect URI → `http://<노트북IP>:3000/api/auth/kakao/callback`
    - ⚠️ **IP 가 바뀌면 둘 다 무효다.** 발표장 Wi-Fi(또는 폰 핫스팟) IP 로 당일 확정한다
 2. **DB** — 새 Neon 프로젝트를 판다면 `db/schema.sql` **하나만** Run
    (기존 DB 를 이어 쓰면 `db/migrations/001_v19_설계정렬.sql` 을 먼저 Run —

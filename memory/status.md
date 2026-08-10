@@ -15,7 +15,7 @@ _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · �
 > | 작업 브랜치 | **`claude/moimer-app-foundation-design-ac8zwj`** (`develop-grilled-session` 에서 분기) |
 > | 기준 문서 | ⭐ **[`docs/설계_v19.md`](../docs/설계_v19.md)** — 순서도 원본은 [`docs/설계도/`](../docs/설계도/) 5개 |
 > | 발표 목표 | **로컬 실행 + 팀원 각 기기가 IP 로 접속** (Vercel 아님) → [`docs/발표_로컬시연.md`](../docs/발표_로컬시연.md) |
-> | 실행 | **`npm run dev:lan`** (`next dev -H 0.0.0.0 -p 3100`) |
+> | 실행 | **`npm run dev:lan`** (`next dev -H 0.0.0.0 -p 3000`) |
 >
 > ### 시작 지점
 > 이 브랜치는 `85ba6d2`(= `develop-grilled-session`)에서 출발했다. **그릴링 이전 코드**라
@@ -50,7 +50,7 @@ _저장소: `kimyuhwan0126/AI_Bootcamp_team3_FinalProject` (통합 개발) · �
 >
 > ### 🔴 발표 전 반드시 — 카카오 콘솔 등록
 > LAN 접속은 **사이트 도메인**(지도 SDK)과 **Redirect URI**(로그인) 두 곳에
-> `http://<노트북IP>:3100` 을 등록해야 동작한다. IP 가 바뀌면 전부 무효다.
+> `http://<노트북IP>:3000` 을 등록해야 동작한다. IP 가 바뀌면 전부 무효다.
 > v14 가 이미 경고한 항목 — 절차·대비책은 `docs/발표_로컬시연.md` §3·§7.
 
 ---
