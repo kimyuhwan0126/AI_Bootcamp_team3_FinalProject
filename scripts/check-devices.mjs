@@ -26,6 +26,20 @@ const check = (pass, m, d = "") => (pass ? ok(m, d) : bad(m, d));
 const state = async (code) => (await fetch(`${BASE}/api/meeting?code=${code}`)).json();
 
 // 컨테이너/CI 마다 크로미움 경로가 다르다 — PW_CHROMIUM_PATH 로 알려줄 수 있다
+// ── 서버가 떠 있는지 먼저 본다 ────────────────────────────────
+//  없으면 playwright 가 ERR_CONNECTION_REFUSED 스택을 토한다 — 팀원이
+//  "스크립트가 깨졌다"고 읽는다. 무엇을 해야 하는지 한 줄로 말해준다.
+try {
+  const r = await fetch(`${BASE}/api/status`);
+  if (!r.ok) throw new Error(String(r.status));
+} catch {
+  console.log(`\n\x1b[31m❌ 서버에 붙지 못했습니다 — ${BASE}\x1b[0m`);
+  console.log("\x1b[2m   다른 터미널에서 먼저 서버를 띄우세요:\x1b[0m");
+  console.log("\x1b[2m     npm run dev        (또는 npm run dev:lan)\x1b[0m");
+  console.log("\x1b[2m   '✓ Ready' 가 뜬 뒤 이 명령을 다시 실행하세요.\x1b[0m\n");
+  process.exit(1);
+}
+
 const browser = await chromium.launch(
   process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}
 );
