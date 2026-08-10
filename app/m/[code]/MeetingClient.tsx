@@ -150,6 +150,10 @@ export default function MeetingClient({ code }: { code: string }) {
       return d;
     } catch (e: any) {
       flash("⚠ " + e.message);
+      // ⚠️ 실패의 대부분은 "단계가 바뀌었어요"다 — 내 화면이 **옛 단계를 그리고 있다**는
+      //    뜻이다. 사람에게 새로고침을 시키지 말고 여기서 바로 최신 상태를 당겨온다.
+      //    (안 하면 시연 내내 단계마다 새로고침하게 된다)
+      await load().catch(() => {});
       throw e;
     } finally {
       setBusy(false);

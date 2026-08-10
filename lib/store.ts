@@ -612,7 +612,10 @@ export async function castVote(input: {
     (input.target === "region" && step === "region-vote") ||
     (input.target === "place" && step === "place-vote");
   if (!votable)
-    return { ok: false, error: "단계가 바뀌었어요. 화면을 새로고침해 주세요." };
+    // ⚠️ **"새로고침하세요" 라고 하지 않는다.** 이 화면은 1.8초마다 스스로 당겨오고,
+    //    실패하면 클라이언트가 그 자리에서 최신 상태를 다시 읽는다(MeetingClient.act).
+    //    사람에게 새로고침을 시키면 시연 내내 새로고침을 하게 된다(2026-08-10 제보).
+    return { ok: false, error: "단계가 바뀌었어요 — 방금 넘어간 화면에서 다시 해주세요." };
 
   if (!m.regionVotes) m.regionVotes = {};
   if (!m.placeVotes) m.placeVotes = {};

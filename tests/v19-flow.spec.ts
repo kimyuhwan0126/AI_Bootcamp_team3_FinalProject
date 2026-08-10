@@ -886,3 +886,29 @@ test("LAN: /health 에서 두 기기가 서로를 본다", async ({ browser }) =
   await a.close();
   await b.close();
 });
+
+test("§4-⑥ 확정하면 그 시점 인원 전원의 이동시간이 채워진다", async ({ request }) => {
+  // ⚠️ v19 §4-⑥: "후보에 이동시간을 표시하지 않는다. 경로 API 는 최종 확정 후에만."
+  //    결과 화면이 쓰는 숫자는 **확정 시점 인원 전체**여야 한다.
+  //    예전엔 후보를 계산한 뒤 들어온 사람이 영영 빠져 "이동시간 없음" 으로 남았다.
+  //    등록 단계의 자동 재계산으로도 메워지지만, 4인분 경로 계산이 투표 시작보다
+  //    느려 자주 놓친다(2026-08-10 실측 8초 초과) — 확정 시점에 한 번 더 채운다.
+  const { code, leaderId } = await setup(request);
+  const early = await act(request, { action: "join", code, name: "일찍" });
+  await act(request, { action: "origin", code, participantId: early.participantId, origin: "홍대입구", transport: "transit" });
+  const regions = await seedRegions(request, code);   // 2명 기준으로 후보가 굳는다
+
+  // 후보가 굳은 **뒤에** 두 명이 더 온다 (재계산을 일부러 돌리지 않는다)
+  for (const [name, origin] of [["늦은1", "잠실"], ["늦은2", "사당"]] as const) {
+    const j = await act(request, { action: "join", code, name });
+    await act(request, { action: "origin", code, participantId: j.participantId, origin, transport: "transit" });
+  }
+
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const st = await get(request, code);
+  const pids = (st.winnerRegion?.perParticipant ?? []).map((x: { pid: string }) => x.pid);
+  expect(pids, "확정된 지역에 4명이 다 안 들어왔다 — 결과 화면에 '이동시간 없음'이 뜬다")
+    .toHaveLength(4);
+});

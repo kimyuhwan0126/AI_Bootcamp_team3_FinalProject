@@ -29,6 +29,7 @@ import {
   setMeetTime,
   recreateMeeting,
   applyAiCandidates,
+  saveCandidates,
   getMeeting,
   setAiBusy,
 } from "@/lib/store";
@@ -523,6 +524,34 @@ async function handlePost(req: NextRequest) {
         r = await confirmRegion({ code: body.code, regionId: String(body.id), by: "leader" });
       }
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+
+      // ── 확정된 지역의 이동시간을 **여기서 다시 계산한다** (v19 §4-⑥) ──
+      //  v19 는 "후보에 이동시간을 표시하지 않는다. 경로 API 는 최종 확정 후에만
+      //  쓴다" 고 못박았다. 결과 화면이 쓰는 숫자는 **확정 시점 인원 전체**여야 한다.
+      //
+      //  ⚠️ 이걸 안 하면 늦게 합류한 사람이 결과 화면에서 "이동시간 없음" 으로 남는다.
+      //     후보를 계산한 뒤에 들어온 사람은 그 후보의 `perParticipant` 에 없고,
+      //     등록 단계의 자동 재계산은 **투표 시작으로 잠기기 전에** 끝나야 하는데
+      //     4인분 경로 계산이 그보다 오래 걸려 자주 놓친다(2026-08-10 실측: 8초 초과).
+      //     확정은 단 한 번, 후보도 하나뿐이라 여기서 채우는 게 가장 싸고 확실하다.
+      //  💰 후보 1곳 × 인원수만큼만 호출한다. 캐시가 있어 대개는 이미 받아 둔 값이다.
+      if (body.target !== "place") {
+        const after = await getState(body.code);
+        const win = after?.regions.find((x) => x.id === String(body.id));
+        if (after && win) {
+          const sc = await scoreRegionForParticipants(
+            { lat: win.lat, lng: win.lng },
+            after.participants as never
+          );
+          await saveCandidates(String(body.code).toUpperCase(), {
+            regions: after.regions.map((x) =>
+              x.id === win.id
+                ? { ...x, maxMin: sc.maxMin, devMin: sc.devMin, perParticipant: sc.perParticipant }
+                : x
+            ),
+          });
+        }
+      }
       return NextResponse.json({ ok: true });
     }
 
