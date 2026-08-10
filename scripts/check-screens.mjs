@@ -76,6 +76,13 @@ const leaderSeed = (arg) => {
   localStorage.setItem(`moimer:${arg.c}`, JSON.stringify([{ id: arg.id, name: "유환", isLeader: true }]));
   localStorage.setItem(`moimer:${arg.c}:active`, arg.id);
 };
+// ⚠️ 이 스크립트는 오래도록 **방장 시점만** 훑었다. 그런데 발표에서 화면 4개 중
+//    3개는 참여자 화면이다. 멘토링 8/6 §1 이 지적한 "방장/참여자 화면 분리"를
+//    검증하려면 같은 단계를 **두 벌로** 열어 봐야 한다.
+const memberSeed = (arg) => {
+  localStorage.setItem(`moimer:${arg.c}`, JSON.stringify([{ id: arg.id, name: "지민", isLeader: false }]));
+  localStorage.setItem(`moimer:${arg.c}:active`, arg.id);
+};
 
 await visit("홈", `${B}/`);
 await visit("모임 탭", `${B}/meetings`);
@@ -99,9 +106,11 @@ if ((s0.regions ?? []).length < 2) {
   process.exit(1);
 }
 await visit("⑥ 지역 후보 등록 (핑 2개)", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
+await visit("⑥ 지역 후보 등록 · 참여자 시점", `${B}/m/${code}`, { fn: memberSeed, arg: { c: code, id: j.participantId } });
 
 await api({ action: "startVote", code, participantId: L });
 await visit("⑦ 지역 투표", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
+await visit("⑦ 지역 투표 · 참여자 시점", `${B}/m/${code}`, { fn: memberSeed, arg: { c: code, id: j.participantId } });
 
 const s1 = await st(code);
 await api({ action: "confirmManual", code, participantId: L, target: "region", id: s1.regions[0].id });
@@ -112,10 +121,12 @@ const p0 = poi.items?.[0];
 if (p0) await api({ action: "addPlace", code, participantId: L, name: p0.name, category: p0.category, lat: p0.lat, lng: p0.lng });
 await api({ action: "startVote", code, participantId: L });
 await visit("⑨ 지점 투표", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
+await visit("⑨ 지점 투표 · 참여자 시점", `${B}/m/${code}`, { fn: memberSeed, arg: { c: code, id: j.participantId } });
 
 const s2 = await st(code);
 if (s2.places?.[0]) await api({ action: "confirmManual", code, participantId: L, target: "place", id: s2.places[0].id });
 await visit("⑩ 결과", `${B}/m/${code}`, { fn: leaderSeed, arg: { c: code, id: L } });
+await visit("⑩ 결과 · 참여자 시점", `${B}/m/${code}`, { fn: memberSeed, arg: { c: code, id: j.participantId } });
 
 await api({ action: "deleteMeeting", code, participantId: L });
 console.log(found.length ? `\n❌ 런타임 에러 ${found.length}개 화면:${found.join("")}` : "\n✅ 전 화면 런타임 에러 없음");

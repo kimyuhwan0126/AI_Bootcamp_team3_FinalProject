@@ -26,7 +26,9 @@ import MapPanel from "./sections/MapPanel";
 import ReserveModal from "./sections/ReserveModal";
 import DebugWidget from "./sections/DebugWidget";
 import LeaderBar from "./sections/LeaderBar";
+import ParticipantBar from "./sections/ParticipantBar";
 import MeetingHeader from "./sections/MeetingHeader";
+import { abilitiesOf, stepOf, viewerRoleOf, type Step } from "@/lib/roles";
 import { openGoogleCalendar, downloadIcs } from "@/lib/calendar";
 import { FLAGS } from "@/lib/flags";
 
@@ -463,7 +465,14 @@ export default function MeetingClient({ code }: { code: string }) {
     );
   }
 
+  // ── 역할 · 권한 (멘토링 8/6 §1 — `lib/roles.ts`) ────────────
+  //  `isLeader &&` 를 화면 여기저기에 흩뿌리지 않는다. "무엇을 할 수 있는가"는
+  //  한 표(`abilitiesOf`)에서만 나오고, 여기서는 그 답을 읽기만 한다.
+  //  ⚠️ 이건 **보이게/안 보이게** 하는 층이다. 막는 것은 서버(`lib/store.ts`)가 한다.
   const isLeader = !!meRow?.isLeader;
+  const role = viewerRoleOf(meRow);
+  const step: Step = stepOf(state);
+  const can = abilitiesOf(role, step, state.isPast);
   const stage = state.stage;
   const located = state.participants.filter((p) => p.lat != null);
   // 경로 상세의 목적지: 확정 지역 우선, 없으면 1순위 후보
@@ -565,7 +574,7 @@ export default function MeetingClient({ code }: { code: string }) {
           ＋ 다른 후보 등록
         </button>
       )}
-      {isLeader && (
+      {can.confirm && (
         <button className="btn ghost sm" disabled={busy} onClick={() => openManualConfirm(target)}>
           ✍ 다른 후보로 확정
         </button>
@@ -606,10 +615,10 @@ export default function MeetingClient({ code }: { code: string }) {
    * 등록 단계에서만, 방장은 임의 후보 / 참여자는 **본인이 찍은 후보**만.
    * (서버가 같은 판정을 다시 한다 — 화면 잠금은 안내일 뿐이다)
    */
-  const regionRegisterStep = state.stage === "main" && state.aiPhase === "region";
+  const regionRegisterStep = step === "region-register";
   const canDeleteRegion = (id: string) => {
-    if (!me || !regionRegisterStep) return false;
-    if (isLeader) return true;
+    if (!me || !can.ping) return false; // 핑을 찍을 수 있는 칸 = 지울 수도 있는 칸
+    if (can.manageMeeting) return true; // 방장은 임의 후보
     const r = state.regions.find((x) => x.id === id);
     return !!r?.contributors?.includes(me.id);
   };
@@ -687,9 +696,16 @@ export default function MeetingClient({ code }: { code: string }) {
   // 홈으로 곧장 돌아갈 수 있다. 방장 컨트롤 바(.leaderbar)는 그 위에 쌓인다.
   // 둘 다 position:fixed 라 흐름에서 빠져 있으므로, 가려지는 콘텐츠가 없도록
   // 그 높이(방장 바 72 + 탭바 65)만큼 여백을 여기서 확보한다.
+  //  ── 하단 바는 **역할마다 다른 물건**이다 (멘토링 8/6 §1) ──
+  //   방장  → `LeaderBar`      : 단계를 움직이는 버튼들
+  //   참여자 → `ParticipantBar` : 지금 무슨 칸이고 내가 뭘 해야 하는지 (버튼 없음)
+  //   지난 단계를 보는 중이거나 신원이 없으면 둘 다 안 뜬다.
+  //  ⚠️ 비활성 버튼으로 방장 기능을 흉내내지 않는다 — 멘토가 명시적으로 불필요하다고 했다.
   const showLeaderbar = isLeader && !viewingPast;
+  const showParticipantBar = role === "participant" && !viewingPast;
+  const showBottomBar = showLeaderbar || showParticipantBar;
   return (
-    <main className="device" style={{ paddingBottom: (showLeaderbar ? 80 : 24) + 68 }}>
+    <main className="device" style={{ paddingBottom: (showBottomBar ? 80 : 24) + 68 }}>
       {/* ── 상단 헤더 · 스텝 — 담당자 파일: sections/MeetingHeader.tsx ── */}
       <MeetingHeader
         state={state}
@@ -1039,6 +1055,11 @@ export default function MeetingClient({ code }: { code: string }) {
           />
         )}
       </div>
+
+      {/* ── 참여자 하단 바 — 담당자 파일: sections/ParticipantBar.tsx ──
+           방장 바의 짝이다. 예전엔 참여자 화면 하단이 **비어 있어서**
+           지금 무슨 단계인지도, 뭘 해야 하는지도 알 수 없었다 (멘토링 8/6 §1). */}
+      {showParticipantBar && <ParticipantBar step={step} state={state} myId={me?.id} />}
 
       {/* ── 방장 컨트롤 바 — 담당자 파일: sections/LeaderBar.tsx ──
            지난 단계를 보는 중엔(viewingPast) 실제 단계에 대한 조작을 의도치 않게

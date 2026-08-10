@@ -1106,3 +1106,77 @@ test("복사는 클립보드 권한이 없어도 화면이 죽지 않는다", as
   expect(errors, `클립보드가 없을 때 화면이 죽었다: ${errors.join(" / ")}`).toEqual([]);
   expect(code).toBeTruthy();
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 방장 / 참여자 화면 분리 (멘토링 2026-08-06 §1 · lib/roles.ts)
+//   멘토: "방장과 참여자 화면이 섞여 있어 구현 시 꼬일 가능성 높음.
+//          방장 아닌 사람은 핵심 투표 결과만 보면 됨 — 굳이 비활성화 처리 불필요."
+// ═══════════════════════════════════════════════════════════════
+
+test("역할: 참여자 화면에는 방장 전용 버튼이 아예 없다 (비활성 아님)", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  await act(request, {
+    action: "origin", code, participantId: mate.participantId,
+    origin: "홍대입구", transport: "transit",
+  });
+  await seedRegions(request, code);
+
+  await loginAs(page, code, [{ id: mate.participantId, name: "참가자2", isLeader: false }], mate.participantId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  // ⚠️ "안 눌린다"가 아니라 **"없다"** 를 본다. 비활성 버튼이 남아 있으면
+  //    멘토가 지적한 그 상태 그대로다.
+  for (const name of [/투표 시작/, /추천/, /다른 후보로 확정/, /되돌리기/]) {
+    expect(await page.getByRole("button", { name }).count(), `참여자에게 방장 버튼이 보인다: ${name}`).toBe(0);
+  }
+
+  // 대신 **내가 뭘 해야 하는지**는 보여야 한다 (ParticipantBar)
+  await expect(
+    page.getByLabel("참여자 상태"),
+    "참여자 하단 바가 없다 — 지금 무슨 단계인지 알 길이 없다"
+  ).toBeVisible();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("역할: 방장 화면에는 방장 바가 뜨고 참여자 바는 없다", async ({ page, request }) => {
+  const { code, leaderId } = await setup(request);
+  await seedRegions(request, code);
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  await expect(page.getByRole("button", { name: /투표 시작|후보 \d+개|먼저 등록/ }).first()).toBeVisible();
+  expect(await page.getByLabel("참여자 상태").count(), "방장에게 참여자 바가 떴다 — 두 벌이 섞였다").toBe(0);
+});
+
+test("역할: 투표가 시작되면 '투표 시작'이 사라지고 확정만 남는다", async ({ page, request }) => {
+  // abilitiesOf 의 계약을 화면으로 확인한다 — 서버(phaseStepOf)와 어긋나면
+  // "눌리는데 서버가 거부하는" 버튼이 다시 생긴다.
+  //
+  // ⚠️ 등록 칸에서도 '✍ 다른 후보로 확정'은 **있어야 한다.** 멘토링 8/6 §2 의
+  //    "방장이 투표 귀찮을 경우 바로 확정할 수 있는 옵션"이고 서버도 허용한다.
+  //    처음엔 이걸 막았다가 modals.spec 이 바로 걸렸다.
+  const { code, leaderId } = await setup(request);
+  await seedRegions(request, code);
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+  // 등록 칸 — 기본 동작은 '투표 시작', 확정은 보조 버튼으로 함께 있다
+  await expect(page.getByRole("button", { name: /투표 시작|후보 \d+개|먼저 등록/ }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /다른 후보로 확정/ })).toBeVisible();
+
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await page.reload();
+  await expect(page.getByText(/명 투표/).first()).toBeVisible({ timeout: 10_000 });
+  // 투표 칸 — 후보가 잠겼으므로 '투표 시작'은 사라진다
+  expect(await page.getByRole("button", { name: /투표 시작/ }).count()).toBe(0);
+  await expect(page.getByRole("button", { name: /다른 후보로 확정/ })).toBeVisible();
+});

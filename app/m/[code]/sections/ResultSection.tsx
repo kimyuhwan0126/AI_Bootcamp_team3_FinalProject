@@ -220,9 +220,15 @@ export default function ResultSection({
               <p className="faint" style={{ fontSize: 10.5, margin: 0 }}>
                 금액은 카테고리별 예시값이에요 — 가게가 실제로 받는 선입금이 아니고, 예약 가능 여부도 확인된 값이 아닙니다.
               </p>
-              <button className="btn ok" disabled={!isLeader} onClick={onOpenReserve}>
-                {isLeader ? "예약 · 선입금 결제 (모의)" : "방장만 결제할 수 있어요"}
-              </button>
+              {/* ⚠️ 예전엔 참여자에게 **비활성 버튼 + "방장만 결제할 수 있어요"** 를 보여줬다.
+                     멘토링 8/6 §1: "방장 아닌 사람은 핵심 결과만 보면 됨 —
+                     **굳이 비활성화 처리 불필요**." 눌리지도 않는 버튼은 화면만 어지럽힌다.
+                     참여자에겐 아예 안 보이고, 위의 금액 요약까지만 읽는다. */}
+              {isLeader && (
+                <button className="btn ok" onClick={onOpenReserve}>
+                  예약 · 선입금 결제 (모의)
+                </button>
+              )}
             </>
           ) : (
             <p className="muted" style={{ fontSize: 12.5 }}>이 가게는 예약 대상이 아니에요.</p>
