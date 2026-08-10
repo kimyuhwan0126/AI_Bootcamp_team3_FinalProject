@@ -44,6 +44,8 @@ export interface PoiItem {
   /** 0 = 정보 없음. 없는 별점을 지어내지 않는다 (CLAUDE.md §3-6) */
   rating: number;
   url: string;
+  /** 도로명 주소 — 목록에서 "이게 어디인지" 알 유일한 단서다 */
+  address: string;
 }
 
 const walkMin = (m: number) => Math.max(1, Math.round(m / 67));
@@ -91,13 +93,18 @@ export async function GET(req: NextRequest) {
           walkMin: walkMin(d),
           rating: 0,                            // 아래에서 채운다(실패하면 0 유지)
           url: p.url,
+          address: p.address,
         });
       }
     }
   }
 
-  // 키가 없거나 결과가 비었으면 mock — 반경 안에 흩뿌린다.
-  const isMock = found.length === 0;
+  // ⚠️ **검색어가 있으면 mock 으로 떨어지지 않는다.**
+  //    '당구장'을 검색했는데 못 찾았다고 음식점 샘플을 돌려주면, 화면에는
+  //    검색 전과 똑같은 목록이 남아 **검색이 아예 동작하지 않는 것처럼 보인다**
+  //    (2026-08-10 제보). 못 찾았으면 못 찾았다고 말하고 대안을 주는 게 맞다.
+  const searchedEmpty = !!q && found.length === 0;
+  const isMock = found.length === 0 && !searchedEmpty;
   if (isMock) {
     const names = MOCK_NAMES[cat];
     for (let i = 0; i < names.length; i++) {
@@ -118,6 +125,7 @@ export async function GET(req: NextRequest) {
         walkMin: walkMin(d),
         rating: 0,
         url: "",
+        address: `${center.name} 부근 (샘플)`,
       });
     }
   }
@@ -149,6 +157,9 @@ export async function GET(req: NextRequest) {
     cat,
     sort,
     mock: isMock,
+    /** 검색어로 찾았는데 반경 안에 하나도 없었다 — 화면이 다른 문구를 띄운다 */
+    searchedEmpty,
+    query: q,
     ratingSource,
     /** 0개면 화면이 확장/다른 방법 팝업을 띄운다 (v12·v15) */
     canExpand: radius < 1400,

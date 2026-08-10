@@ -74,6 +74,13 @@ export default function MeetingClient({ code }: { code: string }) {
   const [viewStep, setViewStep] = useState<0 | 1 | 2 | null>(null);
   // 각 참가자 출발지 → 거점까지의 실제 경로 폴리라인
   const [routes, setRoutes] = useState<MapRoute[]>([]);
+  /**
+   * v19 §4-⑧ 미리보기 핀 — `PlacePicker` 가 조회한 반경 내 장소.
+   * 후보가 **아니다**. 지도에 회색으로 뜨고, 탭해야 후보가 된다.
+   */
+  const [previewPois, setPreviewPois] = useState<
+    { id: string; name: string; lat: number; lng: number; category: string; emoji: string; rating: number; url: string }[]
+  >([]);
 
   // origin form — 홈 화면과 동일한 검색 자동완성(/api/geocode)
   const [origin, setOrigin] = useState("");
@@ -552,6 +559,9 @@ export default function MeetingClient({ code }: { code: string }) {
 
   // 지도 위 투표 후보 박스 — 누르면 그 후보에 투표 (피그마)
   const phaseIsRegion = state.aiPhase === "region";
+  // v19 §4-⑧ — 지점 **등록** 단계에서 지도에 띄우는 회색 미리보기 핀.
+  // PlacePicker 가 조회한 결과를 그대로 올려 받는다(설계는 "핀 탭 → 후보 등록"이다).
+  const placeRegisterStep = state.aiPhase === "place" && !state.placeVoteOpen;
   const mapCandidates: MapCandidate[] =
     AI_CHAT_ENABLED || stage === "result"
       ? []
@@ -560,14 +570,36 @@ export default function MeetingClient({ code }: { code: string }) {
           id: r.id, lat: r.lat, lng: r.lng, name: r.name,
           votes: regionTally[r.id] ?? 0, mine: myRegionVote === r.id,
         }))
-      : state.places
-          .filter((p) => p.lat != null && p.lng != null)
-          .map((p) => ({
-            id: p.id, lat: p.lat as number, lng: p.lng as number, name: p.name,
-            votes: placeTally[p.id] ?? 0, mine: myPlaceVote === p.id,
-          }));
+      : [
+          ...state.places
+            .filter((p) => p.lat != null && p.lng != null)
+            .map((p) => ({
+              id: p.id, lat: p.lat as number, lng: p.lng as number, name: p.name,
+              votes: placeTally[p.id] ?? 0, mine: myPlaceVote === p.id,
+            })),
+          // 등록 단계에서만 — 투표가 열리면 미리보기는 사라진다(후보가 잠겼으므로)
+          ...(placeRegisterStep
+            ? previewPois.map((p) => ({
+                id: p.id, lat: p.lat, lng: p.lng, name: p.name,
+                votes: 0, mine: false, preview: true,
+              }))
+            : []),
+        ];
   const voteFromMap = (id: string) => {
     if (!me || busy) return;
+    // v19 §4-⑧ — 회색 미리보기 핀을 누르면 **투표가 아니라 후보 등록**이다.
+    const pv = previewPois.find((p) => p.id === id);
+    if (pv) {
+      void act(
+        {
+          action: "addPlace", participantId: me.id,
+          name: pv.name, category: pv.category, emoji: pv.emoji,
+          lat: pv.lat, lng: pv.lng, rating: pv.rating, url: pv.url,
+        },
+        `‘${pv.name}’ 후보로 등록했어요`
+      );
+      return;
+    }
     void act(
       { action: "vote", participantId: me.id, target: phaseIsRegion ? "region" : "place", candidateId: id },
       undefined
@@ -753,6 +785,7 @@ export default function MeetingClient({ code }: { code: string }) {
                 busy={busy}
                 myId={me?.id}
                 onAction={act}
+                onPreview={setPreviewPois}
               />
             ) : (
             /* 후보 카드 — 현재 논의 대상 요약(탭하면 지지 의견 전송) */

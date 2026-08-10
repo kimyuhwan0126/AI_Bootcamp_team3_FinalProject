@@ -74,6 +74,12 @@ export interface MapCandidate {
   votes: number;
   /** 내가 투표한 후보 — 주황 테두리로 강조 (피그마) */
   mine: boolean;
+  /**
+   * v19 §4-⑧ **미리보기 핀**. 아직 후보가 아니라 "탭하면 후보가 되는" 자리다.
+   * 회색으로 흐리게 그리고 표 뱃지 대신 `+ 후보 등록` 을 보여준다 —
+   * 등록된 후보와 눈으로 구분되지 않으면 "이미 후보인 줄 알고" 아무도 안 누른다.
+   */
+  preview?: boolean;
 }
 /** 내가 투표한 후보 강조색 (피그마의 주황 테두리) */
 const CAND_MINE = "#f2803d";
@@ -157,7 +163,7 @@ export default function KakaoMap({
     pins.map((p) => [p.lat, p.lng, p.label, p.color, p.index, p.statusColor, p.focused]),
     center && [center.lat, center.lng, center.label],
     routes.map((r) => [r.id, r.color, r.real, r.points.length, r.points[0], r.points[r.points.length - 1], r.weight, r.opacity]),
-    candidates.map((c) => [c.id, c.lat, c.lng, c.name, c.votes, c.mine]),
+    candidates.map((c) => [c.id, c.lat, c.lng, c.name, c.votes, c.mine, !!c.preview]),
   ]);
 
   // 클릭 콜백은 렌더마다 새 함수여도 오버레이를 다시 그릴 필요가 없다 → ref로 보관
@@ -268,16 +274,22 @@ export default function KakaoMap({
       hasAny = true;
       const el = document.createElement("div");
       el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+      // 미리보기(회색·흐림)와 등록된 후보(흰 박스·표 뱃지)를 눈으로 갈라 놓는다
+      const line = cd.preview ? "#b6c0d0" : cd.mine ? CAND_MINE : "#d8dee9";
+      const badge = cd.preview
+        ? `<span style="font-size:10px;font-weight:900;color:#54617a;background:#eef1f7;border-radius:999px;padding:1px 8px">+ 후보 등록</span>`
+        : `<span style="font-size:10px;font-weight:900;color:#1f5ae0;background:#e8f0ff;border-radius:999px;padding:1px 8px">${cd.votes}표</span>`;
       el.innerHTML =
         `<button type="button" style="pointer-events:auto;cursor:pointer;font:inherit;` +
         `display:flex;flex-direction:column;align-items:center;gap:2px;background:#fff;` +
-        `border:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};border-radius:12px;padding:5px 10px;` +
-        `box-shadow:0 3px 10px rgba(0,0,0,.18)">` +
-        `<span style="font-size:12px;font-weight:900;color:#1c2433;white-space:nowrap">${cd.name}</span>` +
-        `<span style="font-size:10px;font-weight:900;color:#1f5ae0;background:#e8f0ff;border-radius:999px;padding:1px 8px">${cd.votes}표</span>` +
+        `border:2.5px solid ${line};border-radius:12px;padding:5px 10px;` +
+        `opacity:${cd.preview ? ".85" : "1"};` +
+        `box-shadow:0 3px 10px rgba(0,0,0,${cd.preview ? ".10" : ".18"})">` +
+        `<span style="font-size:12px;font-weight:${cd.preview ? "800" : "900"};color:${cd.preview ? "#54617a" : "#1c2433"};white-space:nowrap">${cd.name}</span>` +
+        badge +
         `</button>` +
         // 박스 아래 작은 꼬리
-        `<div style="width:8px;height:8px;background:#fff;border-right:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};border-bottom:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};transform:rotate(45deg);margin-top:-6px"></div>`;
+        `<div style="width:8px;height:8px;background:#fff;border-right:2.5px solid ${line};border-bottom:2.5px solid ${line};transform:rotate(45deg);margin-top:-6px"></div>`;
       el.querySelector("button")!.addEventListener("click", () => clickRef.current?.(cd.id));
       const ov = new kakao.maps.CustomOverlay({ position: pos, content: el, yAnchor: 1, clickable: true });
       ov.setMap(map);
@@ -335,6 +347,49 @@ export default function KakaoMap({
   return (
     <>
       <div ref={boxRef} style={{ position: "absolute", inset: 0 }} />
+
+      {/* ── 지도가 못 뜬 경우의 폴백 (CLAUDE.md §3-4) ──
+             카카오 JS 키가 없거나 SDK 로드가 막히면 지도가 빈 카드가 된다.
+             그런데 v19 §4-⑥⑧ 의 **후보 등록·투표가 지도 위 핀 탭**이라,
+             지도가 없으면 그 동작이 통째로 사라진다 — "키가 없어도 전체 플로우가
+             돌아야 한다"는 규칙에 어긋난다. 같은 핀을 목록 버튼으로 그린다. */}
+      {!ready && candidates.length > 0 && onCandidateClick && (
+        <div
+          style={{
+            position: "absolute", inset: "auto 10px 10px", zIndex: 12,
+            display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center",
+          }}
+        >
+          {candidates.map((cd) => (
+            <button
+              key={cd.id}
+              type="button"
+              onClick={() => clickRef.current?.(cd.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "var(--panel)", cursor: "pointer",
+                border: `2px solid ${cd.preview ? "var(--hair2)" : cd.mine ? CAND_MINE : "var(--hair)"}`,
+                borderRadius: 12, padding: "5px 10px",
+                font: "inherit", fontSize: 12, fontWeight: 800,
+                color: cd.preview ? "var(--ink-soft)" : "var(--ink)",
+                boxShadow: "var(--shadow)",
+              }}
+            >
+              {cd.name}
+              <span
+                style={{
+                  fontSize: 10, fontWeight: 900, borderRadius: 999, padding: "1px 7px",
+                  background: cd.preview ? "var(--panel2)" : "var(--ac-soft)",
+                  color: cd.preview ? "var(--ink-soft)" : "var(--ac-deep)",
+                }}
+              >
+                {cd.preview ? "+ 후보 등록" : `${cd.votes}표`}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {ready && candidates.length > 0 && onCandidateClick && (
         // 피그마: 지도 상단 중앙 안내 툴팁 (상단 컨트롤과 겹치지 않게 한 줄 아래)
         <div

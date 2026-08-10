@@ -128,6 +128,38 @@ export default function MapPanel({
                 </div>
               );
             })}
+            {/* ⚠️ 지도 SDK 가 못 뜬 상태에서도 **후보 등록·투표가 되어야 한다.**
+                   v19 §4-⑥⑧ 의 동작이 '지도 위 핀 탭' 이라, 폴백에서 후보를 안 그리면
+                   키 없는 기기에서는 그 단계가 통째로 막힌다 (CLAUDE.md §3-4). */}
+            {mapCandidates.length > 0 && onCandidateClick && (
+              <div
+                style={{
+                  position: "absolute", left: 8, right: 8, bottom: 8, zIndex: 6,
+                  display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center",
+                }}
+              >
+                {mapCandidates.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => onCandidateClick(c.id)}
+                    className="chip"
+                    style={{
+                      cursor: "pointer", fontSize: 11, padding: "5px 10px",
+                      background: "var(--panel)",
+                      border: `1.5px solid ${c.preview ? "var(--hair2)" : "var(--ac)"}`,
+                      color: c.preview ? "var(--ink-soft)" : "var(--ink)",
+                      boxShadow: "var(--shadow)",
+                    }}
+                  >
+                    {c.name}
+                    <span style={{ marginLeft: 5, fontWeight: 900, color: c.preview ? "var(--ink-faint)" : "var(--ac-deep)" }}>
+                      {c.preview ? "+ 후보 등록" : `${c.votes}표`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
             {(state.winnerRegion || centroid) && (
               <div
                 className="cpin"

@@ -119,7 +119,7 @@ export async function searchPlacesKakao(
   keyword: string,
   center: Coord,
   size = 5
-): Promise<{ name: string; category: string; path: string; distanceM: number; lat: number; lng: number; url: string }[] | null> {
+): Promise<{ name: string; category: string; path: string; distanceM: number; lat: number; lng: number; url: string; address: string }[] | null> {
   if (!env.kakaoRest) return null;
   try {
     const url =
@@ -137,6 +137,9 @@ export async function searchPlacesKakao(
       lat: parseFloat(doc.y),
       lng: parseFloat(doc.x),
       url: doc.place_url || "",
+      // 주소가 없으면 사람이 "그 가게가 어디인지" 알 수가 없다 —
+      // 지점 미리보기 목록에서 고르는 유일한 단서다 (도로명 우선, 없으면 지번).
+      address: doc.road_address_name || doc.address_name || "",
     }));
   } catch {
     return null;

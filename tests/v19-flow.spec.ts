@@ -762,8 +762,10 @@ test("화면: 지점 등록 단계에 미리보기 목록이 뜨고 탭하면 �
   await expect(page.getByText("지점 후보 등록")).toBeVisible();
   await expect(page.getByText(/반경 700m/)).toBeVisible();
 
-  // 미리보기 목록에서 하나 탭 → 후보가 된다
-  const first = page.locator("button.cc").first();
+  // 미리보기 목록에서 [+ 등록] → 후보가 된다
+  // ⚠️ 행 전체가 버튼이던 것을 바꿨다 — 주소를 읽으려고 눌렀다가 등록되면 안 된다.
+  //    '보기'(카카오맵)와 '+ 등록'을 갈라 놓았으므로 등록 버튼을 정확히 누른다.
+  const first = page.getByRole("button", { name: "+ 등록" }).first();
   await expect(first).toBeVisible({ timeout: 10_000 });
   await first.click();
   await expect(page.getByText(/후보로 등록했어요/)).toBeVisible();
@@ -911,4 +913,34 @@ test("§4-⑥ 확정하면 그 시점 인원 전원의 이동시간이 채워진
   const pids = (st.winnerRegion?.perParticipant ?? []).map((x: { pid: string }) => x.pid);
   expect(pids, "확정된 지역에 4명이 다 안 들어왔다 — 결과 화면에 '이동시간 없음'이 뜬다")
     .toHaveLength(4);
+});
+
+test("§4-⑧ 지점 미리보기가 지도에 회색 핀으로 뜨고, 탭하면 후보가 된다", async ({ page, request }) => {
+  // ⚠️ v19 §4-⑧ 의 기본 동작은 **"미리보기 핀(회색) 탭 → 후보 등록"** 이다.
+  //    목록만 있으면 지도가 아니라 텍스트를 읽고 고르는 화면이 된다(2026-08-10 제보).
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("지점 후보 등록")).toBeVisible({ timeout: 10_000 });
+
+  // 지도에 '+ 후보 등록' 이라 적힌 회색 핀이 떠야 한다
+  const previewPin = page.getByRole("button", { name: /\+ 후보 등록/ }).first();
+  await expect(previewPin, "지도에 미리보기 핀이 없다 — 목록만으로는 v19 가 아니다")
+    .toBeVisible({ timeout: 15_000 });
+
+  await previewPin.click();
+  await expect(page.getByText(/후보로 등록했어요/)).toBeVisible({ timeout: 10_000 });
+
+  const st = await get(request, code);
+  expect(st.places.length, "핀을 눌렀는데 후보가 안 생겼다").toBe(1);
+  expect(st.places[0].source).toBe("manual");
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
 });
