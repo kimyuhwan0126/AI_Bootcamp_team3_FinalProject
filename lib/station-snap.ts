@@ -27,8 +27,13 @@
 //
 // 💰 켜져 있을 때만 핑 1개당 카카오 로컬 1콜이 늘어난다. 좌표를 소수 3자리
 //    (≈110m 격자)로 끊어 30일 캐시하므로 같은 자리를 다시 찍으면 0콜이다.
-//    **실 API 성공값만 캐시한다** — 폴백을 캐시하면 나중에 키를 넣어도 계속
-//    폴백이 나온다(CLAUDE.md §3-5).
+//    **실 API 가 답한 것만 캐시한다** — "가장 가까운 역은 여기다" 도, "반경 안에
+//    역이 없다" 도 카카오가 답한 사실이라 둘 다 캐시한다. 캐시하지 않는 것은
+//    **못 물어본 경우**(키 없음·오류)다 — 그걸 담아 두면 나중에 키를 넣어도
+//    계속 폴백이 나온다(CLAUDE.md §3-5).
+//
+// ⚠️ 캐시 TTL 이 30일이라 **반경 상수를 고치면 옛 답이 한동안 남는다.**
+//    검증 중에 `STATION_SNAP_RADIUS_M` 을 바꿨다면 `logs/` 의 캐시를 지우고 볼 것.
 // ─────────────────────────────────────────────────────────────
 import { FLAGS } from "./flags";
 import { coord2RegionKakao, searchByCategoryKakao, type Coord } from "./kakao";
@@ -58,8 +63,8 @@ export const STATION_SNAP_RADIUS_M = 1_200;
  * 좁게 잡아 안 걸리면 그냥 다음 칸(시·군·구/좌표)으로 간다 — 지금까지의 동작
  * 그대로라 손해가 없다. **넓게 잡아 틀리는 쪽이 손해다.**
  *
- * ⚠️ 이 칸은 **키가 없을 때만** 탄다. 키가 있으면 카카오가 "역 없음"이라고
- *    답한 것이므로 억지로 거점을 붙이지 않는다.
+ * ⚠️ 이 칸은 카카오에 **못 물어봤을 때만** 탄다(키 없음·호출 실패). 물어봐서
+ *    "역 없음"을 받았으면 억지로 거점을 붙이지 않고 시·군·구로 내려간다.
  */
 export const HUB_SNAP_RADIUS_M = STATION_SNAP_RADIUS_M;
 
@@ -99,14 +104,18 @@ export interface SnapResult {
  *    꼬리가 없는 `강남역` 은 ①에서 그대로 남는다.
  */
 export function normalizeStationName(placeName: string): string {
-  const parts = String(placeName || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "";
-  // ① 역 이름은 거의 항상 한 토큰이고 `역` 으로 끝난다. 그 뒤는 노선이든
-  //    출구든 우리에게 필요 없다 — 같은 역이 하나로 묶이는 것이 목적이다.
+  const raw = String(placeName || "").trim().split(/\s+/).filter(Boolean);
+  if (raw.length === 0) return "";
+  // ⓪ 노선처럼 생긴 토큰을 **위치와 상관없이** 먼저 버린다. 카카오가 노선을 앞에
+  //    붙여 주더라도(`2호선 강남역`) 같은 답이 나와야 병합이 깨지지 않는다.
+  //    전부 노선 토큰이면(있을 리 없지만) 원본 첫 토큰으로 되돌아간다.
+  const parts = raw.filter((p) => !/(호선|선|철도)$/.test(p));
+  if (parts.length === 0) return raw[0];
+  // ① 역 이름은 거의 항상 한 토큰이고 `역` 으로 끝난다. 그 뒤는 출구든 뭐든
+  //    우리에게 필요 없다 — 같은 역이 하나로 묶이는 것이 목적이다.
   const i = parts.findIndex((p) => p.endsWith("역"));
   if (i >= 0) return parts.slice(0, i + 1).join(" ");
-  // ② `역` 이 안 붙는 이름(경전철 일부 등)은 노선 꼬리만 떼고 남긴다.
-  while (parts.length > 1 && /(호선|선|철도)$/.test(parts[parts.length - 1])) parts.pop();
+  // ② `역` 이 안 붙는 이름(경전철 일부 등)은 남은 것을 그대로 쓴다.
   return parts.join(" ");
 }
 
@@ -152,19 +161,22 @@ export async function nearestStationKakao(
 ): Promise<{ station: SnapResult | null; asked: boolean }> {
   const key = gridKey(c);
   const hit = await stationCacheGet(key);
-  if (hit) return { station: { ...hit, source: "station" }, asked: true };
+  // 이름이 빈 값이면 "여긴 역이 없다"를 캐시해 둔 것이다 (아래 참고)
+  if (hit) return { station: hit.name ? { ...hit, source: "station" } : null, asked: true };
 
   // 카카오는 `sort=distance` 로 가까운 순을 준다 — 첫 번째가 가장 가까운 역이다.
   const found = await searchByCategoryKakao(SUBWAY_CODE, c, 1, STATION_SNAP_RADIUS_M);
-  if (found === null) return { station: null, asked: false }; // 키 없음·오류
+  if (found === null) return { station: null, asked: false }; // 키 없음·오류 → 캐시하지 않는다
   const doc = found[0];
-  if (!doc) return { station: null, asked: true }; // 반경 안에 역이 없다
-  const name = normalizeStationName(doc.name);
-  if (!name) return { station: null, asked: true };
-  const station: SnapResult = { name, lat: doc.lat, lng: doc.lng, source: "station" };
-  // 실 API 성공값만 캐시한다 (CLAUDE.md §3-5)
-  await stationCacheSet(key, { name, lat: doc.lat, lng: doc.lng });
-  return { station, asked: true };
+  const name = doc ? normalizeStationName(doc.name) : "";
+  // 💰 **"역이 없다"도 캐시한다.** 이것도 실 API 가 성공적으로 답한 값이다
+  //    (CLAUDE.md §3-5 가 금지하는 것은 *폴백값* 캐시다 — 위 `null` 은 캐시하지 않는다).
+  //    안 하면 역이 없는 동네(봉담·화성 — 우리 학교 근처다)에서 찍을 때마다
+  //    카카오를 다시 부른다. 같은 자리를 열 번 찍으면 열 콜이다.
+  //    좌표를 담아 두는 이유는 캐시 항목 모양을 하나로 유지하기 위해서다(값은 안 쓴다).
+  await stationCacheSet(key, { name, lat: doc?.lat ?? c.lat, lng: doc?.lng ?? c.lng });
+  if (!name) return { station: null, asked: true }; // 반경 안에 역이 없다
+  return { station: { name, lat: doc!.lat, lng: doc!.lng, source: "station" }, asked: true };
 }
 
 /**

@@ -689,14 +689,16 @@ export async function addRegionCandidate(input: {
   //     저장소의 **살아 있는 객체**를 그대로 주므로(캐시가 아니다), write 를 안 해도
   //     이미 뺀 내 핑이 그대로 사라진 채 400 만 나갔다 — **거절당했는데 내 표가 증발**한다.
   //     역 스냅(`FLAGS.pingSnapStation`)을 켜면 후보가 잘게 갈려 이 경로를 실제로 밟는다.
-  const soloMine =
-    input.participantId &&
-    m.regions.find(
-      (r) =>
-        r.source !== "ai" &&
-        (r.contributors ?? []).length === 1 &&
-        (r.contributors ?? [])[0] === input.participantId
-    );
+  const pid = input.participantId;
+  /** 내가 **혼자** 쓰던 후보 — 내가 떠나면 사라지므로 개수에서 미리 뺀다 */
+  const soloMine = pid
+    ? m.regions.find(
+        (r) =>
+          r.source !== "ai" && // AI 후보는 사람이 0명이어도 남는다
+          (r.contributors ?? []).length === 1 &&
+          (r.contributors ?? [])[0] === pid
+      )
+    : undefined;
   if (m.regions.length - (soloMine ? 1 : 0) >= MAX_CANDIDATES)
     return {
       ok: false,

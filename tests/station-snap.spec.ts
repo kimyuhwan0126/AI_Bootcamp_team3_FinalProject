@@ -77,6 +77,10 @@ test("이름 정규화: 노선 꼬리를 떼야 같은 역이 하나로 묶인�
   expect(normalizeStationName("강남역 2호선 3번출구")).toBe("강남역");
   expect(normalizeStationName("강남역 수도권 전철 어쩌고")).toBe("강남역");
   expect(normalizeStationName("동대문역사문화공원역 5호선")).toBe("동대문역사문화공원역");
+  // 노선이 **앞에** 붙어 와도 같은 답이어야 한다 — 순서까지 가정하면
+  // 형식이 예상과 다를 때 같은 역이 두 후보로 갈린다
+  expect(normalizeStationName("2호선 강남역")).toBe("강남역");
+  expect(normalizeStationName("신분당선 강남역")).toBe("강남역");
 });
 
 test("거점 좌표표: 지오코딩용 별칭이 후보로 새지 않는다", () => {
