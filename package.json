@@ -14,7 +14,8 @@
     "verify": "npx tsc --noEmit && npm run build && npm run test:smoke",
     "check:live": "node scripts/check-live.mjs",
     "check:devices": "node scripts/check-devices.mjs",
-    "check:screens": "node scripts/check-screens.mjs"
+    "check:screens": "node scripts/check-screens.mjs",
+    "check:station": "node scripts/check-station-snap.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
