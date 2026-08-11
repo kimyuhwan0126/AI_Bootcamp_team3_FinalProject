@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>모이머 — 중간발표 (브레인 스파크)</title>
+<!-- ============================================================
+     모이머 중간발표 v2 — 외부 청중용
+
+     v1 과 무엇이 다른가
+       · 대상이 바뀌었다: 우리 멘토님뿐 아니라 **다른 팀 멘토·기업 현직자·
+         타팀 팀원** 앞에서 발표한다. 처음 듣는 사람이 있다는 전제.
+       · 그래서 앞에 **팀 · 기획 배경 · 무엇을 만드는 앱인가**를 넣었다.
+       · 엔지니어링 상세는 **부록(15~20장)으로 뺐다.** 10분 발표에서 본편이
+         늘어지지 않게 하고, 질문이 나오면 그때 펼친다.
+
+     조작
+       · → ← Space PageUp/Down 으로 넘긴다. 숫자키 1~9 로 점프.
+       · [A] 를 누르면 **부록 첫 장(15장)으로 바로 점프** — 질문 받았을 때.
+       · [P] 를 누르면 전체를 펼친다(인쇄·PDF 용).
+       · 화면 사진은 docs/img/발표/ 에서 읽는다. `npm run shots` 로 다시 찍는다.
+
+     ⚠️ 숫자는 전부 저장소에서 직접 센 값이다. 고칠 때는 근거를 같이 갱신할 것.
+        팀·일정 정보는 팀에게 확인받은 값이다(추측 없음).
+        (2026-08-11 작성 · v0.2.0 · develop-grilled-session-kyh)
+============================================================ -->
+<style>
+  :root{
+    --stage:#080c16;
+    --panel:#ffffff; --panel2:#f6f8fc;
+    --ink:#111a2b; --ink-soft:#54617a; --ink-faint:#8b98ae;
+    --hair:#dbe2ee; --hair2:#c9d3e2;
+    --ac:#2f6fed; --ac-deep:#1f5ae0; --ac-soft:#e8f0ff;
+    --ok:#16a34a; --ok-soft:#dcfce7;
+    --warn:#d97706; --warn-soft:#fef3c7;
+    --danger:#e11d48; --danger-soft:#ffe4e9;
+    --mono:ui-monospace,SFMono-Regular,"Cascadia Mono","Consolas",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--stage); color:var(--ink);
+    font-family:"Pretendard","Pretendard Variable",-apple-system,BlinkMacSystemFont,
+                "Malgun Gothic","맑은 고딕","Apple SD Gothic Neo",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  #stage{position:fixed;inset:0;display:grid;place-items:center;padding:26px}
+  .slide{
+    display:none; width:min(1180px,96vw); aspect-ratio:16/9; max-height:92vh;
+    background:var(--panel); border-radius:20px; overflow:hidden; position:relative;
+    box-shadow:0 30px 80px rgba(0,0,0,.55), 0 2px 0 rgba(255,255,255,.06) inset;
+  }
+  .slide.on{display:block}
+  .pad{padding:44px 54px; height:100%; display:flex; flex-direction:column}
+  .eyebrow{
+    font-size:12.5px;font-weight:800;letter-spacing:.06em;color:var(--ac);
+    display:flex; align-items:center; gap:8px;
+  }
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--hair)}
+  h1{font-size:40px;line-height:1.2;letter-spacing:-.02em;margin:10px 0 0}
+  h2{font-size:30px;line-height:1.25;letter-spacing:-.02em;margin:8px 0 0}
+  h3{font-size:16.5px;line-height:1.35;margin:0}
+  p{color:var(--ink-soft);font-size:15px;line-height:1.65}
+  b,strong{color:var(--ink);font-weight:800}
+  .sub{color:var(--ink-faint);font-size:13.5px;line-height:1.6}
+  .grow{flex:1;min-height:0}
+  .center{display:grid;place-items:center;text-align:center;height:100%}
+
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+        font-size:12px;font-weight:800;background:var(--ac-soft);color:var(--ac-deep);white-space:nowrap}
+  .chip.ok{background:var(--ok-soft);color:#146c33}
+  .chip.warn{background:var(--warn-soft);color:#92600a}
+  .chip.bad{background:var(--danger-soft);color:#a3123a}
+  .chip.line{background:transparent;border:1px solid var(--hair2);color:var(--ink-soft)}
+  .card{background:var(--panel2);border:1px solid var(--hair);border-radius:14px;padding:16px 18px}
+  .card.plain{background:#fff}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .quote{font-size:13px;color:var(--ac-deep);background:var(--ac-soft);
+         border-radius:10px;padding:9px 12px;line-height:1.5}
+  .mono{font-family:var(--mono);font-size:12.5px}
+  .num{font-size:34px;font-weight:900;letter-spacing:-.03em;line-height:1;color:var(--ac-deep)}
+  .num small{font-size:15px;font-weight:800;color:var(--ink-soft)}
+  .lbl{font-size:12px;color:var(--ink-faint);margin-top:7px;font-weight:700;line-height:1.4}
+  ul{list-style:none}
+  li{font-size:14.5px;line-height:1.7;color:var(--ink-soft);padding-left:20px;position:relative}
+  li::before{content:"";position:absolute;left:4px;top:11px;width:6px;height:6px;
+             border-radius:50%;background:var(--ac)}
+  li.ok::before{background:var(--ok)} li.warn::before{background:var(--warn)}
+  li.bad::before{background:var(--danger)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-size:11.5px;color:var(--ink-faint);font-weight:800;
+     padding:0 10px 8px;border-bottom:1px solid var(--hair)}
+  td{padding:9px 10px;border-bottom:1px solid var(--hair);color:var(--ink-soft);vertical-align:top}
+  td b{color:var(--ink)}
+  .inc{display:grid;grid-template-columns:auto 1fr;gap:0 14px;align-items:start}
+  .inc .dot{width:26px;height:26px;border-radius:9px;background:var(--danger-soft);
+            color:var(--danger);display:grid;place-items:center;font-size:14px;font-weight:900}
+  .inc .fx{color:var(--ok);font-weight:800}
+  .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .fstep{background:var(--panel2);border:1px solid var(--hair);border-radius:13px;padding:13px 14px}
+  .fstep .n{font-size:11px;font-weight:900;color:var(--ac);letter-spacing:.05em}
+  .fstep h3{font-size:14.5px;margin-top:5px}
+  .fstep p{font-size:12.3px;line-height:1.55;margin-top:6px}
+  .shot{background:var(--panel2);border:1px solid var(--hair);border-radius:14px;
+        overflow:hidden;display:flex;flex-direction:column;min-height:0}
+  .shot img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+  .shot .cap{font-size:11.5px;color:var(--ink-faint);padding:8px 10px;font-weight:700;
+             border-top:1px solid var(--hair);background:#fff;flex-shrink:0}
+  .ph{flex:1;display:grid;place-items:center;color:var(--ink-faint);font-size:12px;
+      text-align:center;padding:18px;line-height:1.6;background:
+      repeating-linear-gradient(45deg,#fff,#fff 9px,var(--panel2) 9px,var(--panel2) 18px)}
+  /* 팀 */
+  .who{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .who .m{background:var(--panel2);border:1px solid var(--hair);border-radius:14px;
+          padding:18px 14px;text-align:center}
+  .who .av{width:52px;height:52px;border-radius:50%;margin:0 auto 10px;display:grid;
+           place-items:center;font-size:22px;background:var(--ac-soft);color:var(--ac-deep);font-weight:900}
+  .who .nm{font-size:17px;font-weight:800;color:var(--ink)}
+  .who .rl{font-size:11.5px;color:var(--ink-faint);margin-top:4px;font-weight:700}
+
+  .cover{background:linear-gradient(150deg,#12203c 0%,#1b3a7a 45%,#2f6fed 100%);color:#fff;height:100%}
+  .cover .pad{justify-content:center}
+  .cover h1{font-size:60px;letter-spacing:-.035em}
+  .cover p{color:rgba(255,255,255,.82);font-size:17px}
+  .cover .eyebrow{color:#a8c6ff}
+  .cover .eyebrow::after{background:rgba(255,255,255,.22)}
+  .cover .chip{background:rgba(255,255,255,.15);color:#fff}
+
+  .topbar{position:absolute;top:0;left:0;right:0;height:4px;background:var(--hair)}
+  .topbar i{display:block;height:100%;background:var(--ac);transition:width .25s}
+  .foot{position:absolute;bottom:16px;left:54px;right:54px;display:flex;
+        justify-content:space-between;align-items:center;font-size:11.5px;color:var(--ink-faint)}
+  .foot b{color:var(--ink-soft)}
+  .nav{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;
+       align-items:center;background:rgba(255,255,255,.09);backdrop-filter:blur(8px);
+       padding:7px 12px;border-radius:999px;color:#c7d2e5;font-size:12px;z-index:5}
+  .nav button{background:rgba(255,255,255,.12);border:0;color:#fff;border-radius:8px;
+              width:28px;height:26px;cursor:pointer;font-size:13px}
+  .nav button:hover{background:rgba(255,255,255,.25)}
+  .nav .pos{font-variant-numeric:tabular-nums;font-weight:800;min-width:64px;text-align:center}
+  .nav b{color:#fff}
+  .hint{position:fixed;top:14px;right:16px;color:#5d6b85;font-size:11.5px;z-index:5}
+
+  body.print{overflow:auto;background:#243049}
+  body.print #stage{position:static;display:block;padding:24px}
+  body.print .slide{display:block;margin:0 auto 24px;max-height:none}
+  body.print .nav{display:none}
+  @media print{
+    body{background:#fff}
+    body #stage{position:static;display:block;padding:0}
+    .slide{display:block!important;margin:0;border-radius:0;box-shadow:none;
+           width:100%;max-height:none;page-break-after:always}
+    .nav,.hint{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="hint">← → 넘기기 · A 부록 · P 펼쳐보기</div>
+<div id="stage">
+
+<!-- ══════════ 1. 표지 ══════════ -->
+<section class="slide on">
+  <div class="cover">
+    <div class="pad">
+      <div class="eyebrow">브레인 스파크 · 중간발표 · 2026.08.14 (금)</div>
+      <h1 style="margin-top:18px">모이머<span style="opacity:.45;font-weight:400"> / moimer</span></h1>
+      <p style="margin-top:14px;font-size:24px;font-weight:800;color:#fff">흩어진 우리, 딱 중간에서.</p>
+      <p style="margin-top:14px;font-size:17px;max-width:800px;line-height:1.6">
+        각자 다른 곳에서 출발하는 사람들이 <b style="color:#fff">아무도 혼자 크게 손해보지 않는</b>
+        만남 장소를, <b style="color:#fff">지도를 한 번 누르는 것</b>만으로 함께 정하는 서비스
+      </p>
+      <div style="display:flex;gap:8px;margin-top:26px;flex-wrap:wrap">
+        <span class="chip">설치 없이 링크 하나</span>
+        <span class="chip">2~8명</span>
+        <span class="chip">Next.js · TypeScript · PostgreSQL</span>
+      </div>
+      <p style="margin-top:28px;font-size:13.5px;color:rgba(255,255,255,.6)">
+        팀장 최병현 · 팀원 김유환 · 양성은 · 신동원 &nbsp;|&nbsp; 멘토 최종원
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 2. 팀 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">팀 소개</div>
+    <h2>브레인 스파크</h2>
+    <div class="grow" style="display:flex;flex-direction:column;justify-content:center">
+      <div class="who">
+        <div class="m"><div class="av">최</div><div class="nm">최병현</div><div class="rl">팀장</div></div>
+        <div class="m"><div class="av">김</div><div class="nm">김유환</div><div class="rl">팀원</div></div>
+        <div class="m"><div class="av">양</div><div class="nm">양성은</div><div class="rl">팀원</div></div>
+        <div class="m"><div class="av">신</div><div class="nm">신동원</div><div class="rl">팀원</div></div>
+      </div>
+      <div class="card plain" style="margin-top:20px;display:flex;gap:22px;align-items:center;flex-wrap:wrap">
+        <span class="chip line">멘토</span>
+        <b style="font-size:17px">최종원</b>
+        <span class="sub">— 8/6 멘토링에서 받은 지적을 이번 발표까지 전부 반영했습니다 (부록 20장)</span>
+      </div>
+    </div>
+    <div class="card" style="background:var(--ac-soft);border-color:#c7dbff">
+      <p style="color:var(--ac-deep)">
+        <b>일정</b> — 오늘 <b>중간발표 8/14(금)</b> · <b>최종발표 8/21(금)</b>.
+        저희 버전 규칙상 <b>최종발표일에 1.0.0</b>을 답니다. 지금은 0.2.0 입니다.
+      </p>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>02</b></div>
+</section>
+
+<!-- ══════════ 3. 한 장 요약 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">한 장 요약</div>
+    <h2>모이머는 이런 서비스입니다</h2>
+    <div class="grid g3 grow" style="margin-top:24px;align-content:center">
+      <div class="card">
+        <span class="chip">무엇을</span>
+        <h3 style="margin-top:12px">여럿이 만날 장소를<br><b>함께 정하는</b> 웹앱</h3>
+        <p style="margin-top:10px">앱 설치도 회원가입도 없습니다.
+        <b>초대 링크 하나</b>를 단톡방에 뿌리면 끝입니다.</p>
+      </div>
+      <div class="card">
+        <span class="chip">누구를 위해</span>
+        <h3 style="margin-top:12px">서로 다른 동네에<br><b>흩어져 사는</b> 2~8명</h3>
+        <p style="margin-top:10px">친구·동아리·팀 회식처럼
+        <b>출발지가 제각각인</b> 모임이 대상입니다.</p>
+      </div>
+      <div class="card">
+        <span class="chip">어떻게</span>
+        <h3 style="margin-top:12px">출발지 → 지도 한 번 탭<br>→ <b>가장 공평한 곳</b></h3>
+        <p style="margin-top:10px">누구에게 얼마나 걸리는지를
+        <b>숫자로 보여주고</b> 투표로 확정합니다.</p>
+      </div>
+    </div>
+    <div class="card plain" style="display:flex;gap:26px;align-items:center;flex-wrap:wrap">
+      <span class="chip ok">지금 상태</span>
+      <span><b>설계 화면 11개 중 9개 완성</b></span>
+      <span class="sub">·</span>
+      <span><b>실기기 4대 리허설 통과</b></span>
+      <span class="sub">·</span>
+      <span><b>브라우저 자동 테스트 78개</b></span>
+      <span class="sub">· 오늘 시연 가능한 상태입니다</span>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>03</b></div>
+</section>
+
+<!-- ══════════ 4. 기획 배경 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">기획 배경</div>
+    <h2>친구들이 더 이상 같은 동네에 살지 않습니다</h2>
+    <div class="grid g2 grow" style="margin-top:22px;align-content:center">
+      <div>
+        <div class="card">
+          <p style="font-size:16px;line-height:1.7">
+            학교 때는 다 같은 동네에 있었습니다. 그때는 “어디서 볼까”가 질문이 아니었어요.<br><br>
+            지금은 <b>누구는 취업하고, 누구는 이사 가고, 누구는 아직 학교</b>에 있습니다.
+            <b>출발지가 흩어지는 순간</b> 약속 장소 정하기가 매번 협상이 됩니다.
+          </p>
+        </div>
+        <div class="card" style="margin-top:14px;background:var(--warn-soft);border-color:#fde68a">
+          <p style="color:#7c4a0a">
+            <b>그리고 늘 같은 사람이 멀리서 옵니다.</b> 문제는 그게
+            <b>숫자로 보이지 않는다</b>는 것입니다 — 아무도 “내가 얼마나 더 오는지”를
+            모르니 말도 못 꺼냅니다.
+          </p>
+        </div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center">
+        <span class="chip">우리가 실제로 겪은 일</span>
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:12px">
+          <div class="quote" style="background:var(--panel2);color:var(--ink-soft)">
+            “어디서 볼까?” — <span style="color:var(--ink-faint)">10분 뒤</span>
+          </div>
+          <div class="quote" style="background:var(--panel2);color:var(--ink-soft);margin-left:40px">
+            “아무데나 ㅋㅋ”
+          </div>
+          <div class="quote" style="background:var(--panel2);color:var(--ink-soft)">
+            “그럼 강남?” — <span style="color:var(--ink-faint)">또 10분 뒤</span>
+          </div>
+          <div class="quote" style="background:var(--danger-soft);color:#a3123a;margin-left:40px">
+            “나 거기 1시간 넘게 걸리는데…”
+          </div>
+          <div class="quote" style="background:var(--panel2);color:var(--ink-soft)">
+            “그럼 어디로 하지…” <span style="color:var(--ink-faint)">(처음으로)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card plain" style="border-left:4px solid var(--ac)">
+      <p><b>우리가 푸는 것은 “지도 검색”이 아니라 “합의”입니다.</b>
+      장소를 찾아 주는 서비스는 이미 많습니다. 없는 것은
+      <b>여러 명이 각자 다른 곳에서 출발할 때 공평한 곳을 함께 고르는 절차</b>입니다.</p>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>04</b></div>
+</section>
+
+<!-- ══════════ 5. 기존 방식의 한계 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">지금은 이렇게 정합니다</div>
+    <h2>세 가지가 다 안 되고 있습니다</h2>
+    <div class="grid g3 grow" style="margin-top:24px;align-content:center">
+      <div class="card">
+        <div style="font-size:26px">💬</div>
+        <h3 style="margin-top:10px">단톡방 눈대중</h3>
+        <p style="margin-top:8px">누구도 계산하지 않고 “대충 중간”으로 정합니다.
+        결국 <b>말 센 사람 근처</b>나 <b>늘 가던 곳</b>으로 갑니다.</p>
+        <div class="quote" style="margin-top:10px;background:var(--danger-soft);color:#a3123a">
+          공평한지 아무도 모른다
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-size:26px">🗺️</div>
+        <h3 style="margin-top:10px">지도 앱</h3>
+        <p style="margin-top:8px">길찾기는 <b>출발지 하나 → 도착지 하나</b>입니다.
+        <b>여러 출발지를 동시에</b> 놓고 “어디가 제일 공평한가”를 물어볼 수가 없습니다.</p>
+        <div class="quote" style="margin-top:10px;background:var(--danger-soft);color:#a3123a">
+          한 사람 기준으로만 본다
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-size:26px">🗳️</div>
+        <h3 style="margin-top:10px">그냥 투표</h3>
+        <p style="margin-top:8px">각자 다른 이름으로 제안하니
+        <b>“강남”·“강남역”·“역삼”이 서로 다른 후보</b>가 됩니다. 표가 흩어져 1위가 안 나옵니다.</p>
+        <div class="quote" style="margin-top:10px;background:var(--danger-soft);color:#a3123a">
+          투표해도 결론이 안 난다
+        </div>
+      </div>
+    </div>
+    <div class="card" style="background:var(--ac-soft);border-color:#c7dbff">
+      <p style="color:var(--ac-deep)">
+        <b>모이머는 이 셋을 한 화면에서 해결합니다</b> —
+        여러 출발지를 동시에 계산하고, 공평함을 숫자로 보여주고, 같은 곳을 누른 사람을 하나로 묶습니다.
+      </p>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>05</b></div>
+</section>
+
+<!-- ══════════ 6. 그래서 모이머 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">해결</div>
+    <h2>출발지만 넣으면, 나머지는 지도를 누르는 것으로 끝납니다</h2>
+    <div class="grid g3 grow" style="margin-top:22px;align-content:center">
+      <div class="card">
+        <span class="chip">① 공평함을 숫자로</span>
+        <p style="margin-top:12px">후보마다 <b>가장 오래 걸리는 사람의 시간</b>과
+        <b>사람 간 편차</b>를 계산해 보여줍니다. 평균이 아니라 <b>최악</b>을 봅니다 —
+        평균이면 3명 만족·1명 지옥인 곳이 1위가 됩니다.</p>
+        <div class="quote mono" style="margin-top:10px">점수 = 최대 이동시간 + 편차 × 0.8</div>
+      </div>
+      <div class="card">
+        <span class="chip">② 지도 한 번 = 한 표</span>
+        <p style="margin-top:12px">“후보를 등록하고 → 다시 투표한다”를 <b>한 단계로 합쳤습니다.</b>
+        누르면 가까운 <b>지하철역</b>으로 정리되고, 같은 곳을 누른 사람끼리
+        <b>자동으로 하나로 합쳐집니다.</b></p>
+        <div class="quote" style="margin-top:10px">“누른 것이 곧 한 표예요”</div>
+      </div>
+      <div class="card">
+        <span class="chip">③ 카톡을 대체하지 않습니다</span>
+        <p style="margin-top:12px">대화는 원래 쓰던 단톡방에서 합니다.
+        모이머는 <b>링크 하나</b>로 들어와 <b>장소만</b> 정하고 나갑니다.
+        새 메신저를 배우게 하지 않습니다.</p>
+        <div class="quote" style="margin-top:10px">초대 링크 → 지도 탭 → 끝</div>
+      </div>
+    </div>
+    <div class="card plain">
+      <p><b>회원가입 없이 홈에서 바로 맛볼 수 있습니다.</b> 출발지 2곳만 넣어도 중간지점이 나오고,
+      마음에 들면 그 출발지들을 그대로 들고 모임으로 넘어갑니다 — <b>가입은 그다음</b>입니다.</p>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>06</b></div>
+</section>
+
+<!-- ══════════ 7. 흐름 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">사용 흐름</div>
+    <h2>초대 링크를 받은 순간부터 모임 당일까지</h2>
+    <div class="flow" style="margin-top:22px">
+      <div class="fstep"><div class="n">STEP 1</div><h3>로그인 없이 맛보기</h3>
+        <p>출발지를 넣으면 즉시 중간지점 1곳. 회원가입도 모임 생성도 필요 없습니다.</p></div>
+      <div class="fstep"><div class="n">STEP 2</div><h3>모임 만들기</h3>
+        <p>가장 중요한 질문 하나를 먼저 — <b>동네까지만</b> 정할지, <b>가게까지</b> 정할지.</p></div>
+      <div class="fstep"><div class="n">STEP 3</div><h3>링크로 들어와 구경</h3>
+        <p>입력 폼이 아니라 <b>지도가 먼저</b> 뜹니다. 정보는 행동할 때 묻습니다.</p></div>
+      <div class="fstep"><div class="n">STEP 4</div><h3>지도 한 번 = 한 표</h3>
+        <p>누른 자리가 <b>가까운 역</b>으로 정리되고 같은 곳끼리 합쳐집니다.</p></div>
+      <div class="fstep"><div class="n">STEP 5</div><h3>방장이 지역 확정</h3>
+        <p>전원을 기다리지 않습니다. 후보가 부족하면 <b>AI 추천</b> 버튼.</p></div>
+      <div class="fstep"><div class="n">STEP 6</div><h3>반경 700m 안 가게</h3>
+        <p>걸어갈 수 있는 거리로만. 카테고리 5종 · 후보 상한 5개.</p></div>
+      <div class="fstep"><div class="n">STEP 7</div><h3>투표 → 결과</h3>
+        <p>확정되면 <b>각자 폰에 자기 경로</b>가 그려집니다. 1.8초마다 자동 동기화.</p></div>
+      <div class="fstep"><div class="n">STEP 8</div><h3>당일 · 다음 모임</h3>
+        <p>도착 신호등(갈게요/늦어요/못 가요) → 지난 모임 → 같은 멤버로 재모임.</p></div>
+    </div>
+    <div class="card" style="margin-top:16px;background:var(--ac-soft);border-color:#c7dbff">
+      <p style="color:var(--ac-deep)"><b>핵심은 STEP 4 입니다.</b>
+      다른 서비스가 “검색해서 고르기”로 끝난다면, 모이머는 여기서
+      <b>여러 사람의 의사를 한 화면에 모읍니다.</b></p>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>07</b></div>
+</section>
+
+<!-- ══════════ 8. 화면 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">실제 화면</div>
+    <h2>지금 도는 화면 <span class="chip line" style="vertical-align:middle">설계 11개 중 9개 완성</span></h2>
+    <div class="grid g3 grow" style="margin-top:20px;align-content:stretch;grid-template-rows:1fr">
+      <div class="shot">
+        <img src="img/발표/01-홈.png" alt="홈 화면"
+             onerror="this.outerHTML='&lt;div class=ph&gt;01-홈.png&lt;br&gt;docs/img/발표/ 에 넣으면 여기 뜹니다&lt;/div&gt;'">
+        <div class="cap">① 홈 — 출발지 4곳 → 중간지점 ‘왕십리’</div>
+      </div>
+      <div class="shot">
+        <img src="img/발표/02-핑.png" alt="지도 핑"
+             onerror="this.outerHTML='&lt;div class=ph&gt;02-핑.png&lt;br&gt;docs/img/발표/ 에 넣으면 여기 뜹니다&lt;/div&gt;'">
+        <div class="cap">② 지도를 누르면 확인 후 등록 (1인 1개)</div>
+      </div>
+      <div class="shot">
+        <img src="img/발표/03-결과.png" alt="결과 화면"
+             onerror="this.outerHTML='&lt;div class=ph&gt;03-결과.png&lt;br&gt;docs/img/발표/ 에 넣으면 여기 뜹니다&lt;/div&gt;'">
+        <div class="cap">③ 결과 — 투표로 함께 정했어요</div>
+      </div>
+    </div>
+    <div class="card plain" style="margin-top:4px">
+      <p><b>발표 뒤 노트북 1대 + 폰 3대로 실제 시연합니다.</b>
+      한 사람이 지도를 누르면 나머지 3대 화면에 <b>새로고침 없이</b> 바로 뜹니다 —
+      그 장면이 이 서비스의 핵심입니다.</p>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>08</b></div>
+</section>
+
+<!-- ══════════ 9. 핵심 ① ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">핵심 기능 ①</div>
+    <h2>지도를 누르는 것이 곧 한 표입니다</h2>
+    <div class="grid g2 grow" style="margin-top:22px;align-content:center">
+      <div>
+        <div class="card" style="background:var(--danger-soft);border-color:#fbc9d5">
+          <span class="chip bad">흔한 방식</span>
+          <p style="margin-top:10px;color:#a3123a"><b>후보 등록 → 투표 시작 → 다시 투표 → 확정</b><br>
+          같은 사람에게 “여기 찍어” 다음에 “이제 투표해”를 또 시킵니다.
+          두 번째가 무엇을 위한 절차인지 설명하기 어렵습니다.</p>
+        </div>
+        <div class="card" style="background:var(--ok-soft);border-color:#bbf7d0;margin-top:14px">
+          <span class="chip ok">모이머</span>
+          <p style="margin-top:10px;color:#14532d"><b>지도를 누른다 → 많이 찍힌 곳이 1위 → 방장이 확정</b><br>
+          단계가 하나 줄었습니다. 참여자는 <b>안 찍어도 되고</b>, 방장은
+          <b>전원을 기다리지 않고</b> 넘어갈 수 있습니다.</p>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h3>표가 갈리지 않게 하는 두 가지</h3>
+          <ul style="margin-top:12px">
+            <li><b>가까운 지하철역으로 묶습니다</b> — 누른 자리에서 1.2km 안에 역이 있으면
+                그 역 이름이 되고 핀도 역 위로 옮겨갑니다.
+                “강남구에서 만나자”는 약속이 안 되지만 <b>“강남역에서 만나자”는 약속이 됩니다.</b></li>
+            <li><b>같은 곳은 하나로 합칩니다</b> — 같은 역을 누른 사람은 한 후보에 모입니다.
+                내 핑은 1개라 다른 곳을 누르면 그쪽으로 옮겨갑니다.</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px;background:var(--ok-soft);border-color:#bbf7d0">
+          <span class="chip ok">실제 검증 · 2026-08-11</span>
+          <div class="mono" style="margin-top:10px;line-height:1.85;color:#14532d">
+            두 사람이 사당역 <b>양쪽 200m</b>를 각각 눌렀을 때<br>
+            → 후보 <b>1개</b>로 합쳐짐 · “사당역” · 2명 ✔<br>
+            역이 없는 동네(봉담)를 눌렀을 때<br>
+            → “화성시 효행구” · <b>억지로 역을 붙이지 않음</b> ✔
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>09</b></div>
+</section>
+
+<!-- ══════════ 10. 핵심 ② ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">핵심 기능 ②</div>
+    <h2>“공평함”을 한 줄로 정의했습니다</h2>
+    <div class="card plain" style="margin-top:18px;text-align:center;background:var(--ac-soft);border-color:#c7dbff">
+      <div class="mono" style="font-size:19px;font-weight:800;color:var(--ac-deep)">
+        점수 = 최대 이동시간 &nbsp;+&nbsp; 사람 간 편차 × 0.8
+      </div>
+      <p style="margin-top:9px;color:var(--ac-deep);font-size:13px">
+        정의는 <b>코드 한 곳</b>에만 있습니다 — 화면마다 다르게 계산되는 일이 없습니다
+      </p>
+    </div>
+    <div class="grid g2 grow" style="margin-top:18px;align-content:center">
+      <div class="card">
+        <h3>왜 평균이 아니라 최악인가</h3>
+        <p style="margin-top:9px">평균을 쓰면 <b>3명은 5분, 1명은 90분</b>인 곳이 1위가 됩니다.
+        모임에서 실제로 문제가 되는 건 <b>가장 오래 걸리는 사람</b>입니다.
+        편차를 더한 것은 “다 같이 조금씩”을 “한 명만 많이”보다 낫게 보기 위해서입니다.</p>
+      </div>
+      <div class="card">
+        <h3>계산식보다 <b>후보 목록</b>이 문제였습니다</h3>
+        <p style="margin-top:9px">노원+의정부 모임에 <b>종로3가</b>를 추천한 적이 있습니다.
+        계산은 정확했습니다. 손으로 고른 후보 28곳에 <b>서울 북부가 통째로 비어</b> 있던 것이 원인이었습니다.</p>
+        <div class="mono" style="margin-top:10px;color:var(--ink-faint);line-height:1.8">
+          종로3가 &nbsp;중심에서 14.8km · 최대 <b style="color:var(--danger)">98분</b><br>
+          도봉산역 중심에서 &nbsp;0.9km · 최대 <b style="color:var(--ok)">32분</b> ← 실제 정답
+        </div>
+        <p style="margin-top:10px"><b>목록에 없으면 아무리 좋아도 1위가 될 수 없습니다.</b>
+        그래서 후보를 지도 API의 실제 지하철역으로 바꿨습니다.</p>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>10</b></div>
+</section>
+
+<!-- ══════════ 11. 핵심 ③ ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">핵심 기능 ③</div>
+    <h2>모르는 값을 아는 척하지 않습니다</h2>
+    <p style="margin-top:10px;max-width:920px">
+      외부 API가 <b>“82분 · 0원 · 환승 0회”</b>라는 빈 응답을 줬는데 앱이 그대로
+      <b>“실시간”</b>이라고 적은 적이 있습니다. 그 뒤로 <b>정직함을 코드가 강제</b>하게 만들었습니다.
+    </p>
+    <div class="grid g4 grow" style="margin-top:20px;align-content:center">
+      <div class="card">
+        <span class="chip warn">표시</span>
+        <h3 style="margin-top:10px">“실시간”을 없앴다</h3>
+        <p style="margin-top:7px">출발 시각을 API에 보내지 않으므로 실제 API 값도 실시간이 아닙니다.
+        <b>“경로 기준” / “거리 추정”</b> 두 단어로 통일.</p>
+      </div>
+      <div class="card">
+        <span class="chip warn">단위</span>
+        <h3 style="margin-top:10px">사람 단위로 밝힌다</h3>
+        <p style="margin-top:7px">실측 3건 + 추정 1건이 섞여 넷 다 “실시간”이던 적이 있습니다.
+        이제 <b>한 명이라도 추정이 섞이면</b> 배지가 바뀝니다.</p>
+      </div>
+      <div class="card">
+        <span class="chip warn">별점</span>
+        <h3 style="margin-top:10px">가짜 별점을 지웠다</h3>
+        <p style="margin-top:7px">데모용 4.3~4.7을 삭제하고
+        <b>0 = “정보 없음”</b>이라는 규약을 세웠습니다. 별이 없으면 안 그립니다.</p>
+      </div>
+      <div class="card">
+        <span class="chip warn">경로</span>
+        <h3 style="margin-top:10px">직선은 직선이라 한다</h3>
+        <p style="margin-top:7px">경로선이 직선 근사면 <b>점선</b>으로 그리고 그렇다고 적습니다.
+        결과 버튼도 “예약하기”가 아니라 <b>“메뉴 보기”</b>입니다.</p>
+      </div>
+    </div>
+    <div class="card" style="background:var(--ok-soft);border-color:#bbf7d0">
+      <p style="color:#14532d"><b>API 키가 하나도 없어도 전체 흐름이 끝까지 돕니다.</b>
+      외부 API 4종 모두 대체 동작이 있어 팀원이 키 없이 개발·시연할 수 있습니다.
+      다만 <b>대체 동작으로 나온 값은 절대 실제인 척하지 않습니다</b> — 이 둘이 같이 지켜져야 의미가 있습니다.</p>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>11</b></div>
+</section>
+
+<!-- ══════════ 12. 현황 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">지금까지 만든 것</div>
+    <h2>중간발표 시점 현황</h2>
+    <div class="grid g4" style="margin-top:22px">
+      <div class="card"><div class="num">9<small> / 11</small></div><div class="lbl">설계 화면 중 완성<br><span style="color:var(--ink-faint)">부분 2 · 미구현 0</span></div></div>
+      <div class="card"><div class="num">78</div><div class="lbl">브라우저 자동 테스트<br><span style="color:var(--ink-faint)">조건 검사 305개</span></div></div>
+      <div class="card"><div class="num">4<small>대</small></div><div class="lbl">기기 동시 리허설<br><span style="color:var(--ink-faint)">자동 판정 15개 통과</span></div></div>
+      <div class="card"><div class="num">18,289</div><div class="lbl">코드 줄 수<br><span style="color:var(--ink-faint)">소스 파일 92개</span></div></div>
+    </div>
+    <div class="grid g2 grow" style="margin-top:16px;align-content:center">
+      <div class="card">
+        <h3>되는 것</h3>
+        <ul style="margin-top:10px">
+          <li class="ok">모임 생성 → 초대 링크 → 참여 → 지역 투표 → 확정 → 가게 투표 → 결과
+              <b>전 구간 완주</b></li>
+          <li class="ok">4명이 <b>동시에</b> 눌러도 표가 유실되지 않음 (실기기 4대 검증)</li>
+          <li class="ok">지도·경로 API 키가 <b>없어도</b> 전체 흐름 동작</li>
+          <li class="ok">모임 당일 도착 신호등 · 지난 모임 · 같은 멤버로 재모임</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>아직인 것</h3>
+        <ul style="margin-top:10px">
+          <li class="warn">‘카카오톡 알리기’가 <b>결과 화면 한 곳</b>에만 (이벤트마다 상시화 필요)</li>
+          <li class="warn">모임 생성 시 <b>카카오 로그인 필수화</b> 미적용 — 지금은 이름만 있으면 생성</li>
+          <li class="warn">이동수단 2종(대중교통·자차) → <b>4종</b>으로 확장은 최종발표 이후</li>
+          <li class="warn">안드로이드 앱 포장(PWA → APK) 리허설</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>12</b></div>
+</section>
+
+<!-- ══════════ 13. 앞으로 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">앞으로</div>
+    <h2>최종발표 <span style="color:var(--ac)">8/21(금)</span> 까지 일주일</h2>
+    <div class="grid g3 grow" style="margin-top:24px;align-content:center">
+      <div class="card" style="background:var(--danger-soft);border-color:#fbc9d5">
+        <span class="chip bad">이번 주 · 반드시</span>
+        <ul style="margin-top:12px">
+          <li class="bad">발표장 환경에서 <b>지도·로그인 키 등록</b><br>
+            <span class="sub">노트북 IP가 바뀌면 둘 다 무효가 됩니다</span></li>
+          <li class="bad">실기기 4대로 <b>사람 손으로 완주</b><br>
+            <span class="sub">자동 리허설은 통과 — 실제 터치·네트워크는 다릅니다</span></li>
+        </ul>
+      </div>
+      <div class="card" style="background:var(--warn-soft);border-color:#fde68a">
+        <span class="chip warn">기능 마무리</span>
+        <ul style="margin-top:12px">
+          <li class="warn"><b>카카오톡 알리기 상시화</b><br>
+            <span class="sub">지역 확정·투표 시작 때도 단톡방에 알림</span></li>
+          <li class="warn"><b>모임 생성 시 로그인 필수화</b></li>
+          <li class="warn">AI 추천을 <b>‘팔레트’</b>로 — 추천은 제안이지 결정이 아니므로</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="chip">최종발표 목표</span>
+        <ul style="margin-top:12px">
+          <li>설계 화면 <b>11/11</b> 완성</li>
+          <li><b>안드로이드 APK</b>로 포장해 폰에 설치된 상태로 시연</li>
+          <li>버전 규칙상 그날 <b>1.0.0</b>을 답니다<br>
+            <span class="sub">지금은 0.2.0 — 발표일에 딱 한 번 올립니다</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="card plain" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <span class="chip line">오늘</span><b>중간발표 8/14 (금)</b>
+      <span style="color:var(--hair2)">──────────</span>
+      <span class="chip">일주일</span>
+      <span style="color:var(--hair2)">──────────</span>
+      <span class="chip ok">최종발표 8/21 (금) · v1.0.0</span>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>모이머 · 브레인 스파크</span><b>13</b></div>
+</section>
+
+<!-- ══════════ 14. 마무리 ══════════ -->
+<section class="slide">
+  <div class="cover">
+    <div class="pad center">
+      <div>
+        <div class="eyebrow" style="justify-content:center">감사합니다</div>
+        <h1 style="font-size:44px;margin-top:20px;max-width:960px">
+          “어디서 만날까?”에<br>답을 내는 데 <span style="opacity:.6">3분</span>
+        </h1>
+        <p style="margin-top:22px;font-size:17px;max-width:760px;margin-inline:auto">
+          출발지를 넣고 · 지도를 한 번 누르고 · 방장이 확정한다.<br>
+          그 사이의 모든 계산과 합의 절차를 모이머가 맡습니다.
+        </p>
+        <div style="display:flex;gap:8px;margin-top:28px;justify-content:center;flex-wrap:wrap">
+          <span class="chip">지금 바로 시연 가능합니다</span>
+          <span class="chip">질문 환영</span>
+        </div>
+        <p style="margin-top:26px;font-size:12.5px;color:rgba(255,255,255,.55)">
+          브레인 스파크 · 최병현 · 김유환 · 양성은 · 신동원 &nbsp;|&nbsp; 멘토 최종원<br>
+          기술 상세는 뒤에 부록으로 준비했습니다 — 질문 주시면 그쪽을 보여드리겠습니다
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 15. 부록 표지 ══════════ -->
+<section class="slide">
+  <div class="pad center">
+    <div>
+      <div class="eyebrow" style="justify-content:center">부록 · Appendix</div>
+      <h1 style="margin-top:16px;font-size:38px">기술 상세</h1>
+      <p style="margin-top:18px;max-width:720px;margin-inline:auto;font-size:15px">
+        본편에서는 <b>무엇을 왜 만들었는지</b>를 말씀드렸습니다.<br>
+        여기서부터는 <b>어떻게 만들었고 어떻게 검증했는지</b>입니다 — 질문 주시면 펼치겠습니다.
+      </p>
+      <div style="display:flex;gap:10px;margin-top:26px;justify-content:center;flex-wrap:wrap">
+        <span class="chip line">16. 기술 구조</span>
+        <span class="chip line">17. 검증 체계</span>
+        <span class="chip line">18·19. 겪은 문제와 해결</span>
+        <span class="chip line">20. 피드백 반영 · 한계</span>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>부록 · 모이머</span><b>15</b></div>
+</section>
+
+<!-- ══════════ 16. 기술 구조 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">부록 · 기술 구조</div>
+    <h2>단순하게 — 대신 규칙을 지킵니다</h2>
+    <div class="grid g2 grow" style="margin-top:20px;align-content:center">
+      <div class="card">
+        <h3>스택</h3>
+        <table style="margin-top:10px">
+          <tr><td style="width:32%"><b>화면</b></td><td>Next.js 14 App Router · TypeScript · 순수 CSS</td></tr>
+          <tr><td><b>상태</b></td><td>useState + 1.8초 폴링 (상태관리 라이브러리 없음)</td></tr>
+          <tr><td><b>서버</b></td><td>Next API Routes · 창구 1곳으로 동작 29종</td></tr>
+          <tr><td><b>DB</b></td><td>Neon PostgreSQL · 키 없으면 인메모리로 자동 전환</td></tr>
+          <tr><td><b>외부</b></td><td>카카오맵/로컬 · ODsay(대중교통) · TMAP(자차)</td></tr>
+          <tr><td style="border:0"><b>배포</b></td><td style="border:0">PWA → 안드로이드 APK (웹앱이 그대로 앱이 됩니다)</td></tr>
+        </table>
+      </div>
+      <div>
+        <div class="card">
+          <h3>지켜야 살아남는 규칙</h3>
+          <ul style="margin-top:10px">
+            <li><b>화면은 DB를 직접 부르지 않는다</b> — 항상 서버 창구를 거친다</li>
+            <li><b>저장 단위를 쪼갠다</b> — 모임 / 참가자 / 표 한 장.
+                한 행에 담으면 동시 투표에 <b>표가 사라진다</b></li>
+            <li><b>실제 성공값만 캐시한다</b> — 폴백을 캐시하면 나중에 키를 넣어도 계속 가짜가 나온다</li>
+            <li><b>만드는 중인 기능은 스위치 뒤에</b> — 절반만 된 상태로 합쳐도 남의 화면이 안 깨진다</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <h3>팀 협업</h3>
+          <p style="margin-top:8px">공용 파일 10개는 <b>통합 담당자 소유</b>(GitHub이 리뷰를 강제).
+          한 파일 400줄 상한. 기능 스위치는 상수가 아니라 <b>환경변수</b>로 —
+          브랜치마다 값이 달라지면 합칠 때마다 그 줄에서 충돌납니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>부록 · 모이머</span><b>16</b></div>
+</section>
+
+<!-- ══════════ 17. 검증 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">부록 · 검증</div>
+    <h2>“빌드가 통과했다”를 믿지 않습니다</h2>
+    <div class="card plain" style="margin-top:16px;border-left:4px solid var(--danger)">
+      <p><b>타입검사도 빌드도 통과했는데 모임 화면이 통째로 하얗게 뜬 적이 있습니다.</b>
+      그 사고 하나가 저희 검증 원칙 <b>“눈 · 버튼 · 로그 3관점”</b>을 만들었습니다.</p>
+    </div>
+    <div class="grid g3 grow" style="margin-top:16px;align-content:center">
+      <div class="card"><span class="chip">1층</span>
+        <h3 style="margin-top:9px">커밋 전 관문</h3>
+        <p style="margin-top:7px">타입검사 → 빌드 → <b>실제 브라우저로 클릭</b>.
+        개발 서버가 아니라 <b>빌드 결과물</b>을 띄웁니다.</p>
+        <div class="quote" style="margin-top:9px">테스트 78개 · 조건 검사 305개</div>
+      </div>
+      <div class="card"><span class="chip">2층</span>
+        <h3 style="margin-top:9px">GitHub CI</h3>
+        <p style="margin-top:7px">PR마다 <b>스위치 끈 판 / 켠 판 2벌</b>.
+        안 돌려보는 기능은 “켤 수 있어 보이는 <b>죽은 코드</b>”입니다.
+        키를 <b>일부러 안 넣습니다</b>.</p>
+        <div class="quote" style="margin-top:9px">PR 1건당 테스트 156회 실행</div>
+      </div>
+      <div class="card"><span class="chip">3층</span>
+        <h3 style="margin-top:9px">4대 기기 리허설</h3>
+        <p style="margin-top:7px">브라우저 4개를 <b>독립된 기기</b>로 띄워 발표 시나리오를 통째로 리허설.
+        “<b>4명이 각자</b> 등록됐는가”를 셉니다.</p>
+        <div class="quote" style="margin-top:9px">자동 판정 15개 · 스크린샷 16장</div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card" style="background:var(--ok-soft);border-color:#bbf7d0">
+        <p style="color:#14532d"><b>그 검증이 정말 잡는지도 확인했습니다.</b>
+        일부러 화면을 깨뜨리고 돌린 출력이 문서에 남아 있습니다 —
+        <span class="mono">“빌드 통과 / 브라우저 테스트만 실패”</span></p>
+      </div>
+      <div class="card">
+        <p><b>설계서가 곧 테스트 목록입니다.</b> 설계 문서의 조항 번호를 테스트 이름에 그대로 달았습니다 —
+        <span class="mono">“§4-⑤ 정원 8명, 9번째는 입장 거부”</span></p>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>부록 · 모이머</span><b>17</b></div>
+</section>
+
+<!-- ══════════ 18. 사건 1 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">부록 · 겪은 문제 → 해결 (1/2)</div>
+    <h2>버그가 규칙을 만들었습니다</h2>
+    <div class="grid grow" style="margin-top:18px;gap:12px;align-content:center">
+      <div class="card inc">
+        <div class="dot">!</div>
+        <div>
+          <h3>4명이 동시에 투표하면 표가 조용히 사라졌다</h3>
+          <p style="margin-top:6px">두 사람이 같은 순간에 투표하면 나중에 저장된 쪽이 앞선 쪽을
+          통째로 덮어썼습니다. <b>원인</b> — 모임 정보를 DB 한 행에 통째로 담았습니다.
+          <span class="fx">해결</span> — 저장 단위를 <b>모임 / 참가자 / 표 한 장</b> 셋으로 쪼개고,
+          “1인 1표”를 DB 기본키가 강제하게 했습니다. 그때까지 테스트가 전부 “한 명이 순서대로”만
+          봤다는 것도 함께 드러나 <b>4명이 동시에 쏘는 테스트</b>를 따로 만들었습니다.</p>
+        </div>
+      </div>
+      <div class="card inc">
+        <div class="dot">!</div>
+        <div>
+          <h3>지도가 안 뜨는 팀원 폰에서는 참여 자체가 막다른 길</h3>
+          <p style="margin-top:6px">지도 SDK 로드가 실패한 기기에서는 “지도를 탭해 핑 찍기”가
+          불가능해 <b>참여할 방법이 아예 없었습니다.</b>
+          <b>원인</b> — 서버가 후보를 자동으로 깔아 줘서 그 사실이 가려져 있었습니다.
+          <span class="fx">해결</span> — 대체 지도에서 누른 자리를 좌표로 되돌리는 역함수를 만들어
+          <b>SDK 없이도 핑을 찍게</b> 했습니다.</p>
+        </div>
+      </div>
+      <div class="card inc">
+        <div class="dot">!</div>
+        <div>
+          <h3>늦게 들어온 사람만 계속 “이동시간 없음”</h3>
+          <p style="margin-top:6px">리허설에서 4대로 돌리니 늦게 합류한 사람의 계산이 끝나지 않았습니다.
+          <b>원인</b> — 유료 API를 아끼려 250ms 간격 대기열을 뒀는데 <b>기기마다</b> 재계산을 요청했습니다
+          (후보3 × 인원4 × 기기4 = 48건 → 12초 이상).
+          <span class="fx">해결</span> — 같은 구간은 한 번만 계산해 결과를 같이 쓰고, 재계산 요청은
+          방장 화면만 보냅니다. <b>이 버그는 브라우저 4개를 동시에 띄워야만 재현됐습니다.</b></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>부록 · 모이머</span><b>18</b></div>
+</section>
+
+<!-- ══════════ 19. 사건 2 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">부록 · 겪은 문제 → 해결 (2/2)</div>
+    <h2>“기능이 되는가”와 “여럿이 써도 되는가”는 다른 질문</h2>
+    <div class="grid grow" style="margin-top:18px;gap:12px;align-content:center">
+      <div class="card inc">
+        <div class="dot">!</div>
+        <div>
+          <h3>빌드도 타입검사도 통과했는데 화면이 안 그려졌다</h3>
+          <p style="margin-top:6px"><b>원인</b> — React 훅을 조건부 <span class="mono">return</span> 아래에 뒀습니다.
+          문법도 타입도 완벽히 맞지만 특정 조건에서 화면이 안 나옵니다.
+          <span class="fx">해결</span> — 규칙을 문서 3곳에 못 박고 <b>도구가 잡게</b> 했습니다.
+          실제 브라우저 테스트를 커밋 관문에 넣고, <b>일부러 깨뜨려</b> 그 테스트가 잡는 것까지 확인했습니다.</p>
+        </div>
+      </div>
+      <div class="card inc">
+        <div class="dot">!</div>
+        <div>
+          <h3>한 명이 멀면 중간지점이 충북 산속으로 갔다</h3>
+          <p style="margin-top:6px">서울 7명 + 부산 1명으로 계산하니 중간지점이 서울에서
+          <b>41km 남쪽 충북 산속</b>으로 잡혔습니다.
+          <b>원인</b> — 좌표를 평균 낸 무게중심을 썼습니다. 평균은 거리의 <b>제곱</b> 합을 줄여서
+          멀리 있는 한 명의 영향이 과도해집니다.
+          <span class="fx">해결</span> — 거리의 <b>합</b>을 최소화하는 기하 중앙값으로 바꿔 서울 2km 지점.
+          중간지점은 답이 아니라 <b>“이 근처 역을 찾아 달라”는 검색 중심</b>이라 더 치명적이었습니다.</p>
+        </div>
+      </div>
+      <div class="card inc">
+        <div class="dot">!</div>
+        <div>
+          <h3>같은 역인데 후보가 둘로 갈릴 뻔했다</h3>
+          <p style="margin-top:6px">지도 API는 같은 역을 <b>노선마다 따로</b> 줍니다 —
+          <span class="mono">“사당역 2호선”</span> / <span class="mono">“사당역 4호선”</span>.
+          후보 병합은 <b>이름 일치</b>로 판정하므로 그대로 두면 2호선 쪽과 4호선 쪽을 누른 사람이
+          다른 후보가 됩니다 — <b>표를 모으려던 기능이 표를 쪼갭니다.</b>
+          <span class="fx">해결</span> — 노선 꼬리를 떼는 정리를 넣고,
+          <b>키가 있는 기계에서만 검증되는 계약</b>이라 전용 점검 스크립트를 따로 만들어 확인했습니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>부록 · 모이머</span><b>19</b></div>
+</section>
+
+<!-- ══════════ 20. 피드백 · 한계 ══════════ -->
+<section class="slide">
+  <div class="pad">
+    <div class="eyebrow">부록 · 피드백 반영과 한계</div>
+    <h2>지적받은 것 · 아직 못 한 것</h2>
+    <div class="grid g2 grow" style="margin-top:18px;align-content:center">
+      <div class="card">
+        <span class="chip ok">멘토링 8/6 반영</span>
+        <table style="margin-top:12px">
+          <tr><td><b>화면 역할 분리</b></td><td>“누가 무엇을 할 수 있는가”를 표 한 곳으로 (8개 파일 39군데 → 1곳)</td></tr>
+          <tr><td><b>핑 = 투표 통합</b></td><td>지역이 한 칸으로 줄었습니다</td></tr>
+          <tr><td><b>지하철역 묶기</b></td><td>스위치로 제공 · 실 키 검증 완료(8/11)</td></tr>
+          <tr><td><b>참여 순서</b></td><td>링크를 열면 지도가 먼저 · 누를 때 정보 수집</td></tr>
+          <tr><td><b>결과에서 안 끝나게</b></td><td>되돌리기 / 재투표</td></tr>
+          <tr style="border:0"><td style="border:0"><b>AI는 버튼으로</b></td><td style="border:0">자동 채움 철거 — 사람이 찍은 핑과 방장 버튼으로만</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <span class="chip warn">솔직한 한계</span>
+        <ul style="margin-top:12px">
+          <li class="warn"><b>실환경 검증이 덜 끝났습니다.</b> 개발 환경에는 키가 없어 이동시간이 전부
+            “거리 추정”으로 나옵니다. 키가 있는 기계에서만 확인되는 계약도 있어
+            <b>자동 검사가 대신 지켜 주지 못하는 부분</b>이 남아 있습니다.</li>
+          <li class="warn"><b>스스로 정한 규칙을 못 지킨 곳이 있습니다.</b>
+            한 파일 400줄 상한을 정했는데 <b>8개 파일이 이를 넘었습니다</b>(가장 큰 것 1,799줄).</li>
+          <li class="warn"><b>기록을 남기는 규칙은 지켰지만 갱신하는 규칙은 놓쳤습니다.</b>
+            작업 메모에 이미 끝난 항목이 아직 “안 함”으로 적혀 있는 것을 이번에 발견했습니다.</li>
+        </ul>
+        <p style="margin-top:12px;font-size:12.5px;color:var(--ink-faint)">
+          이 슬라이드를 넣은 이유 — 저희가 이 프로젝트에서 배운 가장 큰 것이
+          <b>“되는 것처럼 보이는 것”과 “되는 것”은 다르다</b>는 점이라, 발표 자료에서도
+          같은 기준을 지키는 것이 맞다고 판단했습니다.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="topbar"><i></i></div><div class="foot"><span>부록 · 모이머</span><b>20</b></div>
+</section>
+
+</div>
+
+<div class="nav">
+  <button id="prev" aria-label="이전">‹</button>
+  <span class="pos"><b id="cur">1</b> / <span id="tot">20</span></span>
+  <button id="next" aria-label="다음">›</button>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var APPENDIX = 15;                     // 부록 첫 장 (1-based)
+  var i = 0;
+  var curEl = document.getElementById('cur'), totEl = document.getElementById('tot');
+  totEl.textContent = slides.length;
+
+  function show(n){
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function(s, k){ s.classList.toggle('on', k === i); });
+    curEl.textContent = (i + 1) + (i + 1 >= APPENDIX ? ' (부록)' : '');
+    var bar = slides[i].querySelector('.topbar i');
+    // 진행 막대는 **본편 기준**이다 — 부록에서 100% 로 둬야 "아직 남았나" 싶지 않다
+    if (bar) bar.style.width = Math.min(100, (i + 1) / (APPENDIX - 1) * 100) + '%';
+    try { location.hash = String(i + 1); } catch(e){}
+  }
+  function go(d){ show(i + d); }
+
+  document.getElementById('prev').onclick = function(e){ e.stopPropagation(); go(-1); };
+  document.getElementById('next').onclick = function(e){ e.stopPropagation(); go(1); };
+  document.getElementById('stage').addEventListener('click', function(e){
+    if (document.body.classList.contains('print')) return;
+    var x = e.clientX / window.innerWidth;
+    if (x < 0.25) go(-1); else go(1);
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'a' || e.key === 'A') show(APPENDIX - 1);   // 질문 받았을 때 부록으로
+    else if (e.key === 'p' || e.key === 'P') document.body.classList.toggle('print');
+    else if (/^[1-9]$/.test(e.key)) show(parseInt(e.key, 10) - 1);
+  });
+
+  var start = parseInt((location.hash || '').replace('#',''), 10);
+  show(isNaN(start) ? 0 : start - 1);
+})();
+</script>
+</body>
+</html>
