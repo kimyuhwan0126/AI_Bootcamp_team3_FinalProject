@@ -16,6 +16,20 @@
 // ─────────────────────────────────────────────────────────────
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 
+/**
+ * 이 빌드가 **AI 채팅으로 빌드됐는지**.
+ *
+ * `NEXT_PUBLIC_FF_AI_CHAT=1` 이면 투표 UI 가 **채팅 UI 로 대체된다**
+ * (둘이 같이 뜨지 않는다 — `app/m/[code]/CLAUDE.md`). 그래서 방장 바·확정 버튼·
+ * 지점 미리보기처럼 **투표 UI 를 전제로 한 화면 검사**는 그 빌드에서 성립하지 않는다.
+ *
+ * ⚠️ `NEXT_PUBLIC_FF_*` 는 **빌드 시점에 박히므로** 테스트 안에서 켜고 끌 수 없다.
+ *    지금 서버가 무엇을 켜고 빌드됐는지 `/api/status` 에 물어보고 갈라진다
+ *    (`tests/station-snap.spec.ts` 와 같은 방식).
+ */
+const aiChatOn = async (request: APIRequestContext): Promise<boolean> =>
+  !!(await (await request.get("/api/status")).json()).flags?.aiChat;
+
 interface Ident { id: string; name: string; isLeader: boolean }
 
 /** 성공을 기대하는 액션 */
@@ -865,6 +879,7 @@ test("화면: §4-② 투표가 열린 모임은 상단에 고정된다", async 
 });
 
 test("화면: 지점 등록 단계에 미리보기 목록이 뜨고 탭하면 후보가 된다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
 
@@ -1043,6 +1058,7 @@ test("§4-⑥ 확정하면 그 시점 인원 전원의 이동시간이 채워진
 });
 
 test("§4-⑧ 지점 미리보기가 지도에 회색 핀으로 뜨고, 탭하면 후보가 된다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
   // ⚠️ v19 §4-⑧ 의 기본 동작은 **"미리보기 핀(회색) 탭 → 후보 등록"** 이다.
   //    목록만 있으면 지도가 아니라 텍스트를 읽고 고르는 화면이 된다(2026-08-10 제보).
   const errors: string[] = [];
@@ -1269,6 +1285,7 @@ test("역할: 참여자 화면에는 방장 전용 버튼이 아예 없다 (비�
 });
 
 test("역할: 방장 화면에는 방장 바가 뜨고 참여자 바는 없다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
   const { code, leaderId } = await setup(request);
   await seedRegions(request, code);
 
@@ -1284,6 +1301,7 @@ test("역할: 방장 화면에는 방장 바가 뜨고 참여자 바는 없다",
 });
 
 test("역할: 지역 화면에는 '투표 시작'이 없고 확정만 있다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
   // abilitiesOf 의 계약을 화면으로 확인한다 — 서버(phaseStepOf)와 어긋나면
   // "눌리는데 서버가 거부하는" 버튼이 다시 생긴다.
   //
