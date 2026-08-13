@@ -23,6 +23,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   themeColor: "#2f6fed",
+  // 라이트 고정 (2026-08-10). CSS 의 `color-scheme: light` 와 **같은 말을**
+  // `<meta name="color-scheme">` 로도 해 둔다 — CSS 가 도착하기 전 첫 페인트부터
+  // 라이트로 그려지게 하고, 안드로이드 크롬의 자동 다크 덧칠도 그만큼 일찍 막는다.
+  colorScheme: "light",
   // 앱으로 설치했을 때 노치·홈바 영역까지 배경이 이어지게
   viewportFit: "cover",
 };

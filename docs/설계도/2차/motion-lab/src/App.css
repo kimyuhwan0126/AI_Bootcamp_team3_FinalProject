@@ -1,0 +1,60 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family:
+    Inter, Pretendard, Arial, sans-serif;
+  background: #f4f6fb;
+  color: #182033;
+}
+
+button {
+  font: inherit;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 24px;
+}
+
+.app h1 {
+  margin: 0 0 32px;
+  font-size: 32px;
+}
+
+.open-button {
+  border: 0;
+  border-radius: 12px;
+  padding: 14px 22px;
+  color: white;
+  background: #5b5cf0;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(91, 92, 240, 0.25);
+}
+
+.card {
+  width: min(100%, 420px);
+  margin-top: 32px;
+  padding: 28px;
+  border: 1px solid #e4e7ef;
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 20px 60px rgba(31, 39, 65, 0.12);
+}
+
+.card h2 {
+  margin: 0 0 12px;
+}
+
+.card p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.6;
+}

@@ -6,13 +6,14 @@
 //  → 카카오맵 표시 → 주변 카페/음식점/술집/교통 리스트
 // ─────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import KakaoMap, { MapPin, MapRoute, MapCandidate, pinColor } from "./components/KakaoMap";
+import KakaoMap, { MapPin, MapRoute, MapCandidate, pinColor, KAKAO_JS_KEY_SET } from "./components/KakaoMap";
 import BottomNav from "./components/v8/BottomNav";
 import V8Header from "./components/v8/V8Header";
 import Splash from "./components/v8/Splash";
 import StepIcons from "./components/v8/StepIcons";
 import { IcSearch, IcPlus } from "./components/v8/Icons";
 import { recommendRegions, arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
+import { saveHandoff } from "@/lib/handoff";
 import { formatMinutes, formatGap } from "@/lib/format";
 import type { Participant, RegionCandidate } from "@/lib/types";
 import type { GeoSuggest } from "./api/geocode/route";
@@ -21,6 +22,7 @@ import type { MeetingState } from "@/lib/types";
 import { loginAsKakao } from "@/lib/session";
 import { useSession } from "./components/v8/useSession";
 import { getIdentities, setActive, type Identity } from "@/lib/identity";
+import { FLAGS } from "@/lib/flags";
 
 // localStorage 에 저장된 내 모임 코드들
 function myCodes(): string[] {
@@ -91,6 +93,8 @@ export default function Home() {
   const [nearbyMock, setNearbyMock] = useState(false);
   /** 지도 보기 범위 — me: 내 출발지 중심 / all: 전체가 보이게 */
   const [mapView, setMapView] = useState<"me" | "all">("all");
+  /** 지도 전체화면 — 카드 안에서는 후보 핀이 겹쳐 못 누른다(특히 폰) */
+  const [mapFull, setMapFull] = useState(false);
   // 출발지가 여러 개면 경로선이 다 겹쳐 스파게티처럼 보인다 — 칩을 눌러 특정
   // 출발지 하나만 진하게 보고, 나머지는 옅게 뺀다. null이면 아무도 포커스 안 한 상태.
   const [focusOriginId, setFocusOriginId] = useState<string | null>(null);
@@ -104,6 +108,14 @@ export default function Home() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // + 칩이 검색창으로 데려다줄 때 쓰는 ref
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 전체화면은 Esc 로 닫는다 — 폰에서는 뒤로가기 대신 쓸 수 있는 유일한 탈출구다
+  useEffect(() => {
+    if (!mapFull) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMapFull(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mapFull]);
 
   // 저장된 출발지 복원 + 카카오 로그인 콜백(?name=) → 정식회원 세션 승격
   useEffect(() => {
@@ -366,31 +378,47 @@ export default function Home() {
       transport: o.transport,
       status: null,
       etaText: null,
+      // 홈의 가짜 참가자 — 아직 모임이 아니라 PIN·카카오·지각 개념이 없다.
+      // (확정하면 '미배정 핑'으로 모임에 이관되고, 그때 참여자가 자기 것을 고른다 — v5)
+      pin: null,
+      pinFails: 0,
+      kakaoId: null,
+      lateMin: null,
     }));
 
-    if (criteria === "dist") {
-      setMidpoint(recommendRegions(pseudo)[0] || null);
-      setMidLive(null);
-      return;
-    }
+    // 🔴 **거리순도 서버를 거친다.** 예전엔 여기서 `recommendRegions(pseudo)` 를
+    //    브라우저가 직접 불렀는데, 그러면 후보가 **하드코딩 28곳**으로만 나온다 —
+    //    실제 역을 찾는 카카오 REST 키는 **서버에만** 있기 때문이다.
+    //
+    //    2026-08-06 실측: 노원+의정부에서 **시간순은 `장암역`(실제 역), 거리순은
+    //    `종로3가`(하드코딩)** 가 떴다. 같은 화면의 두 버튼이 서로 다른 세계를 보고 있었다.
+    //    `/api/midpoint` 안에서 두 모드가 후보를 공유하도록 고쳤는데(#52),
+    //    **거리순이 그 API 를 타지 않아 절반만 고쳐진 상태**였다.
+    //
+    //    ⚠️ 거리순은 여전히 **이동시간 API(ODsay/TMAP)를 안 부른다** — 서버가
+    //       `mode:"dist"` 로 직선거리 계산만 한다. 늘어나는 건 후보를 찾는 카카오 1콜뿐이고,
+    //       같은 중심이면 서버 캐시(10분)가 받아낸다.
+    const mode = criteria === "dist" ? "dist" : "time";
 
-    // 시간순 — 응답이 늦게 와도 마지막 요청만 반영
+    // 응답이 늦게 와도 마지막 요청만 반영
     let alive = true;
     setMidLoading(true);
     fetch("/api/midpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ participants: pseudo, mode: "time" }),
+      body: JSON.stringify({ participants: pseudo, mode }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (!alive) return;
         setMidpoint(d.items?.[0] || null);
-        setMidLive(!!d.live);
+        // 거리순은 정의상 전부 추정이라 `live` 를 쓰지 않는다 — 화면 문구도
+        // `criteria !== "time"` 이면 무조건 `거리 추정` 이다(아래 v8-mapnote).
+        setMidLive(mode === "time" ? !!d.live : null);
       })
       .catch(() => {
         if (!alive) return;
-        // 실패하면 거리 기준으로라도 보여준다
+        // 서버가 죽어도 화면이 비지 않게 — 브라우저에서 하드코딩 후보로라도 계산한다.
         setMidpoint(recommendRegions(pseudo)[0] || null);
         setMidLive(false);
       })
@@ -455,16 +483,24 @@ export default function Home() {
     }
   }
   // 중간지점 핀 — 모임 모드에선 확정된 거점만 표시(거점 투표 중에는 후보 박스가 그 자리를 대신한다)
+  //
+  // ⚠️ `name` 을 따로 들고 다니는 이유: 지도 SDK 가 실패했을 때의 폴백 문구도
+  //    **이 값**을 써야 한다. 예전엔 거기서 `midpoint.name`(홈이 자체 계산한 값)을
+  //    직접 읽어서, 모임을 고른 상태에선 확정 거점과 달랐다 —
+  //    **같은 화면이 중간지점을 두 개로 말했다**(2026-08-06 실측: 지도 자리
+  //    "중간 추천: 왕십리" · 바로 아래 카드 "중간 추천 지역: 교대").
+  //    지도가 정상이면 그 자리가 안 보여서 지금까지 안 잡혔다.
   const center = selectedMeeting
     ? selectedMeeting.winnerRegion
       ? {
           lat: selectedMeeting.winnerRegion.lat,
           lng: selectedMeeting.winnerRegion.lng,
+          name: selectedMeeting.winnerRegion.name,
           label: `중간 추천 지역 · ${selectedMeeting.winnerRegion.name}`,
         }
       : null
     : midpoint
-    ? { lat: midpoint.lat, lng: midpoint.lng, label: `중간 추천 지역 · ${midpoint.name}` }
+    ? { lat: midpoint.lat, lng: midpoint.lng, name: midpoint.name, label: `중간 추천 지역 · ${midpoint.name}` }
     : null;
 
   // 지도 위 투표 후보 박스 — 피그마: "지도에서 후보를 눌러 투표하세요"
@@ -751,7 +787,7 @@ export default function Home() {
       </div>
 
       {/* 지도 */}
-      <div className="v8-mapwrap">
+      <div className={"v8-mapwrap" + (mapFull ? " map-fs" : "")}>
         <div className="v8-maplayer">
           {/* 기준 선택은 비회원 탐색 전용 — 모임 후보는 서버가 계산한다 */}
           {!selectedMeeting && (
@@ -787,22 +823,34 @@ export default function Home() {
               </button>
             </div>
           )}
+          {/* 지도 전체화면 — 오른쪽 끝 (margin-left:auto). 카드 안에서는 후보 핀이
+              서로 겹쳐 못 누른다. 같은 지도를 화면 가득 띄운다. */}
+          <button
+            type="button"
+            className="map-fsbtn"
+            aria-label={mapFull ? "지도 전체화면 끄기" : "지도 전체화면으로 보기"}
+            title={mapFull ? "전체화면 끄기 (Esc)" : "전체화면으로 보기"}
+            onClick={() => setMapFull((v) => !v)}
+          >
+            {mapFull ? "✕" : "⛶"}
+          </button>
         </div>
-        {activeOrigins.length === 0 ? (
-          <div className="v8-mapempty">
-            {selectedMeeting ? "아직 출발지를 입력한 참여자가 없어요" : "아직 출발지가 없어요"}
-            <small>
-              {selectedMeeting
-                ? `참여자 ${selectedMeeting.participants.length}명이 각자 출발지를 넣으면 여기에 표시돼요`
-                : "위 검색창에서 출발지를 추가해보세요"}
-            </small>
-          </div>
-        ) : mapFail ? (
+        {mapFail ? (
           <div className="v8-mapempty">
             지도를 불러오지 못했어요
             <small>
-              카카오 JS 키(NEXT_PUBLIC_KAKAO_JS_KEY) 설정 후 표시됩니다
-              {midpoint ? ` · 중간 추천: ${midpoint.name}` : ""}
+              {/* ⚠️ **원인을 구분해 말한다.** 예전엔 두 경우 모두 "키 설정 후 표시됩니다"
+                  였는데, 키를 넣고 재배포한 뒤에도 같은 문구가 떠서 원인을 좁힐 수 없었다
+                  (2026-08-06 Preview 실측). `loadSdk()` 는 ①키 없음 ②키는 있는데 SDK 로드
+                  실패(도메인 미등록·차단) 를 똑같이 `false` 로 돌려준다.
+                  ⚠️ `KAKAO_JS_KEY_SET` 은 **빌드 시점** 값이다 — Vercel 에서 키를 추가만
+                     하고 재배포를 안 하면 여전히 false 다. 그것도 안내에 넣는다. */}
+              {KAKAO_JS_KEY_SET
+                ? "키는 있는데 지도 SDK 를 못 불러왔어요 — 이 주소가 카카오 개발자 콘솔의 사이트 도메인에 등록됐는지 확인해주세요"
+                : "카카오 JS 키(NEXT_PUBLIC_KAKAO_JS_KEY)가 이 빌드에 없어요 — 환경변수를 넣고 다시 배포하면 표시됩니다"}
+              {/* ⚠️ `midpoint.name` 이 아니라 `center.name` 이다 — 위 `center` 주석 참고.
+                  모임을 고른 상태에서 확정 거점과 다른 이름을 말하면 안 된다. */}
+              {center ? ` · 중간 추천: ${center.name}` : ""}
             </small>
           </div>
         ) : (
@@ -821,26 +869,85 @@ export default function Home() {
             }
           />
         )}
+        {/* 출발지가 아직 없을 때 — **지도는 그대로 두고** 안내만 얹는다.
+            예전엔 지도 자리를 회색 상자로 통째로 덮어서, 처음 들어온 사람이
+            "이 앱이 지도를 쓰긴 하나?" 를 알 수 없었다 (2026-08-13 팀 요청).
+            ⚠️ `pointerEvents:none` — 안내문이 지도 조작(확대·이동)을 막으면 안 된다.
+            ⚠️ 위치는 위쪽이다. 가운데에 두면 첫 화면 중심(협성대)을 가린다. */}
+        {activeOrigins.length === 0 && !mapFail && (
+          <div
+            style={{
+              position: "absolute", left: 0, right: 0, bottom: 12,
+              display: "flex", justifyContent: "center", pointerEvents: "none", zIndex: 5,
+            }}
+          >
+            <div
+              style={{
+                background: "rgba(255,255,255,.94)", borderRadius: 999,
+                padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                color: "var(--ink-soft)", boxShadow: "var(--shadow)",
+                maxWidth: "90%", textAlign: "center",
+              }}
+            >
+              {selectedMeeting
+                ? `참여자 ${selectedMeeting.participants.length}명이 출발지를 넣으면 여기에 표시돼요`
+                : "위 검색창에서 출발지를 추가하면 여기에 표시돼요"}
+            </div>
+          </div>
+        )}
         {selectedMeeting ? (
           selectedMeeting.winnerRegion ? (
             <div className="v8-mapnote">
               📍 중간 추천 지역: <b>{selectedMeeting.winnerRegion.name}</b> · {selectedMeeting.winnerRegion.reason}
+              {/* ⚠️ 이 줄도 `reason` 안에 "최대 52분 · 편차 3분"처럼 **분 단위를 그대로**
+                  보여준다. 그런데 출처를 한 글자도 말하지 않았다 — 바로 아래 `midpoint`
+                  분기(모임 미선택)에는 붙어 있는데 **모임을 고른 이 분기에만 빠져 있었다**
+                  (2026-08-06 실측: 홈 지도 아래는 출처 없음 · 바로 밑 확정 장소 카드는
+                  `거리 추정 52분`). 아래 주석이 세운 원칙이 여기 적용이 안 된 것이다.
+
+                  ⚠️ 접는 규칙은 `lib/types.ts` 가 정한 그대로다 —
+                     `perParticipant.every(x => x.real === true)`.
+                     `undefined`(이 필드가 생기기 전에 저장된 모임)는 **참으로 치지 않는다.**
+                     모르면 실값이라고 주장하지 않는다(CLAUDE.md §6). 옛 모임이 `거리 추정`
+                     으로 뜨는 건 그래서이고, 과소평가 방향이라 안전하다.
+                  ⚠️ 후보가 비어 있으면 `every` 가 참이라 빈 목록에 `전원 경로 기준` 이
+                     붙는다 — 길이를 함께 본다. */}
+              <span className="faint">
+                {" · "}
+                {selectedMeeting.winnerRegion.perParticipant.length > 0 &&
+                selectedMeeting.winnerRegion.perParticipant.every((x) => x.real === true)
+                  ? "전원 경로 기준"
+                  : "일부 거리 추정"}
+              </span>
             </div>
           ) : null
         ) : midLoading ? (
-          <div className="v8-mapnote">실 이동시간(ODsay/TMAP)으로 계산 중…</div>
+          // 결과를 예단하지 않는다 — 이 계산은 실패하면 그대로 거리 추정으로 떨어져서
+          // 바로 다음 프레임에 `거리 추정` 이 뜬다. 앞 문장이 뒤 결과를 부정하면 안 된다.
+          // (경로 상세 시트의 로딩 문구와도 같은 원칙)
+          //
+          // ⚠️ 거리순도 이제 서버를 거치므로 이 자리를 지나간다(#52 후속). 그런데
+          //    거리순은 **경로를 계산하지 않는다** — 후보를 찾고 직선거리로 잴 뿐이다.
+          //    두 모드에 같은 문구를 쓰면 안 하는 일을 한다고 말하는 셈이다(CLAUDE.md §6).
+          <div className="v8-mapnote">{criteria === "time" ? "경로 계산 중…" : "중간지점 찾는 중…"}</div>
         ) : midpoint ? (
           <div className="v8-mapnote">
             📍 중간 추천 지역: <b>{midpoint.name}</b> · {midpoint.reason}
-            {criteria === "time" && (
-              <span className="faint">
-                {" · "}
-                {/* "키 없음"은 이제 원인 중 하나일 뿐이다 — 키가 있어도 프록시·터널이
-                    죽거나 ODsay 가 못 푸는 구간이면 거리 추정으로 떨어진다.
-                    원인을 단정하지 않고 "무엇을 보고 있는지"만 밝힌다. */}
-                {midLive ? "실 이동시간 기준" : "거리 추정으로 계산"}
-              </span>
-            )}
+            {/* ⚠️ 예전엔 이 표기가 `criteria === "time"` 안에만 있었다. 그래서 **거리순으로
+                보면 `reason` 이 "최대 42분 · 편차 12분"처럼 분 단위를 그대로 보여주면서
+                출처를 한 글자도 말하지 않았다.** 거리순은 정의상 외부 API를 안 부르는
+                100% 직선거리 추정이라(`recommendRegions`), 오히려 반드시 밝혀야 하는 쪽이다.
+                "키 없음"은 원인 중 하나일 뿐이라(프록시·터널·못 푸는 구간) 원인은 단정하지 않고
+                "무엇을 보고 있는지"만 밝힌다.
+
+                ⚠️ 문구에 **범위**를 붙인다 — 여기 `midLive` 는 목록 전체 판정("한 명이라도
+                폴백이면 false")인데 모임 상세 목록의 칩은 **사람 단위**다. 같은 두 단어가
+                층이 다른 것을 가리키면, 4명 중 1명만 실패했을 때 홈은 `거리 추정` 인데
+                상세는 3명이 `경로 기준` 이라 서로 반대 사실처럼 읽힌다. */}
+            <span className="faint">
+              {" · "}
+              {criteria !== "time" ? "거리 추정" : midLive ? "전원 경로 기준" : "일부 거리 추정"}
+            </span>
           </div>
         ) : null}
       </div>
@@ -852,7 +959,12 @@ export default function Home() {
 
           {votePhase < 2 && (
             <>
-              {/* 누구로 투표할까요? — 이 기기의 참가자 신원 (옵션에 현재 선택 표기) */}
+              {/* 누구로 투표할까요? — 이 기기의 참가자 신원 (옵션에 현재 선택 표기)
+                  ⚠️ **이 기기에 신원이 둘 이상일 때만 그린다.** 발표에서는 한 기기 =
+                     한 사람이라, 늘 떠 있으면 시연 화면이 테스트 도구처럼 보인다
+                     (2026-08-10 제보). 개발 중 여러 신원을 오가야 하면
+                     `.env.local` 에 `NEXT_PUBLIC_FF_DEBUG_TOOLS=1`. */}
+              {(voterIds.length > 1 || FLAGS.debugTools) && (
               <div>
                 <label className="label">누구로 투표할까요?</label>
                 <select
@@ -876,6 +988,7 @@ export default function Home() {
                   })}
                 </select>
               </div>
+              )}
 
               {/* 후보 리스트 */}
               <div className="stack" style={{ gap: 8 }}>
@@ -1029,9 +1142,26 @@ export default function Home() {
                           ● {ARRIVAL_LABEL[p.status]}{p.etaText ? ` · ${p.etaText}` : ""}
                         </span>
                       ) : per ? (
-                        <span className="chip line" style={{ fontSize: 10 }}>예상 {formatMinutes(per.min)}</span>
+                        // 여기도 출처를 밝힌다 — `per.real` 이 이미 이 스코프에 있는데
+                        // 예전엔 그냥 "예상 N분"이라 어디서 온 숫자인지 말하지 않았다.
+                        <span className="chip line" style={{ fontSize: 10 }}>
+                          {per.real === true ? "경로 기준" : "거리 추정"} {formatMinutes(per.min)}
+                        </span>
                       ) : (
-                        <span className="chip line" style={{ fontSize: 10 }}>상태 미입력</span>
+                        // 🔴 예전엔 `상태 미입력` 이었는데 **뜻이 다른 말**이다 — 그건
+                        //    "본인이 도착 상태를 안 남겼다"(`p.status`)는 뜻이고, 여기 오는
+                        //    경우는 **이동시간 자체가 없는** 것이다(2026-08-06 실측).
+                        //    거점 후보를 계산한 뒤에 출발지를 등록하면 `perParticipant` 에
+                        //    안 들어가고, 확정 후에는 다시 계산하지 않아 영영 빈다.
+                        //    모임 상세의 `TravelTimes` 도 같은 문구를 쓴다 — 두 화면이
+                        //    같은 상태를 다르게 부르면 안 된다.
+                        <span
+                          className="chip line"
+                          style={{ fontSize: 10 }}
+                          title="이 거점 후보를 계산한 뒤에 출발지가 등록돼서 이동시간이 빠져 있어요"
+                        >
+                          이동시간 없음
+                        </span>
                       )}
                     </div>
                   );
@@ -1113,6 +1243,57 @@ export default function Home() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── v19 §4-① 전환 고리: '이 출발지들로 모임 만들기' ──
+             홈은 "맛보기"다. 여기서 모임 생성으로 넘어가는 길이 없으면
+             홈과 모임이 따로 노는 앱이 된다(v19 가 이 버튼을 핵심으로 둔 이유).
+
+             ⚠️ 출발지 2곳 이상일 때만 뜬다 — 중간지점이 계산돼야 넘어갈 의미가 있다.
+             ⚠️ v5 의 '미배정 핑' 이관(홈 출발지를 모임에 넘겨 참여자가 자기 것을 고르는 것)은
+                아직 없다. 지금은 생성 폼으로 이동만 하고, 각자 참여할 때 출발지를 넣는다. */}
+      {/* ⚠️ **모임을 보고 있을 때는 뜨지 않는다.** 홈이 모임 모드일 때(위 투표 칸)
+             이 버튼이 같이 떠 있으면 "지금 보고 있는 모임"과 "새 모임 만들기"가
+             한 화면에서 경합한다 — 화면 아래를 늘 가리기도 한다(2026-08-10 제보).
+             홈이 '맛보기' 상태일 때만 나오는 전환 고리다 (v19 §4-①). */}
+      {!selectedMeeting && activeOrigins.length >= 2 && (
+        // ⚠️ 래퍼로 감싸고 pointer-events 를 껐다 켜지 말 것 — 클릭이 씹힌다(실측).
+        //    앵커 하나를 직접 fixed 로 둔다.
+        // ⚠️ `left:16; right:16` 으로 두면 **화면 전체 폭**으로 늘어난다 —
+        //    이 앱은 가운데 440px 로 세워진 폰 모양 껍데기(`.device`)라, 노트북·태블릿
+        //    처럼 넓은 화면에서 버튼만 껍데기 밖으로 튀어나온다(2026-08-10 실측).
+        //    `position:fixed` 는 껍데기가 아니라 뷰포트 기준이기 때문이다.
+        //    하단 네비(`.v8-bottomnav`)·방장 바(`.leaderbar`)가 쓰는 방식을 그대로 쓴다:
+        //    가운데 정렬 + 껍데기 폭(440) 안쪽으로 좌우 16px 여백.
+        <a
+          href="/meetings?open=create"
+          className="btn primary"
+          // ── v19 §4-① 인계 (2026-08-10) ──
+          //  예전엔 **이동만** 했다 — 방금 넣은 출발지도, 방금 본 중간지점도
+          //  전부 버리고 모임에서 처음부터 다시 넣어야 했다.
+          //  이제 첫 출발지(=내 것)와 중간지점을 넘긴다 (`lib/handoff.ts`).
+          //  ⚠️ 기본 이동은 막지 않는다 — 저장이 실패해도 생성 폼으로는 가야 한다.
+          onClick={() => {
+            const first = activeOrigins[0];
+            saveHandoff({
+              ...(first
+                ? { origin: { name: first.name, lat: first.lat, lng: first.lng, transport: first.transport } }
+                : {}),
+              ...(midpoint
+                ? { seed: { name: midpoint.name, lat: midpoint.lat, lng: midpoint.lng } }
+                : {}),
+            });
+          }}
+          style={{
+            position: "fixed", bottom: 78, zIndex: 60,
+            left: "50%", transform: "translateX(-50%)",
+            width: "calc(100% - 32px)", maxWidth: 408,
+            textDecoration: "none", textAlign: "center",
+            boxShadow: "0 4px 16px rgba(0,0,0,.18)",
+          }}
+        >
+          {midpoint ? `‘${midpoint.name}’ 로 모임 만들기` : "이 출발지들로 모임 만들기"}
+        </a>
       )}
 
       <BottomNav active="home" />

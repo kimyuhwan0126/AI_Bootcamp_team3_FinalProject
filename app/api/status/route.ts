@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { env, has } from "@/lib/env";
 import { probeAi } from "@/lib/ai";
 import { db, dbConfigured, dbUrlInfo } from "@/lib/db";
+import { redirectUriFor, originOfRequest } from "@/lib/kakao";
+import { FLAGS } from "@/lib/flags";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/status → 외부 API 키 설정 여부 + DB 실접속 + AI(Ollama) 실접속 상태
-export async function GET() {
+export async function GET(req: Request) {
   const ai = await probeAi();
 
   // URL이 있어도 스키마를 아직 안 만들었거나 프로젝트가 일시정지면 쓸 수 없다 —
@@ -60,7 +62,10 @@ export async function GET() {
     // 카카오 로그인이 실제로 보내는 Redirect URI — KOE006(등록되지 않은 URI)이
     // 뜨면 이 값을 developers.kakao.com 의 Redirect URI 목록과 글자 단위로
     // 대조하면 된다. URL이라 비밀이 아니며, 키 값은 여기 노출되지 않는다.
-    kakaoRedirect: env.kakaoRedirect,
+    // ⚠️ **지금 접속한 주소 기준**이다. 폰이 http://10.x.x.x:3000 으로 열면
+    //    그 주소의 콜백이 나온다 — LAN 시연에서 등록해야 할 값이 바로 이것이다.
+    kakaoRedirect: redirectUriFor(originOfRequest(req)),
+    kakaoRedirectEnv: env.kakaoRedirect,
     odsay: has.odsay,
     // ODsay 프록시 경유 설정 여부. **주소·비밀값은 싣지 않는다** — 터널 주소는
     // 반쯤 비밀이고, 공유 비밀은 완전한 비밀이다. 켜졌는지만 불리언으로 밝힌다.
@@ -85,5 +90,20 @@ export async function GET() {
       commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
     },
     ai, // { ok, active: "primary"|"fallback"|"none", model, url }
+    // ── 지금 켜진 기능 플래그 ─────────────────────────────────
+    //  `NEXT_PUBLIC_FF_*` 는 **빌드 시점에 문자열로 박힌다.** 그래서 배포된 것을
+    //  보고 "이 빌드가 무엇을 켜고 만들어졌는지" 알 방법이 밖에서는 없었다.
+    //  값이 아니라 **켜짐/꺼짐**만 싣는다(비밀이 아니고, 켜는 법은 문서에 있다).
+    //
+    //  스모크 테스트도 이 값을 보고 자기가 검사할 계약을 고른다 —
+    //  플래그를 켠 빌드에서만 도는 테스트가 있기 때문이다(.github/workflows/ci.yml).
+    flags: {
+      pingSnapStation: FLAGS.pingSnapStation,
+      pingSnapDong: FLAGS.pingSnapDong,
+      regionVoteStep: FLAGS.regionVoteStep,
+      joinGate: FLAGS.joinGate,
+      autoRegions: FLAGS.autoRegions,
+      aiChat: FLAGS.aiChat,
+    },
   });
 }

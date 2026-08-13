@@ -14,17 +14,46 @@ import {
   castVote,
   setRegionCandidates,
   addRegionCandidate,
+  removeRegionCandidate,
   setParticipantStatus,
   updatePrefs,
   getState,
+  promoteToPlace,
+  startVote,
+  reopenStep,
+  revote,
+  addPlaceCandidate,
+  removePlaceCandidate,
+  expandRadius,
+  recoverParticipant,
+  kickParticipant,
+  deleteMeeting,
+  setMeetTime,
+  recreateMeeting,
+  applyAiCandidates,
+  saveCandidates,
+  getMeeting,
+  setAiBusy,
 } from "@/lib/store";
+import { MAX_PARTICIPANTS, PURPOSE_LABELS } from "@/lib/types";
+import type { PurposeCategory } from "@/lib/types";
+
+/**
+ * 요청 본문의 목적 카테고리를 좁은 타입으로. 모르는 값이면 null.
+ * (`any` 를 쓰지 않고 unknown 을 가드로 좁힌다 — CLAUDE.md §3-3)
+ */
+function toPurposeCategory(v: unknown): PurposeCategory | null {
+  return typeof v === "string" && v in PURPOSE_LABELS ? (v as PurposeCategory) : null;
+}
 import {
   resolveGeocode,
   recommendRegions,
-  recommendPlaces,
   scoreRegionForParticipants,
 } from "@/lib/routing";
 import { runAiTurn } from "@/lib/ai";
+import { FLAGS } from "@/lib/flags";
+import { snapPing } from "@/lib/station-snap";
+import { aiRegionVote, aiPlaceVote } from "@/lib/ai-vote";
 
 // 인메모리 스토어를 쓰므로 항상 동적 처리 (캐시 금지)
 export const dynamic = "force-dynamic";
@@ -89,25 +118,210 @@ async function handlePost(req: NextRequest) {
 
   switch (action) {
     case "create": {
-      if (!body.name || !body.password)
-        return NextResponse.json({ error: "모임이름과 비밀번호를 입력하세요." }, { status: 400 });
+      // v2: 비밀번호 폐기 — 이름만 있으면 만들 수 있다(참여는 초대 링크로만).
+      if (!body.name)
+        return NextResponse.json({ error: "모임 이름을 입력하세요." }, { status: 400 });
       const { code, leaderId } = await createMeeting({
         name: String(body.name).trim(),
-        password: String(body.password),
-        headcount: Number(body.headcount) || 4,
+        password: String(body.password ?? ""),
+        headcount: Number(body.headcount) || MAX_PARTICIPANTS,
         leaderName: String(body.leaderName || "방장").trim(),
+        // ── v19 생성 폼 ──
+        scope: body.scope === "region" ? "region" : "place",
+        purposeCategory: toPurposeCategory(body.purposeCategory),
+        meetTime: body.meetTime ? String(body.meetTime) : null,
+        leaderTransport: body.transport === "car" ? "car" : "transit",
+        leaderKakaoId: body.kakaoId ? String(body.kakaoId) : null,
       });
       return NextResponse.json({ ok: true, code, participantId: leaderId, isLeader: true });
     }
     case "join": {
       const r = await joinMeeting({
         code: String(body.code || "").toUpperCase(),
-        password: String(body.password || ""),
         name: String(body.name || "").trim(),
         headcount: Number(body.headcount) || 1,
+        // ── v19 ── PIN 은 비로그인만, 로그인이면 kakaoId 로 식별한다 (v15)
+        pin: body.pin ? String(body.pin) : null,
+        kakaoId: body.kakaoId ? String(body.kakaoId) : null,
+        transport: body.transport === "car" ? "car" : "transit",
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, code: String(body.code).toUpperCase(), participantId: r.participantId, isLeader: false });
+    }
+    // v15·v16: 이름 + PIN 으로 자기 자리 되찾기 (비로그인 전용 · 5회 제한)
+    case "recover": {
+      const r = await recoverParticipant({
+        code: String(body.code || "").toUpperCase(),
+        name: String(body.name || "").trim(),
+        pin: String(body.pin || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({
+        ok: true,
+        code: String(body.code).toUpperCase(),
+        participantId: r.participantId,
+        isLeader: !!r.isLeader,
+      });
+    }
+    // v10: 방장 강퇴 — 그 사람 핑·표 삭제, 재참여는 허용
+    case "kick": {
+      const r = await kickParticipant({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        targetId: String(body.targetId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+    // v10: 방장 모임 삭제 — 확인 팝업은 화면이 띄운다
+    case "deleteMeeting": {
+      const r = await deleteMeeting({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+    // v7·v10: 지점 후보 등록 — 전원 가능 · 상한 없음 · 반경 밖은 서버가 거부
+    case "addPlace": {
+      const r = await addPlaceCandidate({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        place: {
+          name: String(body.name || "").trim(),
+          category: String(body.category || "장소"),
+          emoji: body.emoji ? String(body.emoji) : undefined,
+          lat: Number(body.lat),
+          lng: Number(body.lng),
+          rating: Number(body.rating) || 0,
+          url: body.url ? String(body.url) : undefined,
+        },
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, candidate: r.candidate, existing: !!r.existing });
+    }
+    // v19 §7: 지역 후보 삭제 — 방장은 임의 후보, 본인은 자기 후보만
+    case "removeRegion": {
+      const r = await removeRegionCandidate({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        regionId: String(body.regionId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, removed: !!r.removed });
+    }
+    // v7: 방장은 임의 후보, 본인은 자기 후보만 삭제
+    case "removePlace": {
+      const r = await removePlaceCandidate({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        placeId: String(body.placeId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+    // v15: 반경 확장 700→1400m · 1회 한정 · 누구나 · 전체 공유
+    case "expandRadius": {
+      const r = await expandRadius({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, radiusM: r.radiusM });
+    }
+    // ── v19 §8: AI 추천 — **방장 opt-in 버튼 하나뿐. 안 누르면 0원.** ──
+    //  💰 Ollama Cloud(GLM 5.2) 호출이다. NEXT_PUBLIC_FF_AI_VOTE=1 일 때만 열린다.
+    //  후보 등록 단계에서만 되고(v8), 재호출은 무제한이되 교체/추가를 고른다(v14).
+    case "aiRecommend": {
+      if (process.env.NEXT_PUBLIC_FF_AI_VOTE !== "1")
+        return NextResponse.json({ error: "AI 추천이 꺼져 있어요 (NEXT_PUBLIC_FF_AI_VOTE=1)." }, { status: 403 });
+
+      const code = String(body.code || "").toUpperCase();
+      const participantId = String(body.participantId || "");
+      const mode: "replace" | "append" = body.mode === "append" ? "append" : "replace";
+
+      const m = await getMeeting(code);
+      if (!m) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const leader = m.participants.find((p) => p.id === participantId);
+      if (!leader?.isLeader)
+        return NextResponse.json({ error: "AI 추천은 방장만 쓸 수 있어요." }, { status: 400 });
+
+      const wantRegion = m.stage === "main" && m.aiPhase === "region";
+      const wantPlace = m.aiPhase === "place" && !m.placeVoteOpen;
+      if (!wantRegion && !wantPlace)
+        return NextResponse.json({ error: "후보 등록 단계에서만 AI 추천을 쓸 수 있어요." }, { status: 400 });
+
+      // 로딩 표시는 방장 화면에만 뜬다 — aiBusy 는 폴링으로 전원에게 가지만
+      // 화면이 `isLeader` 일 때만 그린다 (v19 §8).
+      setAiBusy(code, true);
+      try {
+        const purposeText = m.purposeCategory ? PURPOSE_LABELS[m.purposeCategory] : (m.prefs.purpose ?? "");
+        if (wantRegion) {
+          const r = await aiRegionVote(code, m.participants, purposeText, false, true /* ECO 원콜 */);
+          if ("error" in r) return NextResponse.json({ error: r.error }, { status: 400 });
+          // v9: 실패하면 토스트 + 재시도다. 강등 결과를 후보로 밀어 넣지 않는다 —
+          //     "AI 가 골라줬다"고 말할 수 없는 것을 AI 후보로 앉히면 거짓말이 된다.
+          if (r.degraded)
+            return NextResponse.json({ error: "AI 추천에 실패했어요. 다시 시도하거나 직접 후보를 등록해 주세요." }, { status: 502 });
+          const applied = await applyAiCandidates({ code, participantId, mode, regions: r.items.slice(0, 3) });
+          if (!applied.ok) return NextResponse.json({ error: applied.error }, { status: 400 });
+          return NextResponse.json({ ...applied, ms: r.ms });
+        }
+        const region = m.regions.find((x) => x.id === m.winnerRegionId);
+        if (!region) return NextResponse.json({ error: "확정된 지역이 없어요." }, { status: 400 });
+        const r = await aiPlaceVote(code, { name: region.name, lat: region.lat, lng: region.lng }, purposeText, m.participants.length, false, true);
+        if ("error" in r) return NextResponse.json({ error: r.error }, { status: 400 });
+        if (r.degraded)
+          return NextResponse.json({ error: "AI 추천에 실패했어요. 다시 시도하거나 직접 후보를 등록해 주세요." }, { status: 502 });
+        const applied = await applyAiCandidates({ code, participantId, mode, places: r.places.slice(0, 3) });
+        if (!applied.ok) return NextResponse.json({ error: applied.error }, { status: 400 });
+        return NextResponse.json({ ...applied, ms: r.ms });
+      } finally {
+        // v17: 실행이 끝나면(성공·실패·취소 무관) 반드시 로딩을 내린다
+        setAiBusy(code, false);
+      }
+    }
+
+    // v5·v8: 투표 시작 = 후보 잠금. 후보 0개면 거부, 1개면 투표를 생략한다.
+    case "startVote": {
+      const r = await startVote({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, skipped: !!r.skipped, onlyCandidateId: r.onlyCandidateId ?? null });
+    }
+    // v10: reopen 사다리 — 누를 때마다 한 칸씩 되돌린다. 표는 유지된다.
+    case "reopenStep": {
+      const r = await reopenStep({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, step: r.step });
+    }
+
+    // ── 방장: 재투표 — **후보는 그대로, 표만 초기화** ─────────────
+    //  `reopenStep`(되돌리기)과 정반대다: 되돌리기는 단계를 내리고 표를 지키고,
+    //  재투표는 투표 칸에 머물며 표를 지운다. 1차 순서도 4번의
+    //  `동점? → 재량 또는 **재투표**` 갈래이자, 멘토링 8/6 §3 의
+    //  "투표 마음에 안 들면 재투표"(결과 화면 흡수 장치)다.
+    case "revote": {
+      const r = await revote({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, step: r.step, cleared: r.cleared });
+    }
+    // v11: '지점도 정하기' 승격 — '지역까지' 모임을 '지점까지'로. 역방향 없음.
+    case "promoteToPlace": {
+      const r = await promoteToPlace({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true });
     }
     case "origin": {
       const origin = String(body.origin || "").trim();
@@ -129,18 +343,88 @@ async function handlePost(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ── 거점 후보 계산 (단계 전환 없음) ──
-    //  메인 화면에서 바로 거점 투표를 하기 위해, 출발지가 등록될 때마다
-    //  클라이언트가 이 액션으로 후보를 갱신한다.
+    // ── 지역 후보 **지표 갱신** (단계 전환 없음) ────────────────
+    //  출발지 구성이 바뀔 때마다 클라이언트(방장 화면 한 대)가 부른다.
+    //
+    //  ⚠️ 이름이 "regions" 라 후보를 만드는 것처럼 보이지만, 기본 동작은
+    //     **이미 있는 후보의 이동시간·편차를 다시 계산하는 것**뿐이다.
+    //
+    //  2026-08-10 (멘토링 8/6 §2 반영): 예전엔 여기서 `recommendRegions` 로
+    //  후보 3곳을 **자동으로 깔았다.** 그래서
+    //    · 아무도 핑을 안 찍어도 후보가 항상 3개 → 이 앱에서 가장 중요한 기능인
+    //      핑이 화면의 주인공이 아니게 됐고,
+    //    · `candidateGate` 의 "0개 = 투표 시작 불가"(v19 §5)가 한 번도 실행되지 않았다.
+    //  이제 후보는 **사람 핑** 과 **방장의 `suggestRegions` 버튼**으로만 생긴다.
+    //  옛 동작이 필요하면 `.env.local` 에 `NEXT_PUBLIC_FF_AUTO_REGIONS=1`.
     case "regions": {
       const st = await getState(body.code);
       if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
       if (st.participants.filter((p: any) => p.lat != null).length === 0)
         return NextResponse.json({ ok: true, regions: [] });
-      const regions = await recommendRegions(st.participants as any);
-      const r = await setRegionCandidates(body.code, regions);
+      const regions = FLAGS.autoRegions ? await recommendRegions(st.participants as any) : [];
+
+      // 사람이 찍은 핑(rc_*)·AI 후보(ra_*)의 지표를 갱신한다.
+      //  자동 후보만 다시 계산하면, 나중에 합류한 사람은 핑 후보에서 빠진 채로
+      //  남아 결과 화면까지 "이동시간 없음"으로 간다 — 지도 핑으로 정한 모임이
+      //  딱 그 경우다.
+      //  💰 이동시간 호출이 늘지만, 성공값이 (출발지,목적지,수단) 단위로 캐시되므로
+      //     실제로 새로 나가는 콜은 **바뀐 사람 몫뿐**이다. 이 액션 자체가
+      //     출발지 구성이 바뀔 때만 호출된다(클라이언트 originSig 가드).
+      const kept = st.regions.filter((x) => x.id.startsWith("rc_") || x.id.startsWith("ra_"));
+      const refreshed = await Promise.all(
+        kept.map(async (x) => {
+          const s = await scoreRegionForParticipants({ lat: x.lat, lng: x.lng }, st.participants as never);
+          return {
+            ...x,
+            maxMin: s.maxMin,
+            devMin: s.devMin,
+            perParticipant: s.perParticipant,
+            // 설명 문구에 숫자가 박혀 있다 — 같이 안 고치면 목록과 설명이 다른 값을 말한다
+            reason: x.proposedBy
+              ? `${x.proposedBy} 님 제안 — 최대 ${s.maxMin}분 · 편차 ${s.devMin}분`
+              : x.reason,
+          };
+        })
+      );
+
+      const r = await setRegionCandidates(body.code, [...regions, ...refreshed]);
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, regions });
+    }
+
+    // ── 방장: 추천 지역 3곳을 후보에 올린다 (버튼) ───────────────
+    //  멘토링 2026-08-06 §2: "방장은 **AI 추천 버튼으로** 지역 후보를 추가할 수 있음
+    //  (참여자는 조회만)". 자동으로 깔던 것을 그대로 **버튼 뒤로** 옮긴 것이다.
+    //
+    //  `aiRecommend`(LLM · Ollama Cloud)와 다른 액션인 이유:
+    //   · 이건 `lib/scoring` 점수 계산이라 **LLM 을 안 부른다** → 플래그·토큰비 없음
+    //   · `NEXT_PUBLIC_FF_AI_VOTE` 가 꺼져 있어도 방장에게 추천 수단이 있어야 한다
+    //     (그 플래그가 꺼진 채 자동 채움만 돌아서 "AI 추천 버튼이 어디 있냐"는
+    //      제보가 나왔다 — 2026-08-10)
+    //
+    //  권한·단계·병합·표 정리는 전부 `applyAiCandidates` 가 이미 갖고 있다
+    //  (방장만 · 등록 단계만 · 같은 이름은 병합 · replace 는 순수 추천 후보만 제거).
+    //  💰 이동시간 API 를 쓰지만 **자동 호출이던 것을 버튼으로 바꾼 것**이라
+    //     호출 총량은 오히려 줄어든다.
+    case "suggestRegions": {
+      const st = await getState(body.code);
+      if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      if (st.participants.filter((p: any) => p.lat != null).length === 0)
+        return NextResponse.json(
+          { error: "출발지가 하나도 없어요 — 먼저 출발지를 등록해 주세요." },
+          { status: 400 }
+        );
+      const suggested = await recommendRegions(st.participants as any);
+      if (suggested.length === 0)
+        return NextResponse.json({ error: "추천할 지역을 찾지 못했어요." }, { status: 400 });
+      const r = await applyAiCandidates({
+        code: body.code,
+        participantId: String(body.participantId ?? ""),
+        mode: body.mode === "append" ? "append" : "replace",
+        regions: suggested,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, added: r.added, merged: r.merged });
     }
 
     // ── 후보 직접 등록 (방장 포함 누구나) ──
@@ -152,12 +436,27 @@ async function handlePost(req: NextRequest) {
       const me = st.participants.find((p) => p.id === body.participantId);
       if (!me) return NextResponse.json({ error: "참가자를 찾을 수 없어요." }, { status: 400 });
 
-      const name = String(body.name || "").trim();
-      if (!name) return NextResponse.json({ error: "지역 이름이 비었어요." }, { status: 400 });
-
-      // 좌표는 지도 검색 결과에서 그대로 받는다(없으면 이름으로 지오코딩)
+      // ── v19 §4-⑥ 지도 핑 ──
+      //  이름 없이 좌표만 오면(=지도를 탭한 경우) **무언가로 스냅**한다.
+      //  같은 곳은 하나로 병합돼야 해서(v4), 좌표 그대로 두면 3m 옆에 찍은 핑이
+      //  서로 다른 후보가 되고 투표가 갈라진다.
+      //
+      //  무엇으로 묶을지(지하철역 / 시·군·구 / 좌표)는 **`lib/station-snap.ts` 가**
+      //  플래그와 폴백 사슬을 보고 정한다. 여기서는 결과만 받는다 —
+      //  `snapPing` 은 실패하지 않는다(마지막 칸이 좌표 이름이라 항상 값이 나온다).
       const hasCoord = typeof body.lat === "number" && typeof body.lng === "number";
-      const hub = hasCoord ? { lat: body.lat as number, lng: body.lng as number } : await resolveGeocode(name);
+      let name = String(body.name || "").trim();
+      let hub: { lat: number; lng: number };
+
+      if (!name && hasCoord) {
+        const snapped = await snapPing({ lat: body.lat as number, lng: body.lng as number });
+        name = snapped.name;
+        hub = { lat: snapped.lat, lng: snapped.lng };
+      } else {
+        if (!name) return NextResponse.json({ error: "지역 이름이 비었어요." }, { status: 400 });
+        // 좌표는 지도 검색 결과에서 그대로 받는다(없으면 이름으로 지오코딩)
+        hub = hasCoord ? { lat: body.lat as number, lng: body.lng as number } : await resolveGeocode(name);
+      }
 
       // 출발지를 등록한 사람이 아무도 없으면 이동시간을 계산할 수 없다 —
       // 그래도 후보로는 올릴 수 있게 0으로 두고, 출발지가 모이면 재계산된다.
@@ -174,6 +473,8 @@ async function handlePost(req: NextRequest) {
         devMin,
         perParticipant,
         proposedBy: me.name,
+        // v4: 핑은 인원당 1개 — 누가 찍었는지 알아야 병합·이동·이탈이 계산된다
+        participantId: me.id,
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true, candidate: r.candidate, existing: r.existing ?? false });
@@ -193,15 +494,35 @@ async function handlePost(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ── 모임 시간(확정용) 저장 — 피그마: 최종 확정 화면의 입력 ──
+    // ── v2·v16: 모임 시간 — 생성 폼 입력이 원칙이고 여기선 변경만. 과거 불가. ──
+    //  `time` 은 사람이 쓴 자유 문구(예: "이번 주 토요일 저녁 7시")라 표시용으로만 남기고,
+    //  실제 판정(D-day · 신호등 당일 · 지난 모임)은 ISO 값 `meetTime` 이 맡는다.
     case "meetTime": {
-      const st = await getState(body.code);
-      if (!st) return NextResponse.json({ error: "not_found" }, { status: 404 });
-      const me = st.participants.find((p: any) => p.id === body.participantId);
-      if (!me?.isLeader) return NextResponse.json({ error: "방장만 시간을 정할 수 있어요." }, { status: 400 });
-      const r = await updatePrefs(String(body.code).toUpperCase(), { timeText: String(body.time || "").trim().slice(0, 40) });
-      if (!r.ok) return NextResponse.json({ error: "저장 실패" }, { status: 400 });
-      return NextResponse.json({ ok: true });
+      const r = await setMeetTime({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        meetTime: body.meetTime ? String(body.meetTime) : null,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      // 자유 문구도 같이 왔으면 표시용으로 보관한다 (기존 동작 유지)
+      if (body.time !== undefined) {
+        await updatePrefs(String(body.code).toUpperCase(), {
+          timeText: String(body.time || "").trim().slice(0, 40),
+        });
+      }
+      return NextResponse.json({ ok: true, meetTime: r.meetTime });
+    }
+
+    // ── v18: '이 멤버로 재모임 만들기' — 방장만. 로그인 멤버만 자동 이전(v17) ──
+    case "recreate": {
+      const r = await recreateMeeting({
+        code: String(body.code || "").toUpperCase(),
+        participantId: String(body.participantId || ""),
+        name: body.name ? String(body.name) : undefined,
+        meetTime: body.meetTime ? String(body.meetTime) : null,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+      return NextResponse.json({ ok: true, code: r.code, participantId: r.leaderId, carried: r.carried });
     }
 
     // ── 참가자 자가신고 도착 상태 — 본인 항목만 수정 가능(회의록) ──
@@ -212,6 +533,7 @@ async function handlePost(req: NextRequest) {
         participantId: String(body.participantId || ""),
         status,
         etaText: body.etaText !== undefined ? String(body.etaText ?? "") : undefined,
+        lateMin: body.lateMin !== undefined ? Number(body.lateMin) : undefined,
       });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
       return NextResponse.json({ ok: true });
@@ -260,17 +582,42 @@ async function handlePost(req: NextRequest) {
       if (body.target === "place") {
         r = await confirmPlace({ code: body.code, placeId: String(body.id), by: "leader" });
       } else {
-        // 지역 수동 확정 시에도 실제 가게를 검색해 주입 (실패 시 mock 폴백)
-        const region = st.regions.find((x: any) => x.id === String(body.id));
-        const real = region
-          ? await recommendPlaces(region.name, { lat: region.lat, lng: region.lng })
-          : undefined;
-        r = await confirmRegion(
-          { code: body.code, regionId: String(body.id), by: "leader" },
-          { places: real }
-        );
+        // ⚠️ v19 §4-⑧: 지역을 확정해도 **지점 후보를 미리 주입하지 않는다.**
+        //    후보는 사람이 미리보기 핀을 탭해서 만든다(`addPlace`) — 미리 담아두면
+        //    "후보 0개면 투표 시작 불가"(v8) 규칙이 영영 안 걸린다.
+        //    미리보기 목록은 `/api/place-poi` 가 따로 내려준다.
+        //    (AI 지점 추천만 예외적으로 후보를 공급한다 — 방장 버튼)
+        r = await confirmRegion({ code: body.code, regionId: String(body.id), by: "leader" });
       }
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+
+      // ── 확정된 지역의 이동시간을 **여기서 다시 계산한다** (v19 §4-⑥) ──
+      //  v19 는 "후보에 이동시간을 표시하지 않는다. 경로 API 는 최종 확정 후에만
+      //  쓴다" 고 못박았다. 결과 화면이 쓰는 숫자는 **확정 시점 인원 전체**여야 한다.
+      //
+      //  ⚠️ 이걸 안 하면 늦게 합류한 사람이 결과 화면에서 "이동시간 없음" 으로 남는다.
+      //     후보를 계산한 뒤에 들어온 사람은 그 후보의 `perParticipant` 에 없고,
+      //     등록 단계의 자동 재계산은 **투표 시작으로 잠기기 전에** 끝나야 하는데
+      //     4인분 경로 계산이 그보다 오래 걸려 자주 놓친다(2026-08-10 실측: 8초 초과).
+      //     확정은 단 한 번, 후보도 하나뿐이라 여기서 채우는 게 가장 싸고 확실하다.
+      //  💰 후보 1곳 × 인원수만큼만 호출한다. 캐시가 있어 대개는 이미 받아 둔 값이다.
+      if (body.target !== "place") {
+        const after = await getState(body.code);
+        const win = after?.regions.find((x) => x.id === String(body.id));
+        if (after && win) {
+          const sc = await scoreRegionForParticipants(
+            { lat: win.lat, lng: win.lng },
+            after.participants as never
+          );
+          await saveCandidates(String(body.code).toUpperCase(), {
+            regions: after.regions.map((x) =>
+              x.id === win.id
+                ? { ...x, maxMin: sc.maxMin, devMin: sc.devMin, perParticipant: sc.perParticipant }
+                : x
+            ),
+          });
+        }
+      }
       return NextResponse.json({ ok: true });
     }
 

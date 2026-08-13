@@ -5,6 +5,10 @@
 export const env = {
   kakaoRest: process.env.KAKAO_REST_API_KEY || "",
   kakaoJs: process.env.NEXT_PUBLIC_KAKAO_JS_KEY || "",
+  // ⚠️ 기본값의 포트는 **dev 포트와 같아야 한다**. 카카오는 redirect_uri 를 글자
+  //    단위로 비교하므로 포트가 하나만 달라도 로그인을 거부한다.
+  //    dev 포트는 3000 이다 (package.json: next dev -p 3000).
+  //    LAN 시연에서는 이 값을 http://<노트북IP>:3000/... 로 채운다 (docs/발표_로컬시연.md).
   kakaoRedirect: process.env.KAKAO_REDIRECT_URI || "http://localhost:3000/api/auth/kakao/callback",
   odsay: process.env.ODSAY_API_KEY || "",
   tmap: process.env.TMAP_APP_KEY || "",

@@ -28,6 +28,15 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+#  개발 서버를 파일로 돌릴 때 생기는 로그(dev-3000.log 등). 루트에 떨어져
+#  위 규칙에 안 걸린다 — 요청 경로·좌표·오류가 그대로 남으므로 공개 저장소에
+#  올라가면 안 된다.
+dev-*.log
+*.log
+
+# API 응답 캐시 (자체 서버 디스크) — lib/cache-store.ts
+#  기기마다 내용이 다르고 TTL 로 만료되는 임시 데이터다. 커밋 대상이 아니다.
+/.cache/
 
 # local env files
 #  ⚠️ `.env*.local` 만으로는 부족하다 — Next.js 는 `.env` 와 `.env.production` 도 읽는다.
@@ -48,3 +57,11 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# AI 검증 실험 하네스 (Ollama 키 하드코딩 — 커밋 금지)
+/_*.mjs
+/_*.json
+/_w*.log
+
+# 시연영상 촬영 산출물 (scripts/demo-record.mjs) — 용량이 크고 매번 다시 찍는다
+/demo/

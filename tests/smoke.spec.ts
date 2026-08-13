@@ -48,11 +48,31 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
+/**
+ * '투표 시작'. **통합 모드의 지역에는 이 절차가 아예 없다** (멘토링 2026-08-06 §2) —
+ * 핑이 곧 표라 잠글 것이 없고, 서버가 거부하는 게 **정상**이다.
+ *
+ * 아래 테스트 대부분은 이 액션 자체를 검사하려는 게 아니라 **다음 칸으로 넘어가려고**
+ * 부른다. 그래서 그 거부만 조용히 넘긴다 — 다른 실패는 그대로 터뜨린다.
+ * (지점에는 여전히 '투표 시작'이 있으므로 그 경로는 그대로 검사된다)
+ */
+async function startVoteIfAny(request: APIRequestContext, code: string, leaderId: string) {
+  const r = await request.post("/api/meeting", {
+    data: { action: "startVote", code, participantId: leaderId },
+  });
+  if (r.ok()) return;
+  const err = (await r.json())?.error ?? "";
+  if (/핑이 곧 표/.test(err)) return; // 통합 모드의 지역 — 넘길 절차가 없다
+  throw new Error(`startVote 실패: ${err}`);
+}
+
 test("홈 화면이 실제로 그려진다", async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto("/");
-  // 하단 네비게이션 5탭 — 이게 안 보이면 셸이 안 그려진 것
-  for (const tab of ["홈", "모임", "투표함", "모임원", "내정보"]) {
+  // 하단 네비게이션 **3탭** — 이게 안 보이면 셸이 안 그려진 것.
+  // v6 에서 5 → 3 으로 줄었다: '투표함'·'모임원'은 모임 탭으로 통합됐다
+  // (설계_v19.md §4-②). 탭이 3개인지는 tests/v19-flow.spec.ts 가 따로 지킨다.
+  for (const tab of ["홈", "모임", "내정보"]) {
     await expect(page.getByRole("link", { name: new RegExp(tab) }).first()).toBeVisible();
   }
   expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
@@ -99,7 +119,13 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   await page.getByRole("button", { name: /출발지 등록|출발지 수정/ }).click();
   await expect(page.getByText("출발지를 등록했어요")).toBeVisible();
 
-  const regions = await act(request, { action: "regions", code });
+  // 지역 후보를 만든다 — **방장 추천 버튼**(v19 §8)의 서버 액션이다.
+  //  ⚠️ 예전엔 `{action:"regions"}` 만으로 후보가 생겼다. 2026-08-10 자동 채움을
+  //     걷어내면서(멘토링 8/6 §2) 그 액션은 지표만 갱신하고, 후보는 **사람 핑**
+  //     이나 **방장 버튼**으로만 생긴다.
+  await act(request, { action: "suggestRegions", code, participantId: leaderId, mode: "replace" });
+  const seeded = await (await request.get(`/api/meeting?code=${code}`)).json();
+  const regions = { regions: seeded.regions as { id: string; name: string }[] };
   expect(regions.regions.length, "거점 후보가 하나도 안 나왔다").toBeGreaterThan(0);
 
   await expect(page.getByText("스모크 모임").first()).toBeVisible();
@@ -111,21 +137,26 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   // 1순위 거점이 화면에 그려져야 한다
   const topRegion: string = regions.regions[0].name;
   await expect(page.getByText(topRegion).filter({ visible: true }).first()).toBeVisible();
-  // 방장 확정 바가 투표 진행 상황을 말해야 한다
-  await expect(page.getByText(/\d+\/\d+명 투표/).first()).toBeVisible();
+  // 지역 칸의 칩은 **후보 개수**를 말한다. 통합 모드에선 "몇 명이 찍었나"까지 함께
+  // 말하므로(`n/N명 · 후보 n/5`) 공통부인 `후보 n/` 로 찾는다.
+  await expect(page.getByText(/후보 \d+\/\d+|후보 \d+개/).first()).toBeVisible();
   // 화면이 통째로 비지 않았는지 — 버튼이 하나도 없으면 미렌더다
   expect(await page.getByRole("button").count(), "버튼이 하나도 없다 = 화면 미렌더").toBeGreaterThan(0);
 
-  // ── 3. 투표가 서버에 실제로 기록되는지 ──
-  await act(request, {
-    action: "vote",
-    code,
-    participantId: leaderId,
-    target: "region",
-    candidateId: regions.regions[0].id,
-  });
-  const afterVote = await (await request.get(`/api/meeting?code=${code}`)).json();
-  expect(afterVote.regionVotes[leaderId]).toBe(regions.regions[0].id);
+  // ── 3. 지역은 **핑이 곧 표**다 (멘토링 2026-08-06 §2) ──
+  //  통합 모드(기본)에는 '투표 시작'도 별도 투표 칸도 없다. 참여자가 지도를 누르면
+  //  그게 한 표고, 많이 찍힌 곳이 1위다. 방장은 전원을 기다리지 않고 확정할 수 있다.
+  //  ⚠️ 옛 2단계(`NEXT_PUBLIC_FF_REGION_VOTE_STEP=1`)에서는 여기서 잠금이 일어난다 —
+  //     `startVoteIfAny` 가 두 모드를 모두 통과시킨다.
+  await startVoteIfAny(request, code, leaderId);
+
+  // 참가자2 가 지도를 눌러 한 표를 던진다 (핑 = 표)
+  await act(request, { action: "addRegion", code, participantId: memberId, lat: 37.5665, lng: 126.978 });
+  const afterPing = await (await request.get(`/api/meeting?code=${code}`)).json();
+  const mine = afterPing.regions.find((r: { contributors?: string[] }) =>
+    (r.contributors ?? []).includes(memberId)
+  );
+  expect(mine, "지도를 눌렀는데 내 표가 어디에도 없다").toBeTruthy();
 
   // ── 4. 방장 확정 → result 단계 ──
   await act(request, {
@@ -142,10 +173,38 @@ test("모임 생성 → 출발지 → 거점 투표 → 확정", async ({ page, 
   await page.reload();
   await expect(page.getByText(topRegion).filter({ visible: true }).first()).toBeVisible();
 
-  // ── 5. 가게까지 확정 → 최종 결과 화면 ──
+  // ── 5. 지점 후보 등록 → 투표 시작 → 확정 → 최종 결과 화면 ──
   //  발표에서 마지막으로 보여주는 화면이라 여기까지 와야 데모 경로가 끝난다.
-  expect(afterConfirm.places?.length, "거점 확정 후 가게 후보가 안 만들어졌다").toBeGreaterThan(0);
-  const topPlace = afterConfirm.places[0];
+  //
+  //  ⚠️ v19: 지역을 확정해도 **지점 후보는 비어 있다.** 시스템이 후보를 미리
+  //     담지 않고, 사람이 미리보기 핀을 탭해서 등록한다(§4-⑧).
+  //     예전엔 confirmRegion 이 generatePlaces() 로 4개를 미리 넣었다.
+  expect(afterConfirm.places?.length ?? 0, "지점 후보는 확정 직후 비어 있어야 한다").toBe(0);
+  expect(afterConfirm.radiusM, "지점 반경은 700m 에서 시작한다").toBe(700);
+
+  // 미리보기 POI 를 받아 그중 하나를 후보로 등록한다 (화면의 '탭' 에 해당)
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  expect(poi.items?.length, "반경 안에 미리보기 POI 가 하나도 없다").toBeGreaterThan(0);
+  const pick = poi.items[0];
+  const added = await act(request, {
+    action: "addPlace",
+    code,
+    participantId: leaderId,
+    name: pick.name,
+    category: pick.category,
+    emoji: pick.emoji,
+    lat: pick.lat,
+    lng: pick.lng,
+    url: pick.url,
+  });
+  const topPlace = added.candidate;
+  expect(topPlace?.id, "지점 후보 등록이 실패했다").toBeTruthy();
+
+  // 후보가 1개면 v8 규칙상 투표를 생략하고 방장이 바로 확정한다
+  //  ⚠️ **지점**에는 '투표 시작'이 그대로 있다 — 통합된 것은 지역뿐이다.
+  const started = await act(request, { action: "startVote", code, participantId: leaderId });
+  expect(started.skipped, "후보 1개면 투표를 생략해야 한다").toBe(true);
+
   await act(request, {
     action: "confirmManual",
     code,

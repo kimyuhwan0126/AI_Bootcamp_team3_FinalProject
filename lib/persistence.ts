@@ -16,7 +16,18 @@
 //    meetings(code) · participants(id) · votes(code,target,participant_id)=1인1표
 // ─────────────────────────────────────────────────────────────
 import { db } from "./db";
-import type { Meeting, Participant, Transport, ArrivalSelfStatus } from "./types";
+import type {
+  Meeting, Participant, Transport, ArrivalSelfStatus, PurposeCategory,
+} from "./types";
+import { PURPOSE_LABELS } from "./types";
+
+/**
+ * DB 의 목적 카테고리 문자열을 좁은 타입으로. 모르는 값이면 null.
+ * (컬럼이 text 라 어떤 문자열이든 들어올 수 있다 — `as` 로 우겨넣지 않는다)
+ */
+function toPurpose(v: string | null | undefined): PurposeCategory | null {
+  return v && v in PURPOSE_LABELS ? (v as PurposeCategory) : null;
+}
 
 // ── 행 타입 (스키마와 1:1) ──
 interface MeetingRow {
@@ -35,6 +46,17 @@ interface MeetingRow {
   prefs: unknown;
   reservation: unknown;
   created_at: string | Date;
+  updated_at?: string | Date | null;
+  // ── v19 (001_v19_설계정렬.sql) ──
+  // 마이그레이션을 아직 안 돌린 DB 도 있을 수 있어 전부 optional 로 읽고
+  // 아래 매핑에서 기본값을 채운다 — 컬럼이 없으면 undefined 로 온다.
+  scope?: string | null;
+  purpose_category?: string | null;
+  meet_time?: string | Date | null;
+  place_vote_open?: boolean | null;
+  radius_m?: number | null;
+  stashed_places?: unknown;
+  archived_at?: string | Date | null;
 }
 interface ParticipantRow {
   id: string;
@@ -48,6 +70,11 @@ interface ParticipantRow {
   transport: string;
   status: string | null;
   eta_text: string | null;
+  // ── v19 ──
+  pin?: string | null;
+  pin_fails?: number | null;
+  kakao_id?: string | null;
+  late_min?: number | null;
 }
 interface VoteRow {
   target: string;
@@ -69,6 +96,11 @@ function toParticipant(r: ParticipantRow): Participant {
       ? r.status
       : null) as ArrivalSelfStatus,
     etaText: r.eta_text,
+    // ── v19 ── 마이그레이션 전 DB 는 컬럼이 없어 undefined 로 온다 → 기본값으로 채운다
+    pin: r.pin ?? null,
+    pinFails: r.pin_fails ?? 0,
+    kakaoId: r.kakao_id ?? null,
+    lateMin: r.late_min ?? null,
   };
 }
 
@@ -124,6 +156,18 @@ export async function loadMeeting(code: string): Promise<Meeting | null> {
       placeVotes,
       reservation: (mRow.reservation ?? null) as Meeting["reservation"],
       createdAt: isoOf(mRow.created_at),
+      updatedAt: mRow.updated_at ? isoOf(mRow.updated_at) : undefined,
+      // ── v19 ──
+      // 옛 행(마이그레이션 전 또는 v19 이전 생성)은 값이 없다.
+      // 기본값은 **새 모임과 같은 값**으로 맞춘다 — 옛 모임이 열렸을 때
+      // '지점까지 · 700m · 지점 투표 안 열림' 이라는 자연스러운 상태가 된다.
+      scope: mRow.scope === "region" ? "region" : "place",
+      purposeCategory: toPurpose(mRow.purpose_category),
+      meetTime: mRow.meet_time ? isoOf(mRow.meet_time) : null,
+      placeVoteOpen: mRow.place_vote_open ?? false,
+      radiusM: mRow.radius_m === 1400 ? 1400 : 700,
+      stashedPlaces: (mRow.stashed_places ?? null) as Meeting["stashedPlaces"],
+      archivedAt: mRow.archived_at ? isoOf(mRow.archived_at) : null,
     };
   } catch {
     // 접속 실패는 "모임 없음"과 같게 처리한다 — Supabase 시절과 동일한 동작.
@@ -156,13 +200,16 @@ export async function saveMeeting(m: Meeting): Promise<void> {
     await db`
       insert into meetings
         (code, name, password, headcount, leader_name, stage, ai_phase,
-         winner_region_id, winner_place_id, regions, places, chat, prefs, reservation)
+         winner_region_id, winner_place_id, regions, places, chat, prefs, reservation,
+         scope, purpose_category, meet_time, place_vote_open, radius_m, stashed_places, archived_at)
       values
         (${m.code}, ${m.name}, ${m.password}, ${m.headcount}, ${m.leaderName}, ${m.stage}, ${m.aiPhase},
          ${m.winnerRegionId}, ${m.winnerPlaceId},
          ${JSON.stringify(m.regions ?? [])}::jsonb, ${JSON.stringify(m.places ?? [])}::jsonb,
          ${JSON.stringify(m.chat ?? [])}::jsonb, ${JSON.stringify(m.prefs ?? {})}::jsonb,
-         ${m.reservation ? JSON.stringify(m.reservation) : null}::jsonb)
+         ${m.reservation ? JSON.stringify(m.reservation) : null}::jsonb,
+         ${m.scope}, ${m.purposeCategory}, ${m.meetTime}, ${m.placeVoteOpen}, ${m.radiusM},
+         ${m.stashedPlaces ? JSON.stringify(m.stashedPlaces) : null}::jsonb, ${m.archivedAt})
       on conflict (code) do update set
         name = excluded.name,
         password = excluded.password,
@@ -176,7 +223,14 @@ export async function saveMeeting(m: Meeting): Promise<void> {
         places = excluded.places,
         chat = excluded.chat,
         prefs = excluded.prefs,
-        reservation = excluded.reservation`;
+        reservation = excluded.reservation,
+        scope = excluded.scope,
+        purpose_category = excluded.purpose_category,
+        meet_time = excluded.meet_time,
+        place_vote_open = excluded.place_vote_open,
+        radius_m = excluded.radius_m,
+        stashed_places = excluded.stashed_places,
+        archived_at = excluded.archived_at`;
   } catch (e) {
     throw new Error(`모임 저장 실패: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -188,10 +242,12 @@ async function upsertOne(code: string, p: Participant): Promise<void> {
   if (!db) return;
   await db`
     insert into participants
-      (id, code, name, is_leader, headcount, origin, lat, lng, transport, status, eta_text)
+      (id, code, name, is_leader, headcount, origin, lat, lng, transport, status, eta_text,
+       pin, pin_fails, kakao_id, late_min)
     values
       (${p.id}, ${code}, ${p.name}, ${p.isLeader}, ${p.headcount}, ${p.origin},
-       ${p.lat}, ${p.lng}, ${p.transport}, ${p.status}, ${p.etaText})
+       ${p.lat}, ${p.lng}, ${p.transport}, ${p.status}, ${p.etaText},
+       ${p.pin}, ${p.pinFails}, ${p.kakaoId}, ${p.lateMin})
     on conflict (id) do update set
       code = excluded.code,
       name = excluded.name,
@@ -202,7 +258,11 @@ async function upsertOne(code: string, p: Participant): Promise<void> {
       lng = excluded.lng,
       transport = excluded.transport,
       status = excluded.status,
-      eta_text = excluded.eta_text`;
+      eta_text = excluded.eta_text,
+      pin = excluded.pin,
+      pin_fails = excluded.pin_fails,
+      kakao_id = excluded.kakao_id,
+      late_min = excluded.late_min`;
 }
 
 /** 참가자 한 명 저장(추가/수정 공용) */
@@ -262,6 +322,32 @@ export async function setVote(
 }
 
 /** 한 단계의 표를 전부 비운다 — 후보가 바뀌면 기존 표는 의미가 없다 */
+/**
+ * 참가자 한 명을 지운다 — 강퇴 (v10).
+ * `votes` 는 `participant_id` FK 에 `on delete cascade` 가 걸려 있어 함께 사라진다.
+ */
+export async function deleteParticipantRow(participantId: string): Promise<void> {
+  if (!db) return;
+  try {
+    await db`delete from participants where id = ${participantId}`;
+  } catch (e) {
+    throw new Error(`참가자 삭제 실패: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * 모임을 통째로 지운다 — 방장 삭제 (v10).
+ * `participants` · `votes` 는 `code` FK 의 `on delete cascade` 로 함께 사라진다.
+ */
+export async function deleteMeetingRow(code: string): Promise<void> {
+  if (!db) return;
+  try {
+    await db`delete from meetings where code = ${code.toUpperCase()}`;
+  } catch (e) {
+    throw new Error(`모임 삭제 실패: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export async function clearVotes(code: string, target?: "region" | "place"): Promise<void> {
   if (!db) return;
   const key = code.toUpperCase();

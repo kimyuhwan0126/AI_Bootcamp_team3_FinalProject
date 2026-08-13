@@ -12,6 +12,8 @@ import { arrivalStatus, ARRIVAL_COLOR, ARRIVAL_LABEL } from "@/lib/geo";
 import { formatMinutes, formatGap } from "@/lib/format";
 import ChatPanel from "./sections/ChatPanel";
 import VoteList from "./sections/VoteList";
+import PlacePicker from "./sections/PlacePicker";
+import JoinGate from "./sections/JoinGate";
 import PastStepView from "./sections/PastStepView";
 import TravelTimes from "./sections/TravelTimes";
 import AddParticipant from "./sections/AddParticipant";
@@ -24,7 +26,10 @@ import MapPanel from "./sections/MapPanel";
 import ReserveModal from "./sections/ReserveModal";
 import DebugWidget from "./sections/DebugWidget";
 import LeaderBar from "./sections/LeaderBar";
+import ParticipantBar from "./sections/ParticipantBar";
 import MeetingHeader from "./sections/MeetingHeader";
+import { abilitiesOf, stepOf, viewerRoleOf, type Step } from "@/lib/roles";
+import { MAX_CANDIDATES } from "@/lib/types";
 import { openGoogleCalendar, downloadIcs } from "@/lib/calendar";
 import { FLAGS } from "@/lib/flags";
 
@@ -37,6 +42,11 @@ const DEV = process.env.NODE_ENV !== "production";
 //   상수를 직접 고치지 않는다 — 브랜치마다 이 값이 달라지면 머지할 때마다
 //   같은 줄에서 충돌나고, 개발하려고 켠 걸 실수로 커밋하면 남의 화면까지 켜진다.
 const AI_CHAT_ENABLED = FLAGS.aiChat;
+
+// v19 §8 — AI 추천 버튼(방장 opt-in). 안 누르면 호출되지 않아 0원이다.
+// ⚠️ `lib/flags.ts` 가 아직 이 플래그를 갖고 있지 않아 여기서 env 를 직접 읽는다
+//    (`app/api/ai-vote/route.ts` 도 같은 방식이다). 통합 시 FLAGS 로 옮긴다.
+const AI_RECOMMEND_ENABLED = process.env.NEXT_PUBLIC_FF_AI_VOTE === "1";
 const DBG_STATIONS = ["강남역", "홍대입구", "잠실", "사당", "건대입구", "수원역", "노원", "부천"];
 
 export default function MeetingClient({ code }: { code: string }) {
@@ -67,6 +77,30 @@ export default function MeetingClient({ code }: { code: string }) {
   const [viewStep, setViewStep] = useState<0 | 1 | 2 | null>(null);
   // 각 참가자 출발지 → 거점까지의 실제 경로 폴리라인
   const [routes, setRoutes] = useState<MapRoute[]>([]);
+  /**
+   * v19 §4-⑧ 미리보기 핀 — `PlacePicker` 가 조회한 반경 내 장소.
+   * 후보가 **아니다**. 지도에 회색으로 뜨고, 탭해야 후보가 된다.
+   */
+  /**
+   * v19 §4-⑥ 지도 핑 — **누르자마자 등록하지 않는다.**
+   * 지도를 스크롤·확대하다 손가락이 닿기만 해도 후보가 생겼고, 되돌릴 방법이
+   * 없었다 (2026-08-10 제보). 좌표를 잠깐 들고 있다가 사람이 [등록]을 눌러야
+   * 서버로 보낸다. (핑은 1인 1개라 개수가 늘지는 않지만, **내가 안 만든 후보가
+   * 생기는 것** 자체가 문제다)
+   */
+  const [pendingPing, setPendingPing] = useState<{ lat: number; lng: number } | null>(null);
+  /**
+   * 참여 모달 (멘토링 8/6 §2 — "링크 진입할 때 정보 입력 받지 말고,
+   * **핑 찍은 후 모달로** 추가 정보 수집").
+   *
+   * `joinPin` 은 찍고 들어온 자리다 — 참여가 끝나면 그 자리에 핑까지 이어 찍는다.
+   * `null` 이면 지도 없이 그냥 참여하는 경우('나도 참여' 버튼).
+   */
+  const [showJoin, setShowJoin] = useState(false);
+  const [joinPin, setJoinPin] = useState<{ lat: number; lng: number } | null>(null);
+  const [previewPois, setPreviewPois] = useState<
+    { id: string; name: string; lat: number; lng: number; category: string; emoji: string; rating: number; url: string }[]
+  >([]);
 
   // origin form — 홈 화면과 동일한 검색 자동완성(/api/geocode)
   const [origin, setOrigin] = useState("");
@@ -128,6 +162,18 @@ export default function MeetingClient({ code }: { code: string }) {
     }
   }, [state?.chat]);
 
+  /**
+   * 서버 액션 한 방. **실패해도 throw 하지 않고 `null` 을 돌려준다.**
+   *
+   * ⚠️ 예전에는 실패를 다시 throw 했다. 그런데 이 함수는 대부분
+   *    `void act(...)` / `onClick={() => act(...)}` 처럼 **띄워 보내는** 식으로 쓰인다 —
+   *    그 자리에서 거부되면 **처리되지 않은 promise rejection** 이 돼 콘솔에 에러로 남는다.
+   *    서버가 **정상적으로** 거부하는 경우(후보 상한 초과·단계 변경)에도 그렇다.
+   *    후보 상한 5개를 넣자마자 `check:screens` 가 이걸 런타임 에러로 잡았다(2026-08-10).
+   *    "예상된 거부"와 "진짜 버그"가 콘솔에서 구분되지 않으면 검증이 무의미해진다.
+   *
+   *    결과를 봐야 하는 호출부는 **반환값이 null 인지**로 판단한다(throw 를 기다리지 않는다).
+   */
   async function act(body: any, ok?: string) {
     setBusy(true);
     try {
@@ -143,7 +189,11 @@ export default function MeetingClient({ code }: { code: string }) {
       return d;
     } catch (e: any) {
       flash("⚠ " + e.message);
-      throw e;
+      // ⚠️ 실패의 대부분은 "단계가 바뀌었어요"다 — 내 화면이 **옛 단계를 그리고 있다**는
+      //    뜻이다. 사람에게 새로고침을 시키지 말고 여기서 바로 최신 상태를 당겨온다.
+      //    (안 하면 시연 내내 단계마다 새로고침하게 된다)
+      await load().catch(() => {});
+      return null;
     } finally {
       setBusy(false);
     }
@@ -154,11 +204,9 @@ export default function MeetingClient({ code }: { code: string }) {
     const t = text.trim();
     if (!t || !me) return;
     setChatText("");
-    try {
-      await act({ action: "chat", participantId: me.id, text: t });
-    } catch {
-      setChatText(t); // 실패 시 입력 복원
-    }
+    // `act` 는 실패해도 throw 하지 않는다 — **반환값**으로 판단한다 (위 주석 참고)
+    const sent = await act({ action: "chat", participantId: me.id, text: t });
+    if (!sent) setChatText(t); // 실패 시 입력 복원
   }
 
   // ── 디버그: 일괄 처리 ──
@@ -317,6 +365,12 @@ export default function MeetingClient({ code }: { code: string }) {
   );
   const regionsReqRef = useRef("");
   useEffect(() => {
+    // ⚠️ **방장 화면 하나만** 재계산을 요청한다.
+    //    참여자 기기까지 각자 요청하면 같은 계산이 인원수만큼 겹쳐,
+    //    이동시간 호출 대기열(lib/routing.ts rateGate)이 폭발한다 —
+    //    4대 리허설에서 확정 시점 재계산이 그 큐에 막혀 통째로 유실됐다.
+    //    결과는 폴링으로 모두에게 똑같이 전달되므로 한 대만 요청해도 된다.
+    if (!meRow?.isLeader) return;
     if (!originSig || originSig === regionsReqRef.current) return;
     regionsReqRef.current = originSig;
     fetch("/api/meeting", {
@@ -326,7 +380,9 @@ export default function MeetingClient({ code }: { code: string }) {
     })
       .then(() => load())
       .catch(() => {});
-  }, [originSig, code, load]);
+    // 방장 여부는 신원 로딩이 끝나야 확정된다 — 빠뜨리면 방장 화면에서도
+    // 첫 렌더(참여자로 취급)에서만 돌고 다시 안 돈다.
+  }, [originSig, code, load, meRow?.isLeader]);
 
   useEffect(() => {
     if (!routeKey) {
@@ -409,7 +465,36 @@ export default function MeetingClient({ code }: { code: string }) {
     );
   }
 
+  // ── 초대 링크로 들어왔는데 아직 신원이 없을 때 ──────────────
+  //  **기본은 막지 않는다** (멘토링 8/6 §2): 먼저 모임을 구경하고, 지도를 눌러
+  //  핑을 찍는 **그 순간** 모달로 이름·출발지를 받는다. 아래 `guest*` 가 그 흐름이다.
+  //  옛 동작(링크 열자마자 전면 참여 폼)은 `NEXT_PUBLIC_FF_JOIN_GATE=1` 로 돌아온다.
+  //
+  //  ⚠️ 훅보다 **아래**에 둔다 — 조건부 return 위로 올리면 화면이 통째로 안 그려진다
+  //     (이 화면에서 실제로 겪은 사고, app/m/[code]/CLAUDE.md §1).
+  //  지난 모임은 새로 참여할 수 없으므로(v18) 그때는 어느 쪽이든 폼을 띄우지 않는다.
+  const joinedNow = (_id: Identity, pinNote?: string) => {
+    setShowJoin(false);
+    setJoinPin(null);
+    setIds(getIdentities(code));
+    setMe(getActive(code));
+    if (pinNote) flash(pinNote);
+    void load();
+  };
+  if (!me && !state.isPast && FLAGS.joinGate) {
+    return <JoinGate code={code} meetingName={state.name} onJoined={joinedNow} />;
+  }
+  /** 아직 참여하지 않고 보고만 있는 사람 (지난 모임은 원래 읽기 전용이다) */
+  const isGuest = !me && !state.isPast;
+
+  // ── 역할 · 권한 (멘토링 8/6 §1 — `lib/roles.ts`) ────────────
+  //  `isLeader &&` 를 화면 여기저기에 흩뿌리지 않는다. "무엇을 할 수 있는가"는
+  //  한 표(`abilitiesOf`)에서만 나오고, 여기서는 그 답을 읽기만 한다.
+  //  ⚠️ 이건 **보이게/안 보이게** 하는 층이다. 막는 것은 서버(`lib/store.ts`)가 한다.
   const isLeader = !!meRow?.isLeader;
+  const role = viewerRoleOf(meRow);
+  const step: Step = stepOf(state);
+  const can = abilitiesOf(role, step, state.isPast, state.scope);
   const stage = state.stage;
   const located = state.participants.filter((p) => p.lat != null);
   // 경로 상세의 목적지: 확정 지역 우선, 없으면 1순위 후보
@@ -439,11 +524,28 @@ export default function MeetingClient({ code }: { code: string }) {
   };
 
   // ── 거점 투표 집계 ──
+  // ── 지역 집계 ──
+  //  **통합 모드(기본)에서는 핑이 곧 표다** (멘토링 8/6 §2).
+  //  같은 시·군·구를 여럿이 찍으면 하나로 병합되고 `contributors` 에 사람이 쌓인다 —
+  //  그 인원수가 곧 득표수다. 둘 다 "인원당 1개"라 규칙이 같아 그대로 얹힌다.
+  //  옛 2단계(`NEXT_PUBLIC_FF_REGION_VOTE_STEP=1`)에서는 `regionVotes` 행을 쓴다.
+  const REGION_MERGED = !FLAGS.regionVoteStep;
   const regionVotesMap = state.regionVotes ?? {};
   const regionTally: Record<string, number> = {};
-  for (const rid of Object.values(regionVotesMap)) regionTally[rid] = (regionTally[rid] ?? 0) + 1;
-  const regionVoteCount = Object.keys(regionVotesMap).length;
-  const myRegionVote = me ? regionVotesMap[me.id] : undefined;
+  if (REGION_MERGED) {
+    for (const r of state.regions) regionTally[r.id] = r.contributors?.length ?? 0;
+  } else {
+    for (const rid of Object.values(regionVotesMap)) regionTally[rid] = (regionTally[rid] ?? 0) + 1;
+  }
+  // "몇 명이 의사를 밝혔나" — 통합 모드에선 핑을 찍은 사람 수다
+  const regionVoteCount = REGION_MERGED
+    ? new Set(state.regions.flatMap((r) => r.contributors ?? [])).size
+    : Object.keys(regionVotesMap).length;
+  const myRegionVote = REGION_MERGED
+    ? state.regions.find((r) => r.contributors?.includes(me?.id ?? ""))?.id
+    : me
+    ? regionVotesMap[me.id]
+    : undefined;
   // 동점이면 후보 목록 순서(균형 좋은 순)를 따른다
   const topRegionId =
     state.regions.length === 0
@@ -467,6 +569,20 @@ export default function MeetingClient({ code }: { code: string }) {
       : state.places.reduce((best, p) =>
           (placeTally[p.id] ?? 0) > (placeTally[best.id] ?? 0) ? p : best
         ).id;
+
+  /**
+   * 1위가 **둘 이상**인가 (1차 순서도 4번의 `동점?` 분기).
+   *
+   * ⚠️ 표가 하나도 없으면 전부 0표라 "동점"처럼 보이지만, 그건 아직 아무도 안 찍은
+   *    것이지 동점이 아니다. 그때 재투표 버튼을 내면 눌러도 지울 표가 없다.
+   */
+  const isTied = (target: "region" | "place") => {
+    const tally = target === "region" ? regionTally : placeTally;
+    const pool = target === "region" ? state.regions : state.places;
+    const counts = pool.map((c) => tally[c.id] ?? 0);
+    const top = Math.max(0, ...counts);
+    return top > 0 && counts.filter((n) => n === top).length > 1;
+  };
 
   // ── ＋ 다른 후보 등록 (누구나) ────────────────────────────────
   const openAddRegion = () => {
@@ -511,9 +627,26 @@ export default function MeetingClient({ code }: { code: string }) {
           ＋ 다른 후보 등록
         </button>
       )}
-      {isLeader && (
+      {can.confirm && (
         <button className="btn ghost sm" disabled={busy} onClick={() => openManualConfirm(target)}>
           ✍ 다른 후보로 확정
+        </button>
+      )}
+      {/* ── 1차 순서도 4번: `동점? → 방장 재량 선택 **또는 재투표**` ──
+             예전엔 재량 확정만 있어서, 동점이면 방장이 혼자 고르는 수밖에 없었다.
+             동점일 때만 낸다 — 늘 떠 있으면 "표를 지우는 버튼"이 상시 노출돼
+             실수로 누르기 쉽다. */}
+      {can.revote && isTied(target) && (
+        <button
+          className="btn ghost sm"
+          disabled={busy}
+          title="후보는 그대로 두고 표만 지웁니다"
+          onClick={() => {
+            if (!confirm("동점이에요. 재투표를 열까요?\n\n후보는 그대로 두고 표만 초기화됩니다.")) return;
+            void act({ action: "revote", participantId: me?.id }, "재투표를 열었어요 — 표가 초기화됐어요");
+          }}
+        >
+          🗳️ 재투표 (동점)
         </button>
       )}
     </div>
@@ -521,6 +654,9 @@ export default function MeetingClient({ code }: { code: string }) {
 
   // 지도 위 투표 후보 박스 — 누르면 그 후보에 투표 (피그마)
   const phaseIsRegion = state.aiPhase === "region";
+  // v19 §4-⑧ — 지점 **등록** 단계에서 지도에 띄우는 회색 미리보기 핀.
+  // PlacePicker 가 조회한 결과를 그대로 올려 받는다(설계는 "핀 탭 → 후보 등록"이다).
+  const placeRegisterStep = state.aiPhase === "place" && !state.placeVoteOpen;
   const mapCandidates: MapCandidate[] =
     AI_CHAT_ENABLED || stage === "result"
       ? []
@@ -529,14 +665,72 @@ export default function MeetingClient({ code }: { code: string }) {
           id: r.id, lat: r.lat, lng: r.lng, name: r.name,
           votes: regionTally[r.id] ?? 0, mine: myRegionVote === r.id,
         }))
-      : state.places
-          .filter((p) => p.lat != null && p.lng != null)
-          .map((p) => ({
-            id: p.id, lat: p.lat as number, lng: p.lng as number, name: p.name,
-            votes: placeTally[p.id] ?? 0, mine: myPlaceVote === p.id,
-          }));
+      : [
+          ...state.places
+            .filter((p) => p.lat != null && p.lng != null)
+            .map((p) => ({
+              id: p.id, lat: p.lat as number, lng: p.lng as number, name: p.name,
+              votes: placeTally[p.id] ?? 0, mine: myPlaceVote === p.id,
+            })),
+          // 등록 단계에서만 — 투표가 열리면 미리보기는 사라진다(후보가 잠겼으므로)
+          ...(placeRegisterStep
+            ? previewPois.map((p) => ({
+                id: p.id, lat: p.lat, lng: p.lng, name: p.name,
+                votes: 0, mine: false, preview: true,
+              }))
+            : []),
+        ];
+  /**
+   * v19 §7 — 지역 후보 삭제 권한.
+   * 등록 단계에서만, 방장은 임의 후보 / 참여자는 **본인이 찍은 후보**만.
+   * (서버가 같은 판정을 다시 한다 — 화면 잠금은 안내일 뿐이다)
+   */
+  const regionRegisterStep = step === "region-register";
+  const canDeleteRegion = (id: string) => {
+    if (!me || !can.ping) return false; // 핑을 찍을 수 있는 칸 = 지울 수도 있는 칸
+    if (can.manageMeeting) return true; // 방장은 임의 후보
+    const r = state.regions.find((x) => x.id === id);
+    return !!r?.contributors?.includes(me.id);
+  };
+  const deleteRegion = (id: string, name: string) =>
+    void act({ action: "removeRegion", participantId: me?.id, regionId: id }, `‘${name}’ 후보를 지웠어요`);
+
+  /** 확인 시트에서 [등록]을 눌렀을 때만 서버로 보낸다 (v19 §4-⑥) */
+  const actPing = (lat: number, lng: number) =>
+    // 이름을 안 보낸다 — 서버가 동으로 스냅한다(실패하면 좌표 이름으로 폴백).
+    // 인원당 1개·같은 동 병합도 서버 규칙이라 여기서 따지지 않는다.
+    act({ action: "addRegion", participantId: me?.id, lat, lng }).then((d: unknown) => {
+      const r = d as { existing?: boolean; candidate?: { name?: string } };
+      // 무엇이 등록됐는지 **이름으로** 알려준다 — 뭐가 생겼는지 모르면 지울 수도 없다.
+      flash(
+        r?.existing
+          ? `‘${r.candidate?.name}’에 핑을 모았어요`
+          : `‘${r?.candidate?.name ?? "후보"}’ 등록 — 아래 목록에서 지울 수 있어요`
+      );
+    });
+
   const voteFromMap = (id: string) => {
     if (!me || busy) return;
+    // ⚠️ 등록 단계에서 지도 위 후보를 누르면 **투표가 아니다.** 서버가 거부해서
+    //    "단계가 바뀌었어요" 400 만 났다 — 눌리는 것처럼 보이는데 절대 안 되는
+    //    상태가 가장 나쁘다. 무엇을 해야 하는지 알려준다 (2026-08-10 실측).
+    if (regionRegisterStep) {
+      flash("아직 등록 단계예요 — 방장이 [투표 시작]을 누르면 투표할 수 있어요");
+      return;
+    }
+    // v19 §4-⑧ — 회색 미리보기 핀을 누르면 **투표가 아니라 후보 등록**이다.
+    const pv = previewPois.find((p) => p.id === id);
+    if (pv) {
+      void act(
+        {
+          action: "addPlace", participantId: me.id,
+          name: pv.name, category: pv.category, emoji: pv.emoji,
+          lat: pv.lat, lng: pv.lng, rating: pv.rating, url: pv.url,
+        },
+        `‘${pv.name}’ 후보로 등록했어요`
+      );
+      return;
+    }
     void act(
       { action: "vote", participantId: me.id, target: phaseIsRegion ? "region" : "place", candidateId: id },
       undefined
@@ -572,15 +766,26 @@ export default function MeetingClient({ code }: { code: string }) {
   // 홈으로 곧장 돌아갈 수 있다. 방장 컨트롤 바(.leaderbar)는 그 위에 쌓인다.
   // 둘 다 position:fixed 라 흐름에서 빠져 있으므로, 가려지는 콘텐츠가 없도록
   // 그 높이(방장 바 72 + 탭바 65)만큼 여백을 여기서 확보한다.
+  //  ── 하단 바는 **역할마다 다른 물건**이다 (멘토링 8/6 §1) ──
+  //   방장  → `LeaderBar`      : 단계를 움직이는 버튼들
+  //   참여자 → `ParticipantBar` : 지금 무슨 칸이고 내가 뭘 해야 하는지 (버튼 없음)
+  //   지난 단계를 보는 중이거나 신원이 없으면 둘 다 안 뜬다.
+  //  ⚠️ 비활성 버튼으로 방장 기능을 흉내내지 않는다 — 멘토가 명시적으로 불필요하다고 했다.
+  /** 구경 중인 사람이 지금 지도를 눌러 참여할 수 있는 칸인가 (= 지역 등록 칸) */
+  const guestCanPing = isGuest && !viewingPast && stage === "main" && state.aiPhase === "region";
   const showLeaderbar = isLeader && !viewingPast;
+  const showParticipantBar = role === "participant" && !viewingPast;
+  const showBottomBar = showLeaderbar || showParticipantBar;
   return (
-    <main className="device" style={{ paddingBottom: (showLeaderbar ? 80 : 24) + 68 }}>
+    <main className="device" style={{ paddingBottom: (showBottomBar ? 80 : 24) + 68 }}>
       {/* ── 상단 헤더 · 스텝 — 담당자 파일: sections/MeetingHeader.tsx ── */}
       <MeetingHeader
         state={state}
         isLeader={isLeader}
+        guest={isGuest}
         identities={ids}
         activeId={me?.id}
+        showDebugTools={DEV && FLAGS.debugTools}
         onSwitch={switchTo}
         onAddParticipant={() => setShowAdd(true)}
         aiChatEnabled={AI_CHAT_ENABLED}
@@ -606,13 +811,108 @@ export default function MeetingClient({ code }: { code: string }) {
           onFail={() => setMapFallback(true)}
           statusColorFor={statusColorFor}
           onCandidateClick={me ? voteFromMap : undefined}
+          // ── v19 §4-⑥ 지도 핑 ──
+          //  지역 후보 **등록 단계**에서만 켠다. 투표가 시작되면 서버가 거부하므로
+          //  화면에서도 미리 꺼서 "눌리는데 안 되는" 상태를 만들지 않는다 (v5·v12).
+          //  ⚠️ **아직 참여 안 한 사람에게도 켠다** (멘토링 8/6 §2). 지도를 누르는
+          //     것이 이 앱의 첫 행동이고, 그 순간에 이름·출발지를 물어본다.
+          pingMode={(!!me || isGuest) && !viewingPast && !state.isPast && stage === "main" && state.aiPhase === "region"}
+          onMapPing={(lat, lng) => {
+            // 신원이 없으면 확인 시트가 아니라 **참여 모달**이 뜬다.
+            // 참여가 끝나면 JoinGate 가 이 좌표로 핑까지 이어서 찍는다.
+            if (!me) {
+              setJoinPin({ lat, lng });
+              setShowJoin(true);
+              return;
+            }
+            setPendingPing({ lat, lng });
+          }}
         />
+
+        {/* 지도 핑 확인 — 여기서 [등록]을 눌러야 후보가 생긴다 */}
+        {pendingPing && (
+          <div className="v8-overlay" onClick={() => setPendingPing(null)}>
+            <div className="v8-modal stack" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
+              <div>
+                <span className="eyebrow">지역 후보 등록</span>
+                <h2 className="sec" style={{ marginTop: 4 }}>여기로 등록할까요?</h2>
+              </div>
+              <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+                {/* ⚠️ 무엇으로 묶이는지는 플래그에 따라 역/시·군·구/동으로 갈린다
+                    (`lib/station-snap.ts`). 문구에 단위를 박아 두면 화면이 거짓말을
+                    한다 — "동 단위"라고 적힌 채 기본이 시·군·구로 바뀌어 있었다. */}
+                누른 자리는 <b>가까운 지점으로 정리</b>돼요. 같은 곳을 여럿이 찍으면 하나로 합쳐지고,
+                <b> 내 핑은 1개</b>라 다른 곳을 찍으면 그쪽으로 옮겨가요.
+              </p>
+              <span className="chip line" style={{ alignSelf: "flex-start", fontFamily: "ui-monospace, monospace" }}>
+                {pendingPing.lat.toFixed(4)}, {pendingPing.lng.toFixed(4)}
+              </span>
+              <button
+                className="btn"
+                disabled={busy}
+                onClick={() => {
+                  const { lat, lng } = pendingPing;
+                  setPendingPing(null);
+                  // 이름을 안 보낸다 — 서버가 동으로 스냅한다(실패하면 좌표 이름으로 폴백).
+                  void actPing(lat, lng);
+                }}
+              >
+                📍 여기로 등록
+              </button>
+              <button className="btn ghost" onClick={() => setPendingPing(null)}>취소</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── 아직 참여 안 한 사람 (멘토링 8/6 §2 — 링크는 막지 않는다) ──
+               먼저 모임을 보여주고, **행동할 때** 이름·출발지를 묻는다.
+               지역 단계면 지도를 누르는 것이 그 행동이고, 아니면 이 버튼이다. */}
+        {isGuest && (
+          <div className="card stack" style={{ gap: 8 }}>
+            <div>
+              <span className="eyebrow">아직 참여 전</span>
+              <h2 className="sec" style={{ marginTop: 4 }}>구경 중이에요</h2>
+            </div>
+            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+              {guestCanPing
+                ? "위 지도에서 만나고 싶은 곳을 눌러 보세요. 누르면 이름·출발지를 물어보고 참여까지 한 번에 끝나요."
+                : "참여하면 투표하고 결과 알림도 받을 수 있어요."}
+            </p>
+            <button
+              className="btn"
+              onClick={() => {
+                setJoinPin(null);
+                setShowJoin(true);
+              }}
+            >
+              🙋 나도 참여
+            </button>
+          </div>
+        )}
+
+        {/* 참여 모달 — 지도에서 찍고 들어왔으면 그 좌표(joinPin)를 함께 넘긴다 */}
+        {showJoin && isGuest && (
+          <JoinGate
+            asModal
+            code={code}
+            meetingName={state.name}
+            pinned={joinPin}
+            onJoined={joinedNow}
+            onCancel={() => {
+              setShowJoin(false);
+              setJoinPin(null);
+            }}
+          />
+        )}
 
         {viewingPast && <PastStepView step={displayStep} state={state} />}
 
         {/* ══════════════ STAGE: MAIN ══════════════ */}
         {!viewingPast && stage === "main" && (
           <>
+            {/* 출발지는 **참여한 사람의 것**이다. 구경 중인 사람에게 먼저 물어보면
+                (신원이 없어 서버가 거부한다) 링크를 막던 옛 화면으로 되돌아간다. */}
+            {!isGuest && (
             <OriginForm
               myName={myName}
               registered={!!meRow?.origin}
@@ -635,27 +935,67 @@ export default function MeetingClient({ code }: { code: string }) {
                 )
               }
             />
+            )}
 
-            <ParticipantList state={state} />
+            <ParticipantList
+              state={state}
+              isLeader={isLeader}
+              // v10: 강퇴는 되돌릴 수 없는 축에 속하니 한 번 묻는다 (재참여는 가능)
+              onKick={(targetId, name) => {
+                if (!confirm(`${name} 님을 모임에서 내보낼까요?\n그 사람의 핑과 표도 함께 지워져요. (다시 참여할 수는 있어요)`)) return;
+                void act({ action: "kick", participantId: me?.id, targetId }, `${name} 님을 내보냈어요`);
+              }}
+            />
 
             {/* ── 거점(지역) 투표 — 출발지가 모이면 이 화면에서 바로 투표한다 ── */}
             <div className="card stack" style={{ gap: 10 }}>
               <div className="between">
                 <div>
-                  <span className="eyebrow">2. 거점 투표</span>
-                  <h2 className="sec" style={{ marginTop: 4 }}>어디서 만날까요?</h2>
+                  {/* ── 통합 모드(기본): 지역은 **한 칸**이다 (멘토링 8/6 §2) ──
+                      "등록하고 나서 또 투표하세요"가 없어졌다. 지도를 누르는 것이 곧
+                      한 표라, 제목도 그렇게 말한다. 옛 2단계는 문구를 나눠 쓴다. */}
+                  <span className="eyebrow">
+                    2. {REGION_MERGED ? "지역 정하기" : regionRegisterStep ? "거점 후보 등록" : "거점 투표"}
+                  </span>
+                  <h2 className="sec" style={{ marginTop: 4 }}>
+                    {REGION_MERGED
+                      ? "어디쯤에서 볼까요?"
+                      : regionRegisterStep
+                      ? "어디쯤에서 볼까요?"
+                      : "어디서 만날까요?"}
+                  </h2>
                 </div>
                 <span className="chip line" style={{ fontSize: 10 }}>
-                  {regionVoteCount}/{state.totalParticipants}명 투표
+                  {REGION_MERGED
+                    // 핑 = 표라 **둘 다** 말해 준다: 몇 명이 찍었나 / 후보가 몇 개인가
+                    ? `${regionVoteCount}/${state.totalParticipants}명 · 후보 ${state.regions.length}/${MAX_CANDIDATES}`
+                    : regionRegisterStep
+                    // 상한을 **미리** 보여준다 — 다 차고 나서 거부당하면 늦다 (2차 그릴링)
+                    ? `후보 ${state.regions.length}/${MAX_CANDIDATES}`
+                    : `${regionVoteCount}/${state.totalParticipants}명 투표`}
                 </span>
               </div>
 
               {state.regions.length === 0 ? (
-                <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-                  {state.originsSet === 0
-                    ? "참여자들이 출발지를 등록하면 모두에게 공평한 거점 후보가 만들어져요."
-                    : "거점 후보를 계산하고 있어요…"}
-                </p>
+                // ⚠️ 예전 문구는 "후보를 계산하고 있어요…" 였다. 서버가 후보를 자동으로
+                //    깔던 시절의 문구다. 이제 후보는 **사람이 찍어야** 생기므로
+                //    (멘토링 8/6 §2), 기다리라고 하면 아무 일도 일어나지 않는다.
+                <div className="stack" style={{ gap: 6 }}>
+                  <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+                    {state.originsSet === 0
+                      ? "먼저 출발지를 등록해 주세요. 그래야 후보마다 각자 얼마나 걸리는지 보여드릴 수 있어요."
+                      : REGION_MERGED
+                      ? "위 지도에서 만나고 싶은 곳을 눌러 주세요. 누른 것이 곧 한 표예요 — 많이 찍힌 곳이 1위가 돼요."
+                      : "아직 후보가 없어요 — 위 지도에서 만나고 싶은 곳을 눌러 후보로 등록해 주세요."}
+                  </p>
+                  {state.originsSet > 0 && (
+                    <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
+                      {isLeader
+                        ? "고르기 어려우면 아래 ‘추천’ 버튼을 눌러 공평한 지역 3곳을 후보에 올릴 수 있어요."
+                        : "방장이 추천 후보를 올려 줄 수도 있어요."}
+                    </p>
+                  )}
+                </div>
               ) : (
                 <>
                   {/* 거점 단계와 가게 단계가 같은 목록 컴포넌트를 쓴다 —
@@ -668,19 +1008,34 @@ export default function MeetingClient({ code }: { code: string }) {
                     myVote={myRegionVote ?? null}
                     topId={topRegionId}
                     disabled={busy || !me}
+                    // ⚠️ 등록 단계에서는 투표 버튼을 그리지 않는다 — 서버가 표를
+                    //    거부하므로(v12) 누를 때마다 "단계가 바뀌었어요" 만 떴다.
+                    //    투표는 방장이 [투표 시작]을 누른 뒤부터다 (v19 §5).
+                    //    통합 모드에서도 마찬가지다 — **투표 버튼이 아예 없다.**
+                    //    표를 던지는 방법은 지도를 누르는 것뿐이다(핑 = 표).
+                    votable={!REGION_MERGED && !regionRegisterStep}
                     onVote={(candidateId, candidateName, mine) =>
                       act(
                         { action: "vote", participantId: me?.id, target: "region", candidateId },
                         mine ? "투표를 취소했어요" : `${candidateName}에 투표했어요`
                       )
                     }
+                    canDelete={canDeleteRegion}
+                    onDelete={deleteRegion}
                   />
                   <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
-                    {regionVoteCount >= state.totalParticipants && state.totalParticipants > 0
+                    {/* ⚠️ 통합 모드에선 **전원이 찍을 때까지 기다릴 필요가 없다.**
+                           멘토링 §2: "참여자는 핑 찍지 않아도 되고, 방장이 다음 단계로
+                           강제로 넘어갈 수 있음." 그래서 문구가 재촉이 아니라 안내다. */}
+                    {REGION_MERGED
+                      ? regionVoteCount >= state.totalParticipants && state.totalParticipants > 0
+                        ? `${state.totalParticipants}명이 모두 찍었어요. 방장이 확정하면 다음으로 넘어가요.`
+                        : `${regionVoteCount}/${state.totalParticipants}명이 찍었어요. 다 안 찍어도 방장이 확정할 수 있어요.`
+                      : regionVoteCount >= state.totalParticipants && state.totalParticipants > 0
                       ? `참여자 ${state.totalParticipants}명이 모두 투표했어요. 방장이 마무리해주세요.`
                       : `참여자 ${state.totalParticipants}명이 모두 투표하면 방장이 확정할 수 있어요.`}
                     {topRegionId && regionVoteCount > 0
-                      ? ` 현재 최다득표: ${state.regions.find((r) => r.id === topRegionId)?.name}`
+                      ? ` 현재 1위: ${state.regions.find((r) => r.id === topRegionId)?.name}`
                       : ""}
                   </p>
                   {voteCardActions("region")}
@@ -693,7 +1048,21 @@ export default function MeetingClient({ code }: { code: string }) {
         {/* ══════════════ STAGE: CHAT (투표 대체 · AI 파실리테이터) ══════════════ */}
         {!viewingPast && stage === "chat" && (
           <>
-            {/* 후보 카드 — 현재 논의 대상 요약(탭하면 지지 의견 전송) */}
+            {/* v19 §4-⑧: 지점 **등록** 칸에서는 투표 목록 대신 후보 등록 화면이 뜬다.
+                   (등록 → 투표 시작(잠금) → 투표 순서라 두 화면이 겹치지 않는다) */}
+            {!AI_CHAT_ENABLED && state.aiPhase === "place" && !state.placeVoteOpen ? (
+              <PlacePicker
+                state={state}
+                isLeader={isLeader}
+                // 아직 참여 안 한 사람은 **누를 수 없게** 한다 — 참가자 없이 보내면
+                // 서버가 거부한다. "눌리는데 안 되는" 상태를 만들지 않는다 (v5·v12).
+                busy={busy || isGuest}
+                myId={me?.id}
+                onAction={act}
+                onPreview={setPreviewPois}
+              />
+            ) : (
+            /* 후보 카드 — 현재 논의 대상 요약(탭하면 지지 의견 전송) */
             <div className="card stack" style={{ gap: 10 }}>
               <div className="between">
                 <div>
@@ -771,6 +1140,7 @@ export default function MeetingClient({ code }: { code: string }) {
               </p>
               {!AI_CHAT_ENABLED && voteCardActions(state.aiPhase === "region" ? "region" : "place")}
             </div>
+            )}
 
             {/* 참가자별 이동시간 + 경로 상세 (시안1·2) */}
             {destRegion && <TravelTimes state={state} dest={destRegion} onOpen={setRouteFor} />}
@@ -801,9 +1171,51 @@ export default function MeetingClient({ code }: { code: string }) {
             onOpenRoute={setRouteFor}
             onOpenReserve={() => setShowReserve(true)}
             onToast={flash}
+            // v11: '지점도 정하기' 승격 — 되돌릴 수 없으니 한 번 묻는다
+            onPromoteToPlace={() => {
+              if (!confirm("이 모임에서 만날 '지점'도 정하기로 할까요?\n되돌릴 수 없어요.")) return;
+              void act({ action: "promoteToPlace", participantId: me?.id }, "지점 정하기를 시작했어요");
+            }}
+            // v10: 모임 삭제 — 되돌릴 수 없다. 모임 이름을 한 번 더 확인시킨다.
+            onAction={act}
+            busy={busy}
+            myId={me?.id}
+            // v2·v16: 모임 시간 — 생성 폼이 원칙이고 여기선 변경만. 과거는 서버가 막는다.
+            onEditTime={() => {
+              const cur = state.meetTime ? new Date(state.meetTime) : new Date(Date.now() + 3600_000);
+              const pad = (n: number) => String(n).padStart(2, "0");
+              const suggest = `${cur.getFullYear()}-${pad(cur.getMonth() + 1)}-${pad(cur.getDate())} ${pad(cur.getHours())}:${pad(cur.getMinutes())}`;
+              const input = prompt("모임 시간을 입력하세요 (예: 2026-08-14 19:00)", suggest);
+              if (!input) return;
+              // `new Date("YYYY-MM-DD HH:mm")` 는 로컬 시각으로 해석된다 — 의도한 동작이다.
+              const d = new Date(input.replace(/-/g, "/"));
+              if (Number.isNaN(d.getTime())) return flash("⚠ 시간을 알아볼 수 없어요");
+              void act({ action: "meetTime", participantId: me?.id, meetTime: d.toISOString() }, "모임 시간을 정했어요");
+            }}
+            // v18: 지난 모임 → 같은 멤버로 새 모임. 로그인 멤버만 자동 이전(v17).
+            onRecreate={() => {
+              if (!confirm("이 멤버로 새 모임을 만들까요?\n카카오 로그인한 멤버만 자동으로 옮겨가요.")) return;
+              void act({ action: "recreate", participantId: me?.id }).then((d: any) => {
+                if (d?.code) {
+                  addIdentity(d.code, { id: d.participantId, name: me?.name ?? "방장", isLeader: true });
+                  location.href = `/m/${d.code}`;
+                }
+              });
+            }}
+            onDeleteMeeting={() => {
+              if (!confirm(`'${state.name}' 모임을 삭제할까요?\n참여자·후보·표가 전부 사라지고 되돌릴 수 없어요.`)) return;
+              void act({ action: "deleteMeeting", participantId: me?.id }).then(() => {
+                location.href = "/meetings";
+              });
+            }}
           />
         )}
       </div>
+
+      {/* ── 참여자 하단 바 — 담당자 파일: sections/ParticipantBar.tsx ──
+           방장 바의 짝이다. 예전엔 참여자 화면 하단이 **비어 있어서**
+           지금 무슨 단계인지도, 뭘 해야 하는지도 알 수 없었다 (멘토링 8/6 §1). */}
+      {showParticipantBar && <ParticipantBar step={step} state={state} myId={me?.id} regionMerged={REGION_MERGED} />}
 
       {/* ── 방장 컨트롤 바 — 담당자 파일: sections/LeaderBar.tsx ──
            지난 단계를 보는 중엔(viewingPast) 실제 단계에 대한 조작을 의도치 않게
@@ -813,6 +1225,30 @@ export default function MeetingClient({ code }: { code: string }) {
           stage={stage}
           state={state}
           busy={busy}
+          aiRecommendEnabled={AI_RECOMMEND_ENABLED}
+          regionMerged={REGION_MERGED}
+          // v19 §8 — AI 추천은 방장 opt-in. 재호출이면 교체/추가를 먼저 묻는다 (v14).
+          onAiRecommend={(hasPrev) => {
+            let mode: "replace" | "append" = "replace";
+            if (hasPrev) {
+              // 세 갈래(교체 / 추가 / 취소)를 confirm 두 번으로 낸다.
+              // ⚠️ '추가'를 고르면 수동 병합 후보는 물론 이전 AI 후보도 남는다.
+              const replace = confirm(
+                "추천 후보가 이미 있어요.\n\n[확인] 이전 추천 후보를 교체\n[취소] 이전 것에 추가"
+              );
+              mode = replace ? "replace" : "append";
+            }
+            // LLM 이 꺼져 있으면 점수 기반 추천으로 떨어진다 (LeaderBar 주석 참고).
+            // 지점 단계는 LLM 경로에만 있어 버튼 자체가 안 뜨므로 여기 오지 않는다.
+            if (AI_RECOMMEND_ENABLED) {
+              void act({ action: "aiRecommend", participantId: me?.id, mode }, "AI 추천을 받았어요");
+            } else {
+              void act(
+                { action: "suggestRegions", participantId: me?.id, mode },
+                "추천 지역 3곳을 후보에 올렸어요 (이동시간·편차 기준)"
+              );
+            }
+          }}
           aiChatEnabled={AI_CHAT_ENABLED}
           topRegionId={topRegionId}
           topPlaceId={topPlaceId}
@@ -889,8 +1325,11 @@ export default function MeetingClient({ code }: { code: string }) {
         />
       )}
 
-      {/* ── 디버그 위젯 (개발 빌드에서만) — 담당자 파일: sections/DebugWidget.tsx ── */}
-      {DEV && (
+      {/* ── 디버그 위젯 — 담당자 파일: sections/DebugWidget.tsx ──
+             개발 빌드 **이면서** 플래그를 켠 사람에게만. 기본은 꺼져 있다.
+             ⚠️ 발표는 `npm run dev:lan`(개발 모드)으로 도는데, 예전엔 `DEV` 만
+                보고 떠서 **시연 화면에 🐞 버튼이 그대로 있었다.** */}
+      {DEV && FLAGS.debugTools && (
         <DebugWidget
           state={state}
           isLeader={isLeader}

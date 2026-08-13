@@ -11,6 +11,11 @@
 //
 // 신원 전환 <select> 는 한 기기에서 여러 참가자로 전체 플로우를 테스트하기 위한
 // 것이다(lib/identity.ts). 실서비스라면 로그인으로 대체된다.
+//
+// ⚠️ **그래서 기본으로는 그리지 않는다.** 발표에서는 한 기기 = 한 사람이라,
+//    '현재 [드롭다운] + 참가자' 가 떠 있으면 시연 화면이 테스트 도구처럼 보인다
+//    (2026-08-10 제보). 이 기기에 신원이 **둘 이상일 때만** 나오고,
+//    '+ 참가자'(모임 비밀번호를 쓰는 v2 폐기 경로)는 디버그 플래그 전용이다.
 // ─────────────────────────────────────────────────────────────
 import Link from "next/link";
 import type { MeetingState } from "@/lib/types";
@@ -20,8 +25,12 @@ import StepIcons from "@/app/components/v8/StepIcons";
 export interface MeetingHeaderProps {
   state: MeetingState;
   isLeader: boolean;
+  /** 아직 참여하지 않고 보고만 있는 사람 — 방장/참가자 어느 쪽도 아니다 */
+  guest?: boolean;
   identities: Identity[];
   activeId: string | undefined;
+  /** '+ 참가자' 버튼 — 개발용(FLAGS.debugTools). 기본은 안 보인다 */
+  showDebugTools: boolean;
   onSwitch: (id: string) => void;
   onAddParticipant: () => void;
   aiChatEnabled: boolean;
@@ -37,8 +46,10 @@ export interface MeetingHeaderProps {
 export default function MeetingHeader({
   state,
   isLeader,
+  guest,
   identities,
   activeId,
+  showDebugTools,
   onSwitch,
   onAddParticipant,
   aiChatEnabled,
@@ -62,21 +73,33 @@ export default function MeetingHeader({
               </div>
             </div>
           </div>
-          {isLeader ? <span className="chip leader">👑 방장</span> : <span className="chip line">🙋 참가자</span>}
+          {/* 구경 중인 사람에게 '참가자' 라고 하면 자기가 이미 들어온 줄 안다 */}
+          {isLeader ? (
+            <span className="chip leader">👑 방장</span>
+          ) : guest ? (
+            <span className="chip line">👀 구경 중</span>
+          ) : (
+            <span className="chip line">🙋 참가자</span>
+          )}
         </div>
 
-        {/* participant switcher (테스트용 다중 참가자) */}
-        <div className="switcher" style={{ marginTop: 10 }}>
-          <span style={{ fontSize: 11, fontWeight: 800 }} className="faint">현재</span>
-          <select value={activeId || ""} onChange={(e) => onSwitch(e.target.value)}>
-            {identities.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} {i.isLeader ? "(방장)" : ""}
-              </option>
-            ))}
-          </select>
-          <button className="btn ghost sm" onClick={onAddParticipant}>+ 참가자</button>
-        </div>
+        {/* 신원 전환 — 이 기기에 신원이 둘 이상일 때만. 발표에서는 한 기기 = 한 사람이라
+            평소엔 아예 그려지지 않는다. */}
+        {(identities.length > 1 || showDebugTools) && (
+          <div className="switcher" style={{ marginTop: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 800 }} className="faint">현재</span>
+            <select value={activeId || ""} onChange={(e) => onSwitch(e.target.value)}>
+              {identities.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} {i.isLeader ? "(방장)" : ""}
+                </option>
+              ))}
+            </select>
+            {showDebugTools && (
+              <button className="btn ghost sm" onClick={onAddParticipant}>+ 참가자</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 정원 초과 경고 배너 */}

@@ -35,6 +35,24 @@ export const pinColor = (i: number) => PIN_COLORS[i % PIN_COLORS.length];
 /** 중간 추천 지역 마커 색 — 참가자 색과 완전히 분리된 강조색 */
 export const MIDPOINT_COLOR = "#f0324b";
 
+/**
+ * 보여줄 것이 아직 없을 때의 지도 첫 화면 — **협성대(화성시 봉담읍) 인근**.
+ *
+ * 예전엔 서울시청(37.5665, 126.978)이었는데, 홈에서 출발지가 하나도 없으면
+ * 지도 자체를 안 그리고 회색 안내문만 띄웠기 때문에 이 값이 보일 일이 거의
+ * 없었다. 이제 빈 홈에서도 지도를 그리므로 **우리 학교 근처**를 첫 화면으로
+ * 둔다 — 발표에서 처음 열었을 때 낯선 서울 도심이 아니라 아는 동네가 뜬다.
+ *
+ * ⚠️ 핀이 하나라도 있으면 곧바로 그 핀들에 맞춰 화면이 맞춰진다(fitBounds).
+ *    이 값은 **아무것도 없을 때만** 쓰인다.
+ *
+ * ⚠️ 좌표는 캠퍼스 근사값이다. 정확히 맞추려면 map.kakao.com 에서 협성대를
+ *    찾아 우클릭 → '좌표 복사' 한 값으로 바꾸면 된다.
+ */
+export const DEFAULT_MAP_CENTER = { lat: 37.2076, lng: 126.9669 };
+/** 카카오 지도 확대 레벨 — 숫자가 작을수록 확대. 5 ≈ 동네 몇 블록. */
+export const DEFAULT_MAP_LEVEL = 5;
+
 export interface MapPin {
   lat: number;
   lng: number;
@@ -74,11 +92,32 @@ export interface MapCandidate {
   votes: number;
   /** 내가 투표한 후보 — 주황 테두리로 강조 (피그마) */
   mine: boolean;
+  /**
+   * v19 §4-⑧ **미리보기 핀**. 아직 후보가 아니라 "탭하면 후보가 되는" 자리다.
+   * 회색으로 흐리게 그리고 표 뱃지 대신 `+ 후보 등록` 을 보여준다 —
+   * 등록된 후보와 눈으로 구분되지 않으면 "이미 후보인 줄 알고" 아무도 안 누른다.
+   */
+  preview?: boolean;
 }
 /** 내가 투표한 후보 강조색 (피그마의 주황 테두리) */
 const CAND_MINE = "#f2803d";
 
 const JS_KEY = process.env.NEXT_PUBLIC_KAKAO_JS_KEY || "";
+
+/**
+ * 키가 **빌드에 박혔는지**. 지도 실패 안내가 원인을 구분하는 데 쓴다.
+ *
+ * `loadSdk()` 는 두 경우 모두 `false` 를 돌려준다:
+ *   ① 키가 없다            → 즉시 false
+ *   ② 키는 있는데 SDK 로드 실패 → `s.onerror` (도메인 미등록 · 차단 · 오프라인)
+ * 화면이 둘을 같은 문구로 말하면, 키를 넣고 재배포한 뒤에도 똑같은 안내가 떠서
+ * "키가 안 들어갔나?" 하고 엉뚱한 데를 보게 된다(2026-08-06 Preview 에서 실제로 겪음).
+ *
+ * ⚠️ `NEXT_PUBLIC_*` 는 **빌드 시점에 문자열로 치환**된다. 그래서 이 값은
+ *    "지금 환경변수가 있나"가 아니라 **"이 번들을 만들 때 있었나"** 다 —
+ *    Vercel 에서 키를 추가만 하고 재배포를 안 하면 여전히 false 다.
+ */
+export const KAKAO_JS_KEY_SET = !!JS_KEY;
 
 // SDK 스크립트를 1회만 로드 (autoload=false → kakao.maps.load로 초기화)
 function loadSdk(): Promise<boolean> {
@@ -113,6 +152,8 @@ export default function KakaoMap({
   routes = [],
   candidates = [],
   onCandidateClick,
+  onMapClick,
+  radiusCircle = null,
 }: {
   pins: MapPin[];
   center: MapCenterPin | null;
@@ -126,6 +167,21 @@ export default function KakaoMap({
   /** 투표 후보 라벨 박스 — 누르면 onCandidateClick(id) */
   candidates?: MapCandidate[];
   onCandidateClick?: (id: string) => void;
+  /**
+   * v19 §4-⑥ **지도 핑** — 빈 지도를 탭하면 그 좌표를 준다.
+   * 넘기지 않으면 지도 클릭은 아무 일도 하지 않는다(기존 화면 동작 그대로).
+   * ⚠️ 후보 라벨 박스를 누른 경우는 `onCandidateClick` 이 먼저 받는다 —
+   *    카카오는 커스텀 오버레이 클릭을 지도 클릭으로 전파하지 않는다.
+   */
+  onMapClick?: (lat: number, lng: number) => void;
+  /**
+   * 지점 후보를 받는 **반경 원** (2차 그릴링 · 1차 순서도 4번 `반경 700m 표시`).
+   *
+   * 숫자·문구로만 "700m 안에서 고르세요"라고 하면 지도에서 어디까지가 안인지
+   * 알 수 없다 — 반경 밖을 눌러 서버에 거부당하고 나서야 알게 된다.
+   * 중심은 확정된 지역, 반지름은 `radiusM`(700 → 확장 시 1400).
+   */
+  radiusCircle?: { lat: number; lng: number; radiusM: number } | null;
 }) {
   // 호출부는 pins/routes 를 렌더마다 새 배열로 만든다. 모임 상세는 1.8초마다
   // 폴링하므로 배열 참조를 그대로 의존성에 쓰면 오버레이가 계속 지워졌다 다시
@@ -134,12 +190,15 @@ export default function KakaoMap({
     pins.map((p) => [p.lat, p.lng, p.label, p.color, p.index, p.statusColor, p.focused]),
     center && [center.lat, center.lng, center.label],
     routes.map((r) => [r.id, r.color, r.real, r.points.length, r.points[0], r.points[r.points.length - 1], r.weight, r.opacity]),
-    candidates.map((c) => [c.id, c.lat, c.lng, c.name, c.votes, c.mine]),
+    candidates.map((c) => [c.id, c.lat, c.lng, c.name, c.votes, c.mine, !!c.preview]),
   ]);
 
   // 클릭 콜백은 렌더마다 새 함수여도 오버레이를 다시 그릴 필요가 없다 → ref로 보관
   const clickRef = useRef(onCandidateClick);
   clickRef.current = onCandidateClick;
+  // 지도 클릭도 같은 이유로 ref — 리스너를 한 번만 붙이고 최신 콜백을 본다
+  const mapClickRef = useRef(onMapClick);
+  mapClickRef.current = onMapClick;
 
   const boxRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -159,8 +218,15 @@ export default function KakaoMap({
       const { kakao } = window;
       if (!mapRef.current && boxRef.current) {
         mapRef.current = new kakao.maps.Map(boxRef.current, {
-          center: new kakao.maps.LatLng(37.5665, 126.978), // 서울 시청 기본
-          level: 8,
+          center: new kakao.maps.LatLng(DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lng),
+          level: DEFAULT_MAP_LEVEL,
+        });
+        // v19 §4-⑥: 지도 탭 → 좌표. 리스너는 **지도 생성 시 한 번만** 붙이고
+        // 최신 콜백은 ref 로 본다 — 폴링(1.8초)마다 붙였다 떼면 클릭이 씹힌다.
+        kakao.maps.event.addListener(mapRef.current, "click", (e: any) => {
+          const ll = e?.latLng;
+          if (!ll || !mapClickRef.current) return;
+          mapClickRef.current(ll.getLat(), ll.getLng());
         });
       }
       setReady(true);
@@ -182,6 +248,23 @@ export default function KakaoMap({
     overlaysRef.current = [];
     linesRef.current.forEach((l) => l.setMap(null));
     linesRef.current = [];
+
+    // ── 반경 원 — **가장 아래**에 깐다 (핀·경로가 위에 와야 한다) ──
+    //  `Circle` 도 오버레이라 `linesRef` 로 같이 치운다(따로 두면 지울 때 빠뜨린다).
+    if (radiusCircle) {
+      const circle = new kakao.maps.Circle({
+        center: new kakao.maps.LatLng(radiusCircle.lat, radiusCircle.lng),
+        radius: radiusCircle.radiusM,
+        strokeWeight: 2,
+        strokeColor: "#2F6FED",
+        strokeOpacity: 0.7,
+        strokeStyle: "dashed", // 점선 — "정확한 경계선"이 아니라 안내라는 뜻
+        fillColor: "#2F6FED",
+        fillOpacity: 0.06,
+      });
+      circle.setMap(map);
+      linesRef.current.push(circle);
+    }
 
     // 경로선 — 핀보다 먼저 그려 핀이 위에 오도록
     for (const rt of routes) {
@@ -235,16 +318,22 @@ export default function KakaoMap({
       hasAny = true;
       const el = document.createElement("div");
       el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+      // 미리보기(회색·흐림)와 등록된 후보(흰 박스·표 뱃지)를 눈으로 갈라 놓는다
+      const line = cd.preview ? "#b6c0d0" : cd.mine ? CAND_MINE : "#d8dee9";
+      const badge = cd.preview
+        ? `<span style="font-size:10px;font-weight:900;color:#54617a;background:#eef1f7;border-radius:999px;padding:1px 8px">+ 후보 등록</span>`
+        : `<span style="font-size:10px;font-weight:900;color:#1f5ae0;background:#e8f0ff;border-radius:999px;padding:1px 8px">${cd.votes}표</span>`;
       el.innerHTML =
         `<button type="button" style="pointer-events:auto;cursor:pointer;font:inherit;` +
         `display:flex;flex-direction:column;align-items:center;gap:2px;background:#fff;` +
-        `border:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};border-radius:12px;padding:5px 10px;` +
-        `box-shadow:0 3px 10px rgba(0,0,0,.18)">` +
-        `<span style="font-size:12px;font-weight:900;color:#1c2433;white-space:nowrap">${cd.name}</span>` +
-        `<span style="font-size:10px;font-weight:900;color:#1f5ae0;background:#e8f0ff;border-radius:999px;padding:1px 8px">${cd.votes}표</span>` +
+        `border:2.5px solid ${line};border-radius:12px;padding:5px 10px;` +
+        `opacity:${cd.preview ? ".85" : "1"};` +
+        `box-shadow:0 3px 10px rgba(0,0,0,${cd.preview ? ".10" : ".18"})">` +
+        `<span style="font-size:12px;font-weight:${cd.preview ? "800" : "900"};color:${cd.preview ? "#54617a" : "#1c2433"};white-space:nowrap">${cd.name}</span>` +
+        badge +
         `</button>` +
         // 박스 아래 작은 꼬리
-        `<div style="width:8px;height:8px;background:#fff;border-right:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};border-bottom:2.5px solid ${cd.mine ? CAND_MINE : "#d8dee9"};transform:rotate(45deg);margin-top:-6px"></div>`;
+        `<div style="width:8px;height:8px;background:#fff;border-right:2.5px solid ${line};border-bottom:2.5px solid ${line};transform:rotate(45deg);margin-top:-6px"></div>`;
       el.querySelector("button")!.addEventListener("click", () => clickRef.current?.(cd.id));
       const ov = new kakao.maps.CustomOverlay({ position: pos, content: el, yAnchor: 1, clickable: true });
       ov.setMap(map);
@@ -297,11 +386,81 @@ export default function KakaoMap({
       if (totalPoints === 1) map.setLevel(5);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, sig, view, focusIndex]);
+    // ⚠️ `radiusCircle` 을 의존성에 넣지 않으면 **반경 확장(700→1400)이 지도에 안 보인다**
+    //    — 상태는 바뀌었는데 원은 그대로라 "확장이 안 됐나?" 로 읽힌다.
+  }, [ready, sig, view, focusIndex, radiusCircle?.lat, radiusCircle?.lng, radiusCircle?.radiusM]);
+
+  // ⚠️ 카카오 지도는 **컨테이너 크기가 바뀌어도 스스로 다시 그리지 않는다.**
+  //    전체화면 토글처럼 박스가 커지면 지도가 옛 크기로 잘린 채 남는다.
+  //    크기 변화를 감지해 relayout + 다시 맞춤. (전체화면 버튼의 전제 조건)
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!ready || !box || typeof ResizeObserver === "undefined") return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (t) clearTimeout(t);
+      // 연속 리사이즈(애니메이션)마다 부르지 않도록 살짝 모아서 한 번
+      t = setTimeout(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        const c = map.getCenter();
+        map.relayout();
+        map.setCenter(c);
+      }, 60);
+    });
+    ro.observe(box);
+    return () => {
+      if (t) clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [ready]);
 
   return (
     <>
       <div ref={boxRef} style={{ position: "absolute", inset: 0 }} />
+
+      {/* ── 지도가 못 뜬 경우의 폴백 (CLAUDE.md §3-4) ──
+             카카오 JS 키가 없거나 SDK 로드가 막히면 지도가 빈 카드가 된다.
+             그런데 v19 §4-⑥⑧ 의 **후보 등록·투표가 지도 위 핀 탭**이라,
+             지도가 없으면 그 동작이 통째로 사라진다 — "키가 없어도 전체 플로우가
+             돌아야 한다"는 규칙에 어긋난다. 같은 핀을 목록 버튼으로 그린다. */}
+      {!ready && candidates.length > 0 && onCandidateClick && (
+        <div
+          style={{
+            position: "absolute", inset: "auto 10px 10px", zIndex: 12,
+            display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center",
+          }}
+        >
+          {candidates.map((cd) => (
+            <button
+              key={cd.id}
+              type="button"
+              onClick={() => clickRef.current?.(cd.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "var(--panel)", cursor: "pointer",
+                border: `2px solid ${cd.preview ? "var(--hair2)" : cd.mine ? CAND_MINE : "var(--hair)"}`,
+                borderRadius: 12, padding: "5px 10px",
+                font: "inherit", fontSize: 12, fontWeight: 800,
+                color: cd.preview ? "var(--ink-soft)" : "var(--ink)",
+                boxShadow: "var(--shadow)",
+              }}
+            >
+              {cd.name}
+              <span
+                style={{
+                  fontSize: 10, fontWeight: 900, borderRadius: 999, padding: "1px 7px",
+                  background: cd.preview ? "var(--panel2)" : "var(--ac-soft)",
+                  color: cd.preview ? "var(--ink-soft)" : "var(--ac-deep)",
+                }}
+              >
+                {cd.preview ? "+ 후보 등록" : `${cd.votes}표`}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {ready && candidates.length > 0 && onCandidateClick && (
         // 피그마: 지도 상단 중앙 안내 툴팁 (상단 컨트롤과 겹치지 않게 한 줄 아래)
         <div

@@ -1,0 +1,76 @@
+/* ============================================================
+   moimer — 디자인 토큰 · 페이지 배경 · 폰 크롬
+
+   여기 있는 것은 "화면이 무엇이든 바뀌지 않는 것"뿐이다.
+   화면 11대가 공유하는 색·간격·타이포와, 그것을 담는 아이폰 껍데기.
+
+   · 프레임 축소 없음(1:1) — 지도 포인터 좌표를 정확히 유지하기 위함
+   · 다크 모드는 폰 바깥 무대(--stage-*)만 바꾼다. 기기 안 UI는 라이트 전용.
+   ============================================================ */
+
+:root {
+  --brand:#2f6bff; --brand-dark:#1e4fd8; --danger:#e11d48;
+  --ink:#14182b; --ink-2:#4a5169; --ink-3:#858ba3;
+  --line:#e4e8f2; --surface:#ffffff; --surface-2:#f5f7fb;
+  --shadow-sm:0 1px 3px rgba(20,24,43,.08), 0 1px 2px rgba(20,24,43,.04);
+  --shadow-md:0 4px 16px rgba(20,24,43,.1);
+  --shadow-lg:0 -6px 28px rgba(20,24,43,.16);
+  --tap:48px; --safe-top:56px; --safe-bottom:22px;
+  --ease:cubic-bezier(.32,.72,0,1);
+  --stage-1:#e7ebf2; --stage-2:#f4f6fa; --stage-ink:#3a4055;
+
+  /* [추가] 화면 ②~⑩ 이 들여온 색.
+     규칙: :root 밖에서 생 hex 를 쓰지 않는다 — 색은 토큰이거나 존재하지 않는다. */
+  --warn:#e5a400; --warn-bg:#fff8e6; --warn-ink:#8a6d00;
+  --ai:#6c5ce7;   --ai-bg:#f1edff;
+  --kakao:#fdd835; --kakao-ink:#3a2b00;
+  --ok:#2e7d32;
+  --cand:#e3b93f; --cand-bg:#fff6d8;
+}
+@media (prefers-color-scheme: dark) { :root { --stage-1:#0e1015; --stage-2:#171a22; --stage-ink:#9aa2b8; } }
+:root[data-theme="dark"]  { --stage-1:#0e1015; --stage-2:#171a22; --stage-ink:#9aa2b8; }
+:root[data-theme="light"] { --stage-1:#e7ebf2; --stage-2:#f4f6fa; --stage-ink:#3a4055; }
+
+* { box-sizing:border-box; }
+body {
+  margin:0; min-height:100dvh; padding:24px 12px;
+  display:flex; align-items:flex-start; justify-content:center;
+  background:radial-gradient(120% 90% at 50% 0%, var(--stage-2) 0%, var(--stage-1) 100%);
+  background-attachment:fixed; color:var(--stage-ink);
+  font-family:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo","Pretendard","Malgun Gothic","맑은 고딕", system-ui, sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+.iphone {
+  position:relative; width:426px; height:898px; flex:none;
+  border-radius:66px; padding:12px;
+  background:linear-gradient(145deg,#d8dade 0%,#a9adb5 22%,#c9ccd2 50%,#9ea3ab 78%,#d3d6db 100%);
+  box-shadow:0 2px 3px rgba(255,255,255,.5) inset, 0 0 0 1px rgba(0,0,0,.22),
+             0 40px 90px rgba(10,14,28,.38), 0 8px 24px rgba(10,14,28,.24);
+}
+.btn-side { position:absolute; background:linear-gradient(180deg,#b7bbc1,#8f949c); border-radius:3px; }
+.btn-action { left:-3px; top:150px; width:4px; height:32px; }
+.btn-volup  { left:-3px; top:214px; width:4px; height:62px; }
+.btn-voldn  { left:-3px; top:292px; width:4px; height:62px; }
+.btn-power  { right:-3px; top:236px; width:4px; height:96px; }
+.btn-cam    { right:-3px; top:372px; width:4px; height:34px; }
+
+.display { position:relative; width:402px; height:874px; border-radius:55px; overflow:hidden; background:#000; box-shadow:0 0 0 1px rgba(0,0,0,.6); }
+.island { position:absolute; top:12px; left:50%; transform:translateX(-50%); width:124px; height:36px; border-radius:20px; background:#000; z-index:40; pointer-events:none; }
+.island::after { content:""; position:absolute; right:11px; top:50%; transform:translateY(-50%); width:11px; height:11px; border-radius:50%; background:radial-gradient(circle at 35% 32%,#2b3a52 0%,#111722 55%,#05070c 100%); }
+.statusbar { position:absolute; top:0; left:0; right:0; height:56px; z-index:35; display:flex; align-items:center; justify-content:space-between; padding:16px 30px 0; pointer-events:none; color:var(--ink); font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+.statusbar .right { display:flex; align-items:center; gap:6px; }
+.battery { width:25px; height:12px; border:1.6px solid currentColor; border-radius:4px; position:relative; }
+.battery::after { content:""; position:absolute; right:-4px; top:3.5px; width:2px; height:5px; background:currentColor; border-radius:0 2px 2px 0; opacity:.6; }
+.battery i { position:absolute; left:1.5px; top:1.5px; bottom:1.5px; width:66%; background:currentColor; border-radius:2px; }
+.homebar { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:140px; height:5px; border-radius:99px; background:var(--ink); opacity:.32; z-index:36; pointer-events:none; }
+
+.device { position:absolute; inset:0; background:var(--surface-2); color:var(--ink); overflow:hidden; }
+#map { position:absolute; inset:0; background:#e9eef6; }
+
+.sidenote { max-width:330px; margin-left:28px; align-self:center; font-size:13px; line-height:1.65; }
+.sidenote h1 { font-size:17px; margin:0 0 10px; }
+.sidenote ul { margin:0 0 16px; padding-left:18px; }
+.sidenote li { margin-bottom:7px; }
+.sidenote code { background:rgba(128,140,170,.18); padding:2px 6px; border-radius:5px; font-size:12px; }
+@media (max-width:900px) { .sidenote { display:none; } }

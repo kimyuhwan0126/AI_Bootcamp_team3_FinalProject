@@ -52,7 +52,13 @@ test("후보 등록 · 수동 확정 모달이 열리고 실제로 반영된다"
     origin: "홍대입구",
     transport: "transit",
   });
-  await act(request, { action: "regions", code: created.code });
+  // 지역 후보를 만든다 — 방장 추천 버튼의 서버 액션 (자동 채움은 2026-08-10 폐지)
+  await act(request, {
+    action: "suggestRegions",
+    code: created.code,
+    participantId: created.participantId,
+    mode: "replace",
+  });
 
   await page.addInitScript(
     ([code, list, active]) => {

@@ -4,12 +4,20 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:lan": "node scripts/dev-lan.mjs",
+    "ip": "node scripts/dev-lan.mjs --print-only",
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "next lint",
     "pretest:smoke": "playwright install chromium",
     "test:smoke": "playwright test",
-    "verify": "npx tsc --noEmit && npm run build && npm run test:smoke"
+    "verify": "npx tsc --noEmit && npm run build && npm run test:smoke",
+    "check:live": "node scripts/check-live.mjs",
+    "check:devices": "node scripts/check-devices.mjs",
+    "check:screens": "node scripts/check-screens.mjs",
+    "check:station": "node scripts/check-station-snap.mjs",
+    "shots": "node scripts/shots-deck.mjs",
+    "demo": "node scripts/demo-record.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -27,6 +27,12 @@ export interface TravelEntry {
   name: string;
   /** 이동시간(분). 실 API 실패 시 haversine 추정값이 들어온다. */
   min: number;
+  /**
+   * 위 `min` 이 **실 API 값인지**. `false` 면 직선거리 추정, `undefined` 면 알 수 없다.
+   * 화면이 `경로 기준`(실값) 이라고 말해도 되는지를 이 값 하나로 가른다 —
+   * `WeatherSnapshot.real` 과 같은 계약이다(CLAUDE.md §6).
+   */
+  real?: boolean;
 }
 
 /**

@@ -17,9 +17,14 @@ const PROFILE_KEY = "moimer:v8:profile";
 interface Profile {
   savedPlaces: string[];
   transport: "transit" | "car";
+  /**
+   * v19 §4-③ 기본 PIN — 참여 폼에 자동으로 채워진다.
+   * **이 기기에만** 저장된다(localStorage). 카카오 로그인 참여자는 쓰지 않는다 (v15).
+   */
+  pin?: string;
 }
 
-const DEFAULT_PROFILE: Profile = { savedPlaces: [], transport: "transit" };
+const DEFAULT_PROFILE: Profile = { savedPlaces: [], transport: "transit", pin: "" };
 
 export default function MePage() {
   const [profile, setProfile] = useState<Profile>(DEFAULT_PROFILE);
@@ -100,6 +105,27 @@ export default function MePage() {
         <div className="v8-trans">
           <button className={profile.transport === "transit" ? "on" : ""} onClick={() => save({ ...profile, transport: "transit" })}><IcTransit />대중교통</button>
           <button className={profile.transport === "car" ? "on" : ""} onClick={() => save({ ...profile, transport: "car" })}><IcCar />차량</button>
+        </div>
+      </div>
+
+      {/* ── v19 §4-③: 기본 PIN — 참여 폼 자동 채움 ── */}
+      <div className="v8-mycard">
+        <div className="t">기본 PIN</div>
+        <div className="d">
+          비로그인으로 모임에 참여할 때 쓰는 숫자예요. 기기가 바뀌거나 기록이 지워졌을 때
+          <b> 이름 + PIN</b> 으로 내 자리를 되찾을 수 있어요. (모임마다 따로 바꿀 수도 있어요)
+        </div>
+        <input
+          className="input"
+          style={{ padding: "9px 12px", fontSize: 12.5, maxWidth: 140 }}
+          inputMode="numeric"
+          maxLength={6}
+          value={profile.pin ?? ""}
+          onChange={(e) => save({ ...profile, pin: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+          placeholder="숫자 4자리"
+        />
+        <div className="d" style={{ marginTop: 6 }}>
+          ⚠️ 이 기기에만 저장돼요(localStorage). 카카오 로그인으로 참여하면 PIN 은 쓰지 않아요.
         </div>
       </div>
 

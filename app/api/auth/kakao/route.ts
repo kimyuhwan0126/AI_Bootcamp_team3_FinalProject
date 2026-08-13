@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { kakaoAuthorizeUrl } from "@/lib/kakao";
+import { kakaoAuthorizeUrl, redirectUriFor, originOfRequest } from "@/lib/kakao";
 import { env, has } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,8 @@ function mask(v: string): string {
 //   콘솔에 등록된 값과 대조해 어디가 다른지 찾을 수 있다.
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const origin = url.origin;
+  // 폰이 실제로 친 주소 (Host 헤더) — Redirect URI 는 글자 단위로 맞아야 한다
+  const origin = originOfRequest(req);
 
   if (url.searchParams.get("debug")) {
     // ⚠️ `!process.env.ENABLE_DEBUG` 는 값이 아니라 "존재"만 본다 —
@@ -29,17 +30,25 @@ export async function GET(req: Request) {
     if (process.env.NODE_ENV === "production" && process.env.ENABLE_DEBUG !== "1") {
       return NextResponse.json({ error: "disabled" }, { status: 403 });
     }
-    const raw = kakaoAuthorizeUrl();
+    const raw = kakaoAuthorizeUrl(origin);
     return NextResponse.json({
       note: "카카오 로그인 진단 — 아래 값을 developers.kakao.com 설정과 대조하세요",
+      // 지금 이 주소로 접속한 사람에게 실제로 필요한 값. LAN 시연이면 폰에서 이 URL을
+      // 열어(`http://10.x.x.x:3000/api/auth/kakao?debug=1`) 이 줄을 그대로 등록한다.
+      등록해야_할_RedirectURI: redirectUriFor(origin),
+      접속한_주소: origin,
+      env에_적힌_값: env.kakaoRedirect,
       restKey: {
         masked: mask(env.kakaoRest),
         length: env.kakaoRest.length, // 정상 REST 키는 32자. 다르면 오타/누락
         hasWhitespace: /\s/.test(env.kakaoRest), // 복사할 때 공백·개행이 섞인 경우
       },
-      redirectUri: env.kakaoRedirect,
+      redirectUri: redirectUriFor(origin),
       authorizeUrl: raw.replace(env.kakaoRest, mask(env.kakaoRest)),
       checks: [
+        "0) LAN 시연: 팀원 폰은 http://10.x.x.x:3000 으로 들어온다 — 그 주소의 콜백도",
+        "   Redirect URI 목록에 **따로** 등록해야 한다 (localhost 것과 별개다).",
+        "   같은 화면의 '플랫폼 > Web 사이트 도메인'에도 http://10.x.x.x:3000 을 넣는다(지도).",
         "1) restKey.masked 가 [편집 중인 앱] > 앱 키 > REST API 키의 앞4·뒤4자와 같은가?",
         "   → 다르면 지금 키는 '다른 앱'의 키다. 그 다른 앱에 URI를 등록하거나 키를 바꿔야 한다.",
         "   (JS 키와 REST 키는 서로 다른 앱의 것일 수 있다 — 지도가 떠도 로그인은 다른 앱일 수 있음)",
@@ -55,5 +64,6 @@ export async function GET(req: Request) {
     // 키 미설정 → 홈으로 되돌리며 안내
     return NextResponse.redirect(`${origin}/?err=nokey`);
   }
-  return NextResponse.redirect(kakaoAuthorizeUrl());
+  // 폰이 보고 있던 주소(=origin)로 돌아오게 한다 — localhost 로 고정하면 폰에서 깨진다
+  return NextResponse.redirect(kakaoAuthorizeUrl(origin));
 }

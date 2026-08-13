@@ -1,0 +1,1635 @@
+// ─────────────────────────────────────────────────────────────
+// v19 흐름 — 설계 확정판(docs/설계_v19.md)으로 바꾼 규칙이 실제로 걸리는지.
+//
+// 기존 smoke.spec 은 "핵심 경로가 그려지는가"를 본다. 이 파일은 그 위에서
+// **v19 가 새로 못박은 규칙**만 골라 검사한다:
+//
+//   §3  확정 범위 분기 — '지역까지'는 지점 단계를 건너뛴다
+//   §5  후보 게이트 0/1/2+ · 투표 시작 = 잠금 · 늦은 표 거부
+//   §6  reopen 사다리 — 한 칸씩, 표는 유지
+//   §4-⑧ 지점 반경 700m · 밖은 거부 · 확장 1회 · 삭제 권한
+//
+// 대부분 API 로 검사한다 — 규칙은 **서버가 최종 관문**이기 때문이다(v12).
+// 화면이 규칙을 지키는지는 마지막 테스트에서 눈으로(=DOM) 본다.
+//
+// 외부 키 없이 돈다 (CLAUDE.md §3-4 — mock 폴백).
+// ─────────────────────────────────────────────────────────────
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+
+/**
+ * 이 빌드가 **AI 채팅으로 빌드됐는지**.
+ *
+ * `NEXT_PUBLIC_FF_AI_CHAT=1` 이면 투표 UI 가 **채팅 UI 로 대체된다**
+ * (둘이 같이 뜨지 않는다 — `app/m/[code]/CLAUDE.md`). 그래서 방장 바·확정 버튼·
+ * 지점 미리보기처럼 **투표 UI 를 전제로 한 화면 검사**는 그 빌드에서 성립하지 않는다.
+ *
+ * ⚠️ `NEXT_PUBLIC_FF_*` 는 **빌드 시점에 박히므로** 테스트 안에서 켜고 끌 수 없다.
+ *    지금 서버가 무엇을 켜고 빌드됐는지 `/api/status` 에 물어보고 갈라진다
+ *    (`tests/station-snap.spec.ts` 와 같은 방식).
+ */
+const aiChatOn = async (request: APIRequestContext): Promise<boolean> =>
+  !!(await (await request.get("/api/status")).json()).flags?.aiChat;
+
+interface Ident { id: string; name: string; isLeader: boolean }
+
+/** 성공을 기대하는 액션 */
+async function act(request: APIRequestContext, data: Record<string, unknown>) {
+  const res = await request.post("/api/meeting", { data });
+  const body = await res.text();
+  expect(res.ok(), `${String(data.action)} 실패 (${res.status()}): ${body}`).toBeTruthy();
+  return JSON.parse(body);
+}
+
+/** **거부를 기대하는** 액션 — 서버가 막아야 하는 규칙을 검사할 때 쓴다 */
+async function actFails(request: APIRequestContext, data: Record<string, unknown>) {
+  const res = await request.post("/api/meeting", { data });
+  const body = await res.text();
+  expect(res.ok(), `${String(data.action)} 이 거부돼야 하는데 통과했다: ${body}`).toBeFalsy();
+  return JSON.parse(body) as { error?: string };
+}
+
+const get = async (request: APIRequestContext, code: string) =>
+  (await request.get(`/api/meeting?code=${code}`)).json();
+
+async function loginAs(page: Page, code: string, list: Ident[], activeId: string) {
+  await page.addInitScript(
+    ([c, l, a]) => {
+      localStorage.setItem(`moimer:${c}`, l as string);
+      localStorage.setItem(`moimer:${c}:active`, a as string);
+    },
+    [code.toUpperCase(), JSON.stringify(list), activeId] as const
+  );
+}
+
+/** 모임 하나를 만들고 방장 출발지까지 넣는다 */
+async function setup(
+  request: APIRequestContext,
+  opts: { scope?: "region" | "place"; name?: string } = {}
+) {
+  const created = await act(request, {
+    action: "create",
+    name: opts.name ?? "v19 테스트",
+    leaderName: "방장",
+    scope: opts.scope ?? "place",
+    purposeCategory: "food",
+  });
+  const code: string = created.code;
+  const leaderId: string = created.participantId;
+  await act(request, { action: "origin", code, participantId: leaderId, origin: "강남역", transport: "transit" });
+  return { code, leaderId };
+}
+
+/**
+ * 지역 후보를 만들어 두고 목록을 준다.
+ *
+ * ⚠️ 예전엔 `{action:"regions"}` 한 방이었다 — 그 액션이 후보를 **자동으로 깔았기**
+ *    때문이다. 2026-08-10 자동 채움을 걷어내면서(멘토링 8/6 §2) 그 액션은 이제
+ *    **지표만 갱신**한다. 아래 테스트들이 검증하는 것은 "후보가 어떻게 생겼나"가
+ *    아니라 **투표 잠금·게이트·되돌리기 규칙**이라, 후보는 실제 제품 경로 중
+ *    가장 짧은 것(방장 추천 버튼)으로 채운다. 핑 자체는 `check-devices` 가 화면으로 검증한다.
+ */
+/**
+ * '투표 시작'. **통합 모드의 지역에는 이 절차가 아예 없다** (멘토링 2026-08-06 §2) —
+ * 핑이 곧 표라 잠글 것이 없고, 서버가 거부하는 게 **정상**이다.
+ *
+ * 아래 테스트 대부분은 이 액션 자체를 검사하려는 게 아니라 **다음 칸으로 넘어가려고**
+ * 부른다. 그래서 그 거부만 조용히 넘긴다 — 다른 실패는 그대로 터뜨린다.
+ * (지점에는 여전히 '투표 시작'이 있으므로 그 경로는 그대로 검사된다)
+ */
+async function startVoteIfAny(request: APIRequestContext, code: string, leaderId: string) {
+  const r = await request.post("/api/meeting", {
+    data: { action: "startVote", code, participantId: leaderId },
+  });
+  if (r.ok()) return;
+  const err = (await r.json())?.error ?? "";
+  if (/핑이 곧 표/.test(err)) return; // 통합 모드의 지역 — 넘길 절차가 없다
+  throw new Error(`startVote 실패: ${err}`);
+}
+
+async function seedRegions(request: APIRequestContext, code: string) {
+  const st = await get(request, code);
+  const leader = st.participants.find((p: { isLeader?: boolean }) => p.isLeader);
+  await act(request, { action: "suggestRegions", code, participantId: leader?.id, mode: "replace" });
+  const after = await get(request, code);
+  expect(after.regions?.length, "지역 후보가 하나도 안 나왔다").toBeGreaterThan(0);
+  return after.regions as { id: string; name: string }[];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// §5 후보 게이트 · 투표 시작 = 잠금
+// ═══════════════════════════════════════════════════════════════
+
+test("§2 지역은 핑이 곧 표다 — '투표 시작'도 별도 투표도 없다", async ({ request }) => {
+  // 멘토링 2026-08-06 §2: "지역 투표 단계를 별도로 두지 않고 핑 등록 = 투표로 통합.
+  //                        많이 찍힌 곳이 자동으로 지역으로 선정."
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+
+  // ① '투표 시작'이라는 절차 자체가 없다
+  const noStart = await actFails(request, { action: "startVote", code, participantId: leaderId });
+  expect(noStart.error).toContain("핑이 곧 표");
+
+  // ② 따로 던지는 '표'도 없다 — 지도를 누르는 것이 표다
+  const noVote = await actFails(request, {
+    action: "vote", code, participantId: leaderId, target: "region", candidateId: regions[0].id,
+  });
+  expect(noVote.error).toContain("단계가 바뀌었어요");
+
+  // ③ 핑을 찍으면 그 사람이 그 후보의 표로 쌓인다
+  await act(request, { action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978 });
+  const st = await get(request, code);
+  const mine = st.regions.find((r: { contributors?: string[] }) => (r.contributors ?? []).includes(leaderId));
+  expect(mine, "핑을 찍었는데 내 표가 없다").toBeTruthy();
+});
+
+test("§2 핑은 인원당 1개라 다른 곳을 누르면 표가 옮겨간다", async ({ request }) => {
+  // 통합 모드에서 "표를 바꾼다" = "핑을 옮긴다". 1인 1표가 이 규칙으로 지켜진다.
+  const { code, leaderId } = await setup(request);
+  await act(request, { action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978 });
+  const first = await get(request, code);
+  expect(first.regions).toHaveLength(1);
+
+  await act(request, { action: "addRegion", code, participantId: leaderId, lat: 37.4979, lng: 127.0276 });
+  const second = await get(request, code);
+  const holders = second.regions.filter((r: { contributors?: string[] }) =>
+    (r.contributors ?? []).includes(leaderId)
+  );
+  expect(holders, "핑을 옮겼는데 두 곳에 표가 남았다").toHaveLength(1);
+});
+
+test("§2 지역은 전원이 안 찍어도 방장이 확정할 수 있다", async ({ request }) => {
+  // 멘토링 §2: "참여자는 핑 찍지 않아도 되고, 방장이 다음 단계로 강제로 넘어갈 수 있음."
+  const { code, leaderId } = await setup(request);
+  for (const n of ["안찍는사람1", "안찍는사람2"]) await act(request, { action: "join", code, name: n });
+  await act(request, { action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978 });
+
+  const before = await get(request, code);
+  expect(before.totalParticipants).toBe(3);
+
+  await act(request, {
+    action: "confirmManual", code, participantId: leaderId,
+    target: "region", id: before.regions[0].id,
+  });
+  const after = await get(request, code);
+  expect(after.winnerRegion?.id, "1명만 찍었는데 확정이 막혔다").toBe(before.regions[0].id);
+});
+
+test("§5 지점 후보 0개면 투표 시작이 막힌다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  // v19: 지역 확정 직후 지점 후보는 비어 있다
+  const st = await get(request, code);
+  expect(st.places?.length ?? 0, "지점 후보가 미리 채워졌다").toBe(0);
+
+  const fail = await actFails(request, { action: "startVote", code, participantId: leaderId });
+  expect(fail.error).toContain("후보가 없어요");
+});
+
+// ═══════════════════════════════════════════════════════════════
+// §3 확정 범위 분기 — '지역까지'
+// ═══════════════════════════════════════════════════════════════
+
+test("§3 '지역까지' 모임은 지점 단계를 건너뛰고 결과로 간다", async ({ request }) => {
+  const { code, leaderId } = await setup(request, { scope: "region", name: "지역까지 모임" });
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const st = await get(request, code);
+  expect(st.scope).toBe("region");
+  expect(st.stage, "'지역까지'는 지점 단계 없이 바로 result 여야 한다").toBe("result");
+  expect(st.aiPhase).toBe("done");
+  expect(st.places?.length ?? 0, "'지역까지' 모임에 지점 후보가 생겼다").toBe(0);
+  expect(st.winnerRegion?.id).toBe(regions[0].id);
+});
+
+test("§3 '지점도 정하기' 승격은 방장만 · 역방향 없음", async ({ request }) => {
+  const { code, leaderId } = await setup(request, { scope: "region" });
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+  const memberId: string = joined.participantId;
+
+  // 참가자는 못 한다
+  const denied = await actFails(request, { action: "promoteToPlace", code, participantId: memberId });
+  expect(denied.error).toContain("방장만");
+
+  // 방장은 된다 → 지점 등록 단계로
+  await act(request, { action: "promoteToPlace", code, participantId: leaderId });
+  const st = await get(request, code);
+  expect(st.scope).toBe("place");
+  expect(st.stage).toBe("chat");
+  expect(st.aiPhase).toBe("place");
+  expect(st.placeVoteOpen, "승격 직후엔 등록 단계여야 한다").toBe(false);
+
+  // 이미 '지점까지'면 다시 승격할 수 없다 (역방향 없음)
+  const again = await actFails(request, { action: "promoteToPlace", code, participantId: leaderId });
+  expect(again.error).toContain("이미");
+});
+
+// ═══════════════════════════════════════════════════════════════
+// §4-⑧ 지점 반경 · 등록 · 삭제 권한
+// ═══════════════════════════════════════════════════════════════
+
+test("§4-⑧ 반경 700m 밖은 거부 · 확장은 1회", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const st0 = await get(request, code);
+  expect(st0.radiusM).toBe(700);
+  const center = st0.winnerRegion;
+
+  // 중심에서 약 3km 떨어진 좌표 (위도 1도 ≈ 111km)
+  const far = { lat: center.lat + 0.027, lng: center.lng };
+  const rejected = await actFails(request, {
+    action: "addPlace", code, participantId: leaderId,
+    name: "너무먼집", category: "음식점", lat: far.lat, lng: far.lng,
+  });
+  expect(rejected.error).toContain("제한");
+
+  // 확장 1회 → 1400
+  const ex = await act(request, { action: "expandRadius", code, participantId: leaderId });
+  expect(ex.radiusM).toBe(1400);
+  // 두 번째는 거부
+  const ex2 = await actFails(request, { action: "expandRadius", code, participantId: leaderId });
+  expect(ex2.error).toContain("최대");
+});
+
+test("§4-⑧ 지점 후보 삭제는 방장·본인만", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+  const memberId: string = joined.participantId;
+
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  expect(poi.items?.length, "미리보기 POI 가 비었다").toBeGreaterThan(0);
+
+  // 방장이 등록한 후보를 참가자가 지우려 하면 거부
+  const p = poi.items[0];
+  const added = await act(request, {
+    action: "addPlace", code, participantId: leaderId,
+    name: p.name, category: p.category, lat: p.lat, lng: p.lng,
+  });
+  const denied = await actFails(request, {
+    action: "removePlace", code, participantId: memberId, placeId: added.candidate.id,
+  });
+  expect(denied.error).toContain("내가 등록한");
+
+  // 방장 본인은 지운다
+  await act(request, { action: "removePlace", code, participantId: leaderId, placeId: added.candidate.id });
+  const st = await get(request, code);
+  expect(st.places.length).toBe(0);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// §6 reopen 사다리
+// ═══════════════════════════════════════════════════════════════
+
+test("§6 되돌리기는 한 칸씩 내려가고 표(=핑)는 유지된다", async ({ request }) => {
+  // ⚠️ 통합 모드에선 지역 사다리가 **한 칸 짧다** — 투표 칸이 없기 때문이다.
+  //    지점 등록 → (바로) 지역, 그 아래는 없다. 표는 핑이므로 "핑이 남는가"를 본다.
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await act(request, { action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978 });
+  const myPing = (await get(request, code)).regions.find((r: { contributors?: string[] }) =>
+    (r.contributors ?? []).includes(leaderId)
+  );
+  expect(myPing, "사전 조건: 내 핑이 있어야 한다").toBeTruthy();
+
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  // 지금: 지점 등록 단계
+  expect((await get(request, code)).aiPhase).toBe("place");
+
+  // 한 칸 ① 지점 등록 → 지역 (경계 reopen)
+  const s1 = await act(request, { action: "reopenStep", code, participantId: leaderId });
+  expect(s1.step).toBe("region-register");
+  const a1 = await get(request, code);
+  expect(a1.winnerRegion, "지역 확정이 풀려야 한다").toBeNull();
+  // ⭐ 되돌리기는 표를 지키지 않는다면 의미가 없다 — 통합 모드에선 **핑이 살아 있어야** 한다
+  expect(
+    a1.regions.some((r: { contributors?: string[] }) => (r.contributors ?? []).includes(leaderId)),
+    "되돌렸더니 내 핑(=표)이 사라졌다"
+  ).toBe(true);
+
+  // 더는 못 내려간다 (투표 칸이 없으므로 여기가 바닥이다)
+  const s2 = await actFails(request, { action: "reopenStep", code, participantId: leaderId });
+  expect(s2.error).toContain("더 되돌릴 단계가 없어요");
+});
+
+test("§6 경계 reopen 후 같은 동으로 재확정하면 지점 후보가 복원된다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  const p = poi.items[0];
+  await act(request, {
+    action: "addPlace", code, participantId: leaderId,
+    name: p.name, category: p.category, lat: p.lat, lng: p.lng,
+  });
+  expect((await get(request, code)).places.length).toBe(1);
+
+  // 지점 등록 → 지역 투표로 되돌린다 (지점 데이터가 보관된다)
+  await act(request, { action: "reopenStep", code, participantId: leaderId });
+  expect((await get(request, code)).places.length, "되돌리면 지점 후보는 화면에서 사라진다").toBe(0);
+
+  // 같은 동으로 다시 확정 → 복원
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+  const restored = await get(request, code);
+  expect(restored.places.length, "같은 동으로 재확정했으면 지점 후보가 복원돼야 한다").toBe(1);
+  expect(restored.places[0].name).toBe(p.name);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// §4-⑤ · §7 참여 · 인증 · 방장 권한
+// ═══════════════════════════════════════════════════════════════
+
+test("§4-⑤ 정원 8명 — 9번째는 입장 거부", async ({ request }) => {
+  const { code } = await setup(request);
+  // 방장 1명 + 7명 = 8명
+  for (let i = 2; i <= 8; i++) {
+    await act(request, { action: "join", code, name: `참가자${i}` });
+  }
+  const full = await get(request, code);
+  expect(full.totalParticipants).toBe(8);
+
+  const denied = await actFails(request, { action: "join", code, name: "아홉번째" });
+  expect(denied.error).toContain("정원이 가득");
+});
+
+test("§4-⑤ 이름 중복은 거부하고 별칭을 요구한다", async ({ request }) => {
+  const { code } = await setup(request);
+  await act(request, { action: "join", code, name: "김철수" });
+  const dup = await actFails(request, { action: "join", code, name: "김철수" });
+  expect(dup.error).toContain("이미");
+  // 별칭을 붙이면 들어간다
+  await act(request, { action: "join", code, name: "김철수2" });
+  expect((await get(request, code)).totalParticipants).toBe(3);
+});
+
+test("§4-⑤ 이름+PIN 으로 자리를 되찾고, 5회 틀리면 잠긴다", async ({ request }) => {
+  const { code } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "복구맨", pin: "1234" });
+
+  // 맞는 PIN → 같은 participantId 를 돌려준다 (새로 만들지 않는다)
+  const ok = await act(request, { action: "recover", code, name: "복구맨", pin: "1234" });
+  expect(ok.participantId).toBe(joined.participantId);
+  expect((await get(request, code)).totalParticipants, "복구가 새 참가자를 만들면 안 된다").toBe(2);
+
+  // 5회 틀리면 잠긴다 (v16)
+  for (let i = 0; i < 5; i++) {
+    await actFails(request, { action: "recover", code, name: "복구맨", pin: "0000" });
+  }
+  const locked = await actFails(request, { action: "recover", code, name: "복구맨", pin: "1234" });
+  expect(locked.error, "5회 초과 후엔 맞는 PIN 도 막혀야 한다").toContain("잠겼어요");
+});
+
+test("§7 강퇴는 방장만 · 그 사람의 표가 함께 사라진다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "나갈사람" });
+  const memberId: string = joined.participantId;
+
+  // 통합 모드에서 그 사람의 '표'는 **핑**이다 — 강퇴하면 그것도 같이 사라져야 한다
+  await act(request, { action: "addRegion", code, participantId: memberId, lat: 37.5665, lng: 126.978 });
+  expect(
+    (await get(request, code)).regions.some((r: { contributors?: string[] }) =>
+      (r.contributors ?? []).includes(memberId)
+    ),
+    "사전 조건: 그 사람의 핑이 있어야 한다"
+  ).toBe(true);
+
+  // 참가자는 강퇴 못 한다
+  const denied = await actFails(request, { action: "kick", code, participantId: memberId, targetId: leaderId });
+  expect(denied.error).toContain("방장만");
+
+  // 방장이 강퇴 → 사람도 표(핑)도 사라진다
+  await act(request, { action: "kick", code, participantId: leaderId, targetId: memberId });
+  const after = await get(request, code);
+  expect(after.totalParticipants).toBe(1);
+  expect(after.regionVotes[memberId], "강퇴된 사람의 표가 남아 있다").toBeUndefined();
+  expect(
+    after.regions.some((r: { contributors?: string[] }) => (r.contributors ?? []).includes(memberId)),
+    "강퇴된 사람의 핑(=표)이 남아 있다"
+  ).toBe(false);
+
+  // v10: 재참여는 허용된다
+  await act(request, { action: "join", code, name: "나갈사람" });
+  expect((await get(request, code)).totalParticipants).toBe(2);
+});
+
+test("§7 모임 삭제는 방장만", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+
+  const denied = await actFails(request, {
+    action: "deleteMeeting", code, participantId: joined.participantId,
+  });
+  expect(denied.error).toContain("방장만");
+
+  await act(request, { action: "deleteMeeting", code, participantId: leaderId });
+  const res = await request.get(`/api/meeting?code=${code}`);
+  expect(res.status(), "삭제된 모임이 아직 조회된다").toBe(404);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// §4-⑩ 결과 · 신호등 · 시간   /   §4-⑪ 지난 모임 · 재모임
+// ═══════════════════════════════════════════════════════════════
+
+/** 결과 단계까지 밀어 넣는다 (지점 확정까지) */
+async function toResult(request: APIRequestContext) {
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  const p = poi.items[0];
+  const added = await act(request, {
+    action: "addPlace", code, participantId: leaderId,
+    name: p.name, category: p.category, lat: p.lat, lng: p.lng,
+  });
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "place", id: added.candidate.id });
+  return { code, leaderId };
+}
+
+test("§4-⑩ 모임 시간 미입력이면 신호등이 잠긴다", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+  const st = await get(request, code);
+  expect(st.stage).toBe("result");
+  expect(st.meetTime, "생성 시 시간을 안 줬으므로 null 이어야 한다").toBeNull();
+
+  const locked = await actFails(request, {
+    action: "status", code, participantId: leaderId, status: "green",
+  });
+  expect(locked.error).toContain("모임 시간을 먼저");
+});
+
+test("§4-⑩ 모임 시간은 방장만 · 과거는 거부", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+
+  const denied = await actFails(request, {
+    action: "meetTime", code, participantId: joined.participantId,
+    meetTime: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  expect(denied.error).toContain("방장만");
+
+  const past = await actFails(request, {
+    action: "meetTime", code, participantId: leaderId,
+    meetTime: new Date(Date.now() - 86_400_000).toISOString(),
+  });
+  expect(past.error).toContain("지난 시각");
+
+  const future = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  const ok = await act(request, { action: "meetTime", code, participantId: leaderId, meetTime: future });
+  expect(ok.meetTime).toBeTruthy();
+});
+
+test("§4-⑩ 신호등은 모임 당일에만 열린다 · 노랑은 지각 분을 공유한다", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+
+  // 3일 뒤로 잡으면 아직 못 쓴다 (v16)
+  await act(request, {
+    action: "meetTime", code, participantId: leaderId,
+    meetTime: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+  });
+  const early = await actFails(request, { action: "status", code, participantId: leaderId, status: "green" });
+  expect(early.error).toContain("당일");
+
+  // 오늘 늦은 시각으로 옮기면 열린다
+  const today = new Date();
+  today.setHours(23, 30, 0, 0);
+  await act(request, { action: "meetTime", code, participantId: leaderId, meetTime: today.toISOString() });
+
+  await act(request, { action: "status", code, participantId: leaderId, status: "yellow", lateMin: 15 });
+  const st = await get(request, code);
+  const me = st.participants.find((p: { id: string }) => p.id === leaderId);
+  expect(me.status).toBe("yellow");
+  expect(me.lateMin, "노랑이면 지각 분이 전원에게 보여야 한다").toBe(15);
+
+  // 색을 바꾸면 지각 분은 사라진다
+  await act(request, { action: "status", code, participantId: leaderId, status: "green" });
+  const st2 = await get(request, code);
+  expect(st2.participants.find((p: { id: string }) => p.id === leaderId).lateMin).toBeNull();
+});
+
+test("§4-⑩ '지역까지' 모임에는 신호등이 없다", async ({ request }) => {
+  const { code, leaderId } = await setup(request, { scope: "region" });
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const denied = await actFails(request, { action: "status", code, participantId: leaderId, status: "green" });
+  expect(denied.error).toContain("'지역까지'");
+});
+
+test("§4-⑪ 재모임은 방장만 · 로그인 멤버만 자동 이전", async ({ request }) => {
+  const { code, leaderId } = await toResult(request);
+  // 로그인 멤버 1명 + 비로그인 1명
+  await act(request, { action: "join", code, name: "로그인멤버", kakaoId: "kakao-1" });
+  const guest = await act(request, { action: "join", code, name: "비로그인" });
+
+  const denied = await actFails(request, {
+    action: "recreate", code, participantId: guest.participantId,
+  });
+  expect(denied.error).toContain("방장만");
+
+  const r = await act(request, { action: "recreate", code, participantId: leaderId });
+  expect(r.code, "새 모임 코드가 없다").toBeTruthy();
+  expect(r.code).not.toBe(code);
+  expect(r.carried, "로그인 멤버 1명만 옮겨가야 한다").toBe(1);
+
+  const fresh = await get(request, r.code);
+  // 방장 + 로그인 멤버 = 2명 (비로그인은 재참여해야 한다)
+  expect(fresh.totalParticipants).toBe(2);
+  expect(fresh.participants.some((p: { name: string }) => p.name === "로그인멤버")).toBe(true);
+  expect(fresh.participants.some((p: { name: string }) => p.name === "비로그인")).toBe(false);
+  // 새 모임은 처음 단계부터 시작한다
+  expect(fresh.stage).toBe("main");
+  expect(fresh.isPast).toBe(false);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// §4-⑥ 지도 핑 — 좌표만 보내면 후보가 된다 (동 스냅 · 인원당 1개 · 병합)
+// ═══════════════════════════════════════════════════════════════
+
+test("§4-⑥ 좌표만 보내도 후보가 만들어진다 (동 스냅 · 실패 시 좌표 이름 폴백)", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+
+  const r = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  expect(r.candidate?.name, "이름 없이 좌표만 보냈는데 후보 이름이 안 붙었다").toBeTruthy();
+  expect(r.candidate.source).toBe("manual");
+  expect(r.candidate.contributors, "핑을 찍은 사람이 기록돼야 병합·이탈이 계산된다").toContain(leaderId);
+});
+
+test("§4-⑥ 핑은 인원당 1개 — 다른 곳을 찍으면 옮겨간다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+
+  const first = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  // 충분히 떨어진 좌표(다른 동)를 찍는다
+  const second = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.4979, lng: 127.0276,
+  });
+  expect(second.candidate.id).not.toBe(first.candidate.id);
+
+  const st = await get(request, code);
+  // 옛 후보는 마지막 한 명이 빠져 사라진다 (v12)
+  expect(st.regions.some((r: { id: string }) => r.id === first.candidate.id),
+    "핑을 옮겼는데 옛 후보가 남아 있다").toBe(false);
+  expect(st.regions.length).toBe(1);
+});
+
+test("§4-⑥ 같은 곳을 두 사람이 찍으면 하나로 병합된다", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const joined = await act(request, { action: "join", code, name: "참가자2" });
+
+  const a = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  const b = await act(request, {
+    action: "addRegion", code, participantId: joined.participantId, lat: 37.5665, lng: 126.978,
+  });
+  expect(b.existing, "같은 동인데 새 후보가 만들어졌다").toBe(true);
+  expect(b.candidate.id).toBe(a.candidate.id);
+
+  const st = await get(request, code);
+  expect(st.regions.length, "같은 동은 하나로 병합돼야 한다").toBe(1);
+  expect(st.regions[0].contributors).toHaveLength(2);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// §8 AI 추천 — 게이트 (💰 실제 호출은 하지 않는다)
+//
+//  ⚠️ 여기서는 **AI 를 부르지 않는다.** `NEXT_PUBLIC_FF_AI_VOTE` 가 꺼진 상태라
+//     403 에서 막히는 것까지가 검사 범위다 — CI 에서 유료 API(Ollama Cloud)를
+//     호출하면 안 되기 때문이다 (CLAUDE.md §4).
+//     병합 규칙(v9·v14)은 켠 상태에서 사람이 눌러 확인한다.
+// ═══════════════════════════════════════════════════════════════
+
+test("§8 AI 추천은 플래그가 꺼져 있으면 호출조차 되지 않는다 (0원 보장)", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const res = await request.post("/api/meeting", {
+    data: { action: "aiRecommend", code, participantId: leaderId, mode: "replace" },
+  });
+  // 플래그가 꺼져 있으면 403 — 유료 API 로 가는 길이 아예 닫혀 있다
+  expect(res.status(), "AI 플래그가 꺼졌는데 호출이 통과했다").toBe(403);
+  const body = await res.json();
+  expect(body.error).toContain("NEXT_PUBLIC_FF_AI_VOTE");
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 화면 — 규칙이 실제로 그려지는가
+// ═══════════════════════════════════════════════════════════════
+
+test("화면: 생성 폼에 확정 범위 토글이 있고 '지역까지'면 카테고리가 숨는다", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  await page.goto("/meetings?open=create");
+  await expect(page.getByText("어디까지 정할까요?")).toBeVisible();
+
+  // 기본은 '지점까지' → 목적 카테고리가 보인다
+  await expect(page.getByText("무엇을 하러 모여요?")).toBeVisible();
+
+  // '지역까지'로 바꾸면 카테고리가 사라진다 (v15)
+  await page.getByRole("button", { name: /지역까지/ }).click();
+  await expect(page.getByText("무엇을 하러 모여요?")).toHaveCount(0);
+
+  // v2: 비밀번호 입력란은 없어졌다
+  await expect(page.getByPlaceholder("참여자에게 공유할 비밀번호")).toHaveCount(0);
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+// ── 발표 시연 경로 — 여기가 막히면 데모가 멈춘다 ──────────────────
+
+test("시연: 출발지가 바뀌어도 사람이 찍은 핑은 사라지지 않는다", async ({ request }) => {
+  // ⚠️ 자동 후보 재계산(`regions`)이 돌 때 사람이 등록한 후보를 밀어내면,
+  //    "AI 추천 → 다른 사람 참여 → 후보 사라짐" 이 발표 중에 그대로 재현된다.
+  const { code, leaderId } = await setup(request);
+  const pinged = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+
+  // 새 참여자가 들어와 출발지를 넣으면 자동 재계산이 돈다
+  const joined = await act(request, { action: "join", code, name: "늦게온사람" });
+  await act(request, {
+    action: "origin", code, participantId: joined.participantId,
+    origin: "잠실", transport: "transit",
+  });
+  await act(request, { action: "regions", code });
+
+  const st = await get(request, code);
+  expect(
+    st.regions.some((r: { id: string }) => r.id === pinged.candidate.id),
+    "출발지 재계산에 사람이 찍은 핑이 밀려 사라졌다"
+  ).toBe(true);
+});
+
+// ─────────────────────────────────────────────────────────────
+// §2 참여 순서 — **링크는 막지 않는다** (멘토링 2026-08-06 §2)
+//   멘토: "링크 진입할 때 정보 입력 받지 말고, 핑 찍은 후 모달로 추가 정보 수집."
+//   옛 동작(링크 열자마자 전면 참여 폼)은 `NEXT_PUBLIC_FF_JOIN_GATE=1` 로 돌아온다.
+// ─────────────────────────────────────────────────────────────
+test("§2 초대 링크로 들어오면 먼저 구경한다 — 정보를 먼저 묻지 않는다", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code } = await setup(request, { name: "초대 테스트" });
+
+  // ⚠️ loginAs 를 **하지 않는다** — 팀원이 카톡 링크를 눌렀을 때와 같은 상태
+  await page.goto(`/m/${code}`);
+
+  // 모임 내용이 먼저 보인다. 이름 입력칸은 **아직 없다**.
+  await expect(page.getByText("초대 테스트").first()).toBeVisible();
+  await expect(page.getByText("구경 중이에요")).toBeVisible();
+  await expect(page.getByText("참여자 현황")).toBeVisible();
+  expect(
+    await page.getByPlaceholder("예: 김철수").isVisible().catch(() => false),
+    "링크를 열자마자 이름을 묻고 있다 — 멘토링 §2 와 어긋난다"
+  ).toBe(false);
+
+  // '나도 참여' 를 눌러야 그때 폼이 뜬다 (지도를 안 누르는 사람용 통로)
+  await page.getByRole("button", { name: "나도 참여" }).click();
+  await expect(page.getByPlaceholder("예: 김철수")).toBeVisible();
+  await page.getByPlaceholder("예: 김철수").fill("링크참여자");
+  await page.getByPlaceholder("예: 강남역").fill("홍대입구");
+  await page.getByRole("button", { name: "참여하기" }).click();
+
+  await expect(page.getByText("🙋 참가자")).toBeVisible({ timeout: 10_000 });
+
+  const st = await get(request, code);
+  expect(st.totalParticipants, "참여가 서버에 반영되지 않았다").toBe(2);
+  const joined = st.participants.find((p: { name: string }) => p.name === "링크참여자");
+  expect(joined, "참여자가 없다").toBeTruthy();
+  expect(joined.origin, "출발지까지 원스텝으로 등록돼야 한다").toBeTruthy();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("§2 지도를 누르면 참여 모달이 뜨고, 참여와 핑이 한 번에 끝난다", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code } = await setup(request, { name: "핑먼저 테스트" });
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("구경 중이에요")).toBeVisible();
+
+  // ⚠️ `locator.click({position})` 은 요소 기준이라 스크롤도 알아서 맞춘다
+  //    (`page.mouse.click` 은 뷰포트 기준이라 지도 아랫부분에서 빗나간다).
+  const box = page.locator(".map").first();
+  const b = await box.boundingBox();
+  expect(b, "지도가 없다 — 구경 중인 사람에게도 지도는 보여야 한다").toBeTruthy();
+  await box.click({ position: { x: b!.width * 0.4, y: b!.height * 0.3 } });
+
+  // 확인 시트가 아니라 **참여 모달**이 뜬다 (신원이 아직 없으므로)
+  await expect(page.getByPlaceholder("예: 김철수")).toBeVisible();
+  await expect(page.getByText(/누른 자리를 후보로 올릴게요/)).toBeVisible();
+
+  await page.getByPlaceholder("예: 김철수").fill("핑먼저");
+  await page.getByPlaceholder("예: 강남역").fill("사당");
+  await page.getByRole("button", { name: "참여하기" }).click();
+  await expect(page.getByText("🙋 참가자")).toBeVisible({ timeout: 10_000 });
+
+  const st = await get(request, code);
+  const joined = st.participants.find((p: { name: string }) => p.name === "핑먼저");
+  expect(joined, "참여가 안 됐다").toBeTruthy();
+  // ⭐ 핵심: 사람이 한 행동(지도를 눌렀다)이 참여 절차에 먹히지 않아야 한다
+  const mine = (st.regions ?? []).find((r: { contributors?: string[] }) =>
+    r.contributors?.includes(joined.id)
+  );
+  expect(mine, "지도를 눌러 참여했는데 그 자리에 핑이 없다").toBeTruthy();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("시연: 생성 폼의 모임 시간이 meetTime 으로 저장된다", async ({ request }) => {
+  // ⚠️ 예전엔 자유 문구를 prefs.timeText 에만 넣어서 meetTime 이 계속 null 이었다.
+  //    그러면 D-day 도, 도착 신호등도, '지난 모임' 전환도 전부 동작하지 않는다.
+  const when = new Date(Date.now() + 2 * 86_400_000);
+  const created = await act(request, {
+    action: "create",
+    name: "시간 테스트",
+    leaderName: "방장",
+    scope: "place",
+    purposeCategory: "food",
+    meetTime: when.toISOString(),
+  });
+
+  const st = await get(request, created.code);
+  expect(st.meetTime, "생성 시 넣은 시간이 저장되지 않았다").toBeTruthy();
+  expect(new Date(st.meetTime).getTime()).toBe(when.getTime());
+});
+
+test("화면: §4-① 홈에 '이 출발지들로 모임 만들기' 전환 고리가 있다", async ({ page }) => {
+  // 출발지 2곳을 심어두고 홈을 연다 (홈은 localStorage 에서 복원한다)
+  // ⚠️ 스플래시도 함께 넘긴다 — 첫 방문이면 전체화면(z-index:100)으로 떠서
+  //    아래 버튼을 덮는다. "이미 한 번 본 사용자" 상태로 맞추는 것이다.
+  //    (발표 때 팀원들은 처음 열면 '시작하기'를 한 번 눌러야 한다 — 정상 동작)
+  await page.addInitScript(() => {
+    localStorage.setItem("moimer:v8:splash", "1");
+    localStorage.setItem(
+      "moimer:v8:origins",
+      JSON.stringify([
+        { id: "o1", name: "강남역", lat: 37.4979, lng: 127.0276, transport: "transit" },
+        { id: "o2", name: "홍대입구", lat: 37.5572, lng: 126.9245, transport: "transit" },
+      ])
+    );
+  });
+  await page.goto("/");
+
+  // ⚠️ 2026-08-10부터 문구가 **중간지점을 계산했는지에 따라 달라진다** —
+  //    계산 전에는 "이 출발지들로 모임 만들기", 계산 후에는 "‘홍대입구’ 로 모임 만들기".
+  //    무엇이 딸려가는지 버튼이 미리 말해 주기 때문이다(v19 §4-① 인계).
+  //    그래서 고정 문구가 아니라 공통부로 찾는다.
+  const cta = page.getByRole("link", { name: /모임 만들기/ });
+  await expect(cta).toBeVisible({ timeout: 10_000 });
+
+  // ⚠️ 넓은 화면(노트북)에서 **껍데기 밖으로 튀어나오지 않아야** 한다.
+  //    `position:fixed` + `left/right:16` 은 뷰포트 기준이라 화면 전체 폭이 된다 —
+  //    가운데 440px 폰 모양(.device) 안에 있어야 한다 (2026-08-10 실측 버그).
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const shell = await page.locator(".device").first().boundingBox();
+  const box = await cta.boundingBox();
+  expect(shell, "폰 모양 껍데기(.device)를 못 찾았다").toBeTruthy();
+  expect(box, "버튼을 못 찾았다").toBeTruthy();
+  expect(box!.x, "버튼 왼쪽이 껍데기 밖으로 나갔다").toBeGreaterThanOrEqual(shell!.x - 1);
+  expect(box!.x + box!.width, "버튼 오른쪽이 껍데기 밖으로 나갔다").toBeLessThanOrEqual(
+    shell!.x + shell!.width + 1
+  );
+
+  await cta.click();
+  // 생성 모달이 열린 모임 탭으로 간다
+  await expect(page).toHaveURL(/\/meetings\?open=create/);
+  await expect(page.getByText("어디까지 정할까요?")).toBeVisible();
+});
+
+test("화면: §4-② 하단 탭은 3개다 (투표함·모임원은 통합됨)", async ({ page }) => {
+  await page.goto("/meetings");
+  const nav = page.locator(".v8-bottomnav");
+  await expect(nav).toBeVisible();
+  await expect(nav.locator("a")).toHaveCount(3);
+  for (const label of ["홈", "모임", "내정보"]) {
+    await expect(nav.getByText(label, { exact: true })).toBeVisible();
+  }
+  // v6 에서 사라진 탭
+  await expect(nav.getByText("투표함")).toHaveCount(0);
+  await expect(nav.getByText("모임원")).toHaveCount(0);
+});
+
+test("화면: §4-② 폐기된 /votes · /members 는 모임 탭으로 보낸다", async ({ page }) => {
+  await page.goto("/votes");
+  await expect(page).toHaveURL(/\/meetings$/);
+  await page.goto("/members");
+  await expect(page).toHaveURL(/\/meetings$/);
+});
+
+test("화면: §4-② 모임 탭에 필터 7종(+전체)이 있고 지난 모임이 걸러진다", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request, { name: "필터 테스트" });
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto("/meetings");
+
+  for (const label of ["전체", "모집", "지역", "지점", "확정", "방장", "참여", "지난"]) {
+    await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
+  }
+
+  // 기본('전체')에는 모집 중인 이 모임이 보인다
+  //  ⚠️ `.first()` 가 필요하다 — 통합 모드에선 지역 단계도 '투표 중'이라
+  //     상단 **🔔 투표하세요** 배너에도 같은 이름이 뜬다(같은 텍스트 2개).
+  await expect(page.getByText("필터 테스트").first()).toBeVisible();
+  // '지난' 탭으로 가면 사라진다 (아직 지난 모임이 아니다)
+  await page.getByRole("button", { name: "지난", exact: true }).click();
+  await expect(page.getByText("지난 모임이 없어요")).toBeVisible();
+  // '모집' 탭에는 다시 보인다
+  await page.getByRole("button", { name: "모집", exact: true }).click();
+  await expect(page.getByText("필터 테스트").first()).toBeVisible();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("화면: §4-② 투표가 열린 모임은 상단에 고정된다", async ({ page, request }) => {
+  const { code, leaderId } = await setup(request, { name: "투표중 모임" });
+  await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto("/meetings");
+  await expect(page.getByText(/🔔 투표하세요!/)).toBeVisible();
+  await expect(page.getByText(/지역 투표 진행 중/)).toBeVisible();
+});
+
+test("화면: 지점 등록 단계에 미리보기 목록이 뜨고 탭하면 후보가 된다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto(`/m/${code}`);
+
+  // 등록 화면이 떠야 한다 (투표 목록이 아니라)
+  await expect(page.getByText("지점 후보 등록")).toBeVisible();
+  await expect(page.getByText(/반경 700m/)).toBeVisible();
+
+  // 미리보기 목록에서 [+ 등록] → 후보가 된다
+  // ⚠️ 행 전체가 버튼이던 것을 바꿨다 — 주소를 읽으려고 눌렀다가 등록되면 안 된다.
+  //    '보기'(카카오맵)와 '+ 등록'을 갈라 놓았으므로 등록 버튼을 정확히 누른다.
+  const first = page.getByRole("button", { name: "+ 등록" }).first();
+  await expect(first).toBeVisible({ timeout: 10_000 });
+  await first.click();
+  await expect(page.getByText(/후보로 등록했어요/)).toBeVisible();
+
+  const st = await get(request, code);
+  expect(st.places.length, "탭했는데 후보가 안 생겼다").toBe(1);
+  expect(st.places[0].source).toBe("manual");
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+// ── 이동시간 유실 · 투표 중 잠금 (2026-08-10 실측) ────────────────
+
+test("시연: 나중에 합류한 사람도 후보 이동시간에 들어온다", async ({ request }) => {
+  // ⚠️ 발표에서 팀원이 한 명씩 들어오는 그 순서다.
+  //    예전엔 후보 **이름**만 비교해 "달라진 게 없다"고 판단하고 새로 계산한
+  //    이동시간을 버렸다 → 늦게 온 사람은 `perParticipant` 에 영영 없고,
+  //    결과 화면에서 "이동시간 없음" 으로 남았다.
+  const { code, leaderId } = await setup(request);
+  const early = await act(request, { action: "join", code, name: "일찍온사람" });
+  await act(request, {
+    action: "origin", code, participantId: early.participantId,
+    origin: "홍대입구", transport: "transit",
+  });
+  // 2명이 있을 때 후보가 잡힌다 (핑 1개 + 방장 추천 3곳 — 둘 다 갱신 대상이어야 한다)
+  await act(request, { action: "addRegion", code, participantId: early.participantId, lat: 37.5665, lng: 126.978 });
+  await seedRegions(request, code);
+  await act(request, { action: "regions", code });
+
+  for (const [name, origin] of [["늦은1", "잠실"], ["늦은2", "사당"]] as const) {
+    const j = await act(request, { action: "join", code, name });
+    await act(request, { action: "origin", code, participantId: j.participantId, origin, transport: "transit" });
+  }
+  await act(request, { action: "regions", code }); // 화면이 재계산을 요청하는 시점
+
+  const st = await get(request, code);
+  // ⚠️ 후보가 0개면 아래 루프가 **아무것도 검사하지 않고 통과한다.**
+  //    자동 채움을 걷어낸 뒤 실제로 그렇게 될 뻔했다 (2026-08-10).
+  expect(st.regions.length, "후보가 없어 이 테스트가 아무것도 검증하지 않는다").toBeGreaterThan(0);
+  for (const r of st.regions) {
+    const pids = (r.perParticipant ?? []).map((x: { pid: string }) => x.pid);
+    expect(pids, `'${r.name}' 후보에 4명이 다 안 들어왔다 — 결과 화면에서 '이동시간 없음'이 뜬다`)
+      .toHaveLength(4);
+  }
+  expect(leaderId).toBeTruthy();
+});
+
+test("§5 누가 출발지를 고쳐도 사람이 찍은 핑(=표)은 그대로다", async ({ request }) => {
+  // ⚠️ 발표 중 한 명이 "사당이 아니라 사당역이었어요" 하고 고치는 순간
+  //    자동 재계산이 돌아 **전원의 표가 사라졌다.** 통합 모드에서 표는 핑이므로
+  //    이 사고는 "핑이 밀려나는가"로 옮겨왔다 — 규칙은 그대로 지켜져야 한다.
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  await act(request, { action: "origin", code, participantId: mate.participantId, origin: "홍대입구", transport: "transit" });
+  await seedRegions(request, code);
+  const pinged = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+
+  // 출발지를 크게 바꾼다 (= 추천 결과가 달라질 만한 변경 → 자동 재계산이 돈다)
+  await act(request, { action: "origin", code, participantId: mate.participantId, origin: "수원역", transport: "transit" });
+  await act(request, { action: "regions", code });
+
+  const after = await get(request, code);
+  const mine = after.regions.find((r: { id: string }) => r.id === pinged.candidate.id);
+  expect(mine, "출발지 재계산에 사람이 찍은 핑이 밀려 사라졌다").toBeTruthy();
+  expect(
+    (mine.contributors ?? []).includes(leaderId),
+    "핑은 남았는데 내 표(contributors)가 사라졌다"
+  ).toBe(true);
+});
+
+test("LAN: 카카오 Redirect URI 는 접속한 주소를 따라간다", async ({ request }) => {
+  // ⚠️ 폰이 http://10.x.x.x:3000 으로 들어왔는데 redirect_uri 를 localhost 로
+  //    고정해 보내면, 카카오가 **폰 자신의 localhost** 로 돌려보내 로그인이 끝나지 않는다.
+  //    (2026-08-10 팀원 폰에서 실측)
+  const st = await (await request.get("/api/status")).json();
+  const base = new URL(test.info().project.use.baseURL as string);
+  expect(st.kakaoRedirect, "접속한 호스트가 아니라 고정값을 쓰고 있다").toBe(
+    `${base.origin}/api/auth/kakao/callback`
+  );
+});
+
+test("화면: 기기가 다크 모드여도 라이트로 고정된다", async ({ page }) => {
+  // ⚠️ 발표에서 노트북·팀원 폰을 나란히 띄우는데 기기마다 색이 달라지면
+  //    같은 화면이 서로 다르게 보인다 — 2026-08-10 팀 결정으로 라이트 고정.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+
+  const ink = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--ink").trim()
+  );
+  expect(ink, "기기 다크 모드를 따라가고 있다 — 라이트 고정이 풀렸다").toBe("#111a2b");
+
+  const scheme = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).colorScheme
+  );
+  // 이 선언이 있어야 안드로이드 크롬이 우리 색 위에 자동 다크를 덧칠하지 않는다
+  expect(scheme, "color-scheme 선언이 빠졌다").toContain("light");
+});
+
+test("LAN: /health 에서 두 기기가 서로를 본다", async ({ browser }) => {
+  // ⚠️ 발표 당일 폰에서 "내가 붙었나"를 확인할 유일한 화면이다.
+  //    두 기기가 서로 안 보이면 그 폰은 서버에 못 붙은 것 — 발표가 거기서 멈춘다.
+  const a = await browser.newContext();
+  const b = await browser.newContext();
+  const pa = await a.newPage();
+  const pb = await b.newPage();
+
+  await pa.goto("/health");
+  await pa.getByRole("button", { name: /점검 시작/ }).click();
+  await expect(pa.getByText(/연결된 기기 1대/)).toBeVisible({ timeout: 15_000 });
+
+  // 첫 기기가 만든 링크를 두 번째 기기가 연다 (단톡방에 뿌리는 그 링크)
+  const url = (await pa.locator("code").last().innerText()).trim();
+  await pb.goto(url);
+  await pb.getByRole("button", { name: "참여", exact: true }).click();
+  await expect(pb.getByText(/연결된 기기 2대/)).toBeVisible({ timeout: 15_000 });
+
+  // 첫 기기는 아무것도 안 했는데 폴링으로 2대가 돼야 한다
+  await expect(pa.getByText(/연결된 기기 2대/), "다른 기기가 내 화면에 안 나타난다 — 폴링 끊김")
+    .toBeVisible({ timeout: 15_000 });
+
+  // 각자 자기 기기를 알아볼 수 있어야 한다
+  await expect(pa.getByText("이 기기").first()).toBeVisible();
+  await expect(pb.getByText("이 기기").first()).toBeVisible();
+
+  await pa.getByRole("button", { name: /점검 끝/ }).click();
+  await a.close();
+  await b.close();
+});
+
+test("§4-⑥ 확정하면 그 시점 인원 전원의 이동시간이 채워진다", async ({ request }) => {
+  // ⚠️ v19 §4-⑥: "후보에 이동시간을 표시하지 않는다. 경로 API 는 최종 확정 후에만."
+  //    결과 화면이 쓰는 숫자는 **확정 시점 인원 전체**여야 한다.
+  //    예전엔 후보를 계산한 뒤 들어온 사람이 영영 빠져 "이동시간 없음" 으로 남았다.
+  //    등록 단계의 자동 재계산으로도 메워지지만, 4인분 경로 계산이 투표 시작보다
+  //    느려 자주 놓친다(2026-08-10 실측 8초 초과) — 확정 시점에 한 번 더 채운다.
+  const { code, leaderId } = await setup(request);
+  const early = await act(request, { action: "join", code, name: "일찍" });
+  await act(request, { action: "origin", code, participantId: early.participantId, origin: "홍대입구", transport: "transit" });
+  const regions = await seedRegions(request, code);   // 2명 기준으로 후보가 굳는다
+
+  // 후보가 굳은 **뒤에** 두 명이 더 온다 (재계산을 일부러 돌리지 않는다)
+  for (const [name, origin] of [["늦은1", "잠실"], ["늦은2", "사당"]] as const) {
+    const j = await act(request, { action: "join", code, name });
+    await act(request, { action: "origin", code, participantId: j.participantId, origin, transport: "transit" });
+  }
+
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const st = await get(request, code);
+  const pids = (st.winnerRegion?.perParticipant ?? []).map((x: { pid: string }) => x.pid);
+  expect(pids, "확정된 지역에 4명이 다 안 들어왔다 — 결과 화면에 '이동시간 없음'이 뜬다")
+    .toHaveLength(4);
+});
+
+test("§4-⑧ 지점 미리보기가 지도에 회색 핀으로 뜨고, 탭하면 후보가 된다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
+  // ⚠️ v19 §4-⑧ 의 기본 동작은 **"미리보기 핀(회색) 탭 → 후보 등록"** 이다.
+  //    목록만 있으면 지도가 아니라 텍스트를 읽고 고르는 화면이 된다(2026-08-10 제보).
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("지점 후보 등록")).toBeVisible({ timeout: 10_000 });
+
+  // 지도에 '+ 후보 등록' 이라 적힌 회색 핀이 떠야 한다
+  const previewPin = page.getByRole("button", { name: /\+ 후보 등록/ }).first();
+  await expect(previewPin, "지도에 미리보기 핀이 없다 — 목록만으로는 v19 가 아니다")
+    .toBeVisible({ timeout: 15_000 });
+
+  await previewPin.click();
+  await expect(page.getByText(/후보로 등록했어요/)).toBeVisible({ timeout: 10_000 });
+
+  const st = await get(request, code);
+  expect(st.places.length, "핀을 눌렀는데 후보가 안 생겼다").toBe(1);
+  expect(st.places[0].source).toBe("manual");
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("§4-⑧ 반경 안에 정말 0개면 mock 으로 덮지 않고 반경 확장을 제안한다", async ({ request }) => {
+  // ⚠️ 예전엔 "결과 0개면" 무조건 샘플 6개로 채웠다. 그래서 **키가 멀쩡한데
+  //    반경 안에 정말 아무것도 없는 경우**까지 샘플로 덮였고, 화면이 "0개"를
+  //    본 적이 없어 v19 §4-⑧ 의 반경 확장(700→1400m) 제안이 영영 안 떴다.
+  //    (2026-08-10 제보 — "1.4km로 넓히라며?")
+  //    키가 없는 CI 에서는 mock 이 정상 동작이므로, 여기서는 **응답 계약**을 본다.
+  const { code, leaderId } = await setup(request);
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  // 키가 없으면 mock, 있으면 실데이터 — 어느 쪽이든 **둘이 동시에 참일 수는 없다**
+  expect(poi.mock && poi.reallyEmpty, "mock 인데 '진짜 0건'이라고도 표시됐다").toBeFalsy();
+  expect(poi.canExpand, "700m 상태면 확장 가능해야 한다").toBe(true);
+
+  // 검색어로 0건이면 그 카테고리 샘플로 덮지 않는다
+  const q = await (await request.get(`/api/place-poi?code=${code}&q=${encodeURIComponent("존재하지않는가게이름zzz")}`)).json();
+  if (q.searchedEmpty) {
+    expect(q.items, "검색 결과가 없는데 샘플이 채워졌다").toHaveLength(0);
+    expect(q.mock, "검색 중에는 mock 으로 떨어지면 안 된다").toBe(false);
+  }
+});
+
+test("화면: 지도 오른쪽 위 전체화면 버튼이 지도를 화면 가득 채운다", async ({ page, request }) => {
+  // ⚠️ v19 §4-⑥⑧ 의 후보 등록·투표가 **지도 위 탭**이라, 340px 카드 안에서는
+  //    핀이 서로 겹쳐 누르기 어렵다(특히 폰). 전체화면이 그 탈출구다.
+  const { code, leaderId } = await setup(request);
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/m/${code}`);
+
+  const map = page.locator(".map").first();
+  await expect(map).toBeVisible({ timeout: 10_000 });
+  const before = await map.boundingBox();
+
+  await page.getByRole("button", { name: "지도 전체화면으로 보기" }).click();
+  const after = await map.boundingBox();
+  expect(after!.height, "전체화면인데 지도가 안 커졌다").toBeGreaterThan(before!.height);
+  expect(after!.height).toBeGreaterThan(700);   // 844 뷰포트를 거의 채워야 한다
+
+  // 다시 누르면 원래대로
+  await page.getByRole("button", { name: "지도 전체화면 끄기" }).click();
+  const back = await map.boundingBox();
+  expect(Math.round(back!.height), "전체화면을 껐는데 안 돌아왔다").toBe(Math.round(before!.height));
+});
+
+test("§7 잘못 찍은 지역 후보를 본인이 지울 수 있다", async ({ request }) => {
+  // ⚠️ v19 §7 은 "후보 삭제 — 방장: 임의 후보 / 참여자: 본인 후보만" 인데
+  //    지점에만 있고 **지역에는 없었다.** 지도를 잘못 눌러 생긴 후보를
+  //    아무도 못 지웠다 (2026-08-10 제보).
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+
+  const mine = await act(request, {
+    action: "addRegion", code, participantId: mate.participantId, lat: 37.5665, lng: 126.978,
+  });
+  expect((await get(request, code)).regions.some((r: { id: string }) => r.id === mine.candidate.id)).toBe(true);
+
+  // 남의 후보는 못 지운다
+  const other = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.4979, lng: 127.0276,
+  });
+  const denied = await actFails(request, {
+    action: "removeRegion", code, participantId: mate.participantId, regionId: other.candidate.id,
+  });
+  expect(denied.error).toContain("내가 등록한 후보만");
+
+  // 내 후보는 지워진다
+  await act(request, { action: "removeRegion", code, participantId: mate.participantId, regionId: mine.candidate.id });
+  const st = await get(request, code);
+  expect(st.regions.some((r: { id: string }) => r.id === mine.candidate.id), "내 후보가 안 지워졌다").toBe(false);
+
+  // 방장은 임의 후보를 지운다
+  await act(request, { action: "removeRegion", code, participantId: leaderId, regionId: other.candidate.id });
+  expect((await get(request, code)).regions.some((r: { id: string }) => r.id === other.candidate.id)).toBe(false);
+});
+
+test("§7 지역이 확정되면 후보를 지울 수 없다", async ({ request }) => {
+  // ⚠️ 통합 모드엔 '투표 시작'이라는 잠금 시점이 없다 — 지역이 잠기는 순간은 **확정**이다.
+  //    (옛 2단계에서는 '투표 시작'이 그 자리였다)
+  const { code, leaderId } = await setup(request);
+  const pinged = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  // 확정 전에는 본인이 지울 수 있다
+  const before = await request.post("/api/meeting", {
+    data: { action: "removeRegion", code, participantId: leaderId, regionId: pinged.candidate.id },
+  });
+  expect(before.ok(), "확정 전인데 본인 핑을 못 지운다").toBeTruthy();
+
+  // 다시 찍고 확정하면 잠긴다
+  const again = await act(request, {
+    action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978,
+  });
+  await act(request, {
+    action: "confirmManual", code, participantId: leaderId, target: "region", id: again.candidate.id,
+  });
+  const fail = await actFails(request, {
+    action: "removeRegion", code, participantId: leaderId, regionId: again.candidate.id,
+  });
+  expect(fail.error, "확정 뒤에도 후보가 지워진다").toBeTruthy();
+});
+
+test("§4-⑥ 지도를 눌러도 확인 전에는 후보가 생기지 않는다", async ({ page, request }) => {
+  // ⚠️ 지도를 스크롤·확대하다 손가락이 닿기만 해도 후보가 생겼고 되돌릴 수 없었다
+  //    (2026-08-10 제보). 핑은 1인 1개라 개수가 늘지는 않지만, **내가 만들 생각이
+  //    없던 후보가 생기는 것** 자체가 문제다. [등록]을 눌러야 서버로 간다.
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request);
+  const before = (await get(request, code)).regions.length;
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  // 지도 SDK 가 없는 환경에서는 핑 자체를 테스트할 수 없으므로,
+  // 확인 시트가 열렸을 때의 계약(취소 = 등록 안 됨)만 본다.
+  await page.evaluate(() => {
+    // 지도 탭과 같은 경로로 확인 시트를 연다
+    const btn = document.querySelector<HTMLElement>("[data-ping-test]");
+    btn?.click();
+  });
+
+  // 어떤 경우든 화면을 여는 것만으로 후보가 늘어서는 안 된다
+  const after = (await get(request, code)).regions.length;
+  expect(after, "화면을 열기만 했는데 후보가 늘었다").toBe(before);
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("복사는 클립보드 권한이 없어도 화면이 죽지 않는다", async ({ page, request }) => {
+  // ⚠️ `navigator.clipboard` 는 **보안 출처(https·localhost)에서만** 존재한다.
+  //    발표는 팀원 폰이 http://10.x.x.x:3000 으로 들어오는 구조라 그 기기에선 없다.
+  //    예전 코드는 거기서 TypeError 로 죽거나(=화면이 멈춤) 조용히 아무 일도
+  //    안 했다 — 초대 링크 공유가 첫 단추라 조용한 실패가 특히 나쁘다.
+  //    (2026-08-10 윈도우 크롬에서 'Write permission denied' 로 실제 발생)
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  // 클립보드 API 를 아예 없앤다 = http 출처의 폰과 같은 상태
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  });
+
+  const { code } = await setup(request);
+  await page.goto("/health");
+  await page.getByRole("button", { name: /점검 시작/ }).click();
+  await expect(page.getByText(/연결된 기기 1대/)).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: /링크 복사/ }).click();
+  // 성공하든(폴백) 실패하든 **사람에게 결과를 알려줘야** 한다
+  await expect(page.getByText(/복사됨|복사가 막혀/)).toBeVisible({ timeout: 5_000 });
+
+  expect(errors, `클립보드가 없을 때 화면이 죽었다: ${errors.join(" / ")}`).toEqual([]);
+  expect(code).toBeTruthy();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 방장 / 참여자 화면 분리 (멘토링 2026-08-06 §1 · lib/roles.ts)
+//   멘토: "방장과 참여자 화면이 섞여 있어 구현 시 꼬일 가능성 높음.
+//          방장 아닌 사람은 핵심 투표 결과만 보면 됨 — 굳이 비활성화 처리 불필요."
+// ═══════════════════════════════════════════════════════════════
+
+test("역할: 참여자 화면에는 방장 전용 버튼이 아예 없다 (비활성 아님)", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  await act(request, {
+    action: "origin", code, participantId: mate.participantId,
+    origin: "홍대입구", transport: "transit",
+  });
+  await seedRegions(request, code);
+
+  await loginAs(page, code, [{ id: mate.participantId, name: "참가자2", isLeader: false }], mate.participantId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  // ⚠️ "안 눌린다"가 아니라 **"없다"** 를 본다. 비활성 버튼이 남아 있으면
+  //    멘토가 지적한 그 상태 그대로다.
+  for (const name of [/투표 시작/, /추천/, /다른 후보로 확정/, /되돌리기/]) {
+    expect(await page.getByRole("button", { name }).count(), `참여자에게 방장 버튼이 보인다: ${name}`).toBe(0);
+  }
+
+  // 대신 **내가 뭘 해야 하는지**는 보여야 한다 (ParticipantBar)
+  await expect(
+    page.getByLabel("참여자 상태"),
+    "참여자 하단 바가 없다 — 지금 무슨 단계인지 알 길이 없다"
+  ).toBeVisible();
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("역할: 방장 화면에는 방장 바가 뜨고 참여자 바는 없다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
+  const { code, leaderId } = await setup(request);
+  await seedRegions(request, code);
+
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  // ⚠️ 통합 모드의 지역 바에는 '투표 시작'이 없다 — **확정** 버튼이 그 자리다.
+  await expect(
+    page.getByRole("button", { name: /로 정하기|아직 찍힌 곳이 없어요|투표 시작/ }).first()
+  ).toBeVisible();
+  expect(await page.getByLabel("참여자 상태").count(), "방장에게 참여자 바가 떴다 — 두 벌이 섞였다").toBe(0);
+});
+
+test("역할: 지역 화면에는 '투표 시작'이 없고 확정만 있다", async ({ page, request }) => {
+  test.skip(await aiChatOn(request), "AI 채팅 빌드 — 투표 UI 가 채팅 UI 로 대체된다");
+  // abilitiesOf 의 계약을 화면으로 확인한다 — 서버(phaseStepOf)와 어긋나면
+  // "눌리는데 서버가 거부하는" 버튼이 다시 생긴다.
+  //
+  // ⚠️ 등록 칸에서도 '✍ 다른 후보로 확정'은 **있어야 한다.** 멘토링 8/6 §2 의
+  //    "방장이 투표 귀찮을 경우 바로 확정할 수 있는 옵션"이고 서버도 허용한다.
+  //    처음엔 이걸 막았다가 modals.spec 이 바로 걸렸다.
+  const { code, leaderId } = await setup(request);
+  await seedRegions(request, code);
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+
+  await page.goto(`/m/${code}`);
+  await expect(page.getByText("참여자 현황")).toBeVisible({ timeout: 10_000 });
+
+  // ⚠️ 통합 모드(기본): 지역엔 '투표 시작'이라는 절차가 없다 (멘토링 8/6 §2).
+  expect(
+    await page.getByRole("button", { name: /투표 시작/ }).count(),
+    "지역인데 '투표 시작'이 보인다 — 핑이 곧 표라 그 절차가 없어야 한다"
+  ).toBe(0);
+  // 그 자리는 **확정** 버튼이다
+  await expect(page.getByRole("button", { name: /로 정하기|아직 찍힌 곳이 없어요/ }).first()).toBeVisible();
+  // '✍ 다른 후보로 확정'은 그대로 있다 — "방장이 투표 귀찮으면 바로 확정"
+  await expect(page.getByRole("button", { name: /다른 후보로 확정/ })).toBeVisible();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 재투표 (멘토링 2026-08-06 §3 · 1차 순서도 4번 `동점? → 재량 또는 재투표`)
+//   reopenStep(되돌리기): 단계를 내리고 **표는 유지**
+//   revote(재투표)      : 단계는 그대로, **표만 초기화** — 정반대다
+//
+// ⚠️ 통합 모드에서 **지역에는 재투표가 없다** — 핑이 곧 표라, 표를 지우는 것이
+//    곧 후보를 지우는 것이라 되돌리기와 같아진다. 그래서 아래는 **지점**으로 검사한다.
+// ═══════════════════════════════════════════════════════════════
+
+/** 지점 투표 칸까지 밀어 놓고, 두 명이 서로 다른 지점에 찍어 동점을 만든다 */
+async function placeTie(request: APIRequestContext) {
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  const mateId: string = mate.participantId;
+  await act(request, {
+    action: "origin", code, participantId: mateId, origin: "홍대입구", transport: "transit",
+  });
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  const items = (poi.items ?? []) as { name: string; category: string; lat: number; lng: number }[];
+  expect(items.length, "반경 안에 지점 후보가 2개는 있어야 동점을 만들 수 있다").toBeGreaterThan(1);
+  for (const it of items.slice(0, 2)) {
+    await act(request, {
+      action: "addPlace", code, participantId: leaderId,
+      name: it.name, category: it.category, lat: it.lat, lng: it.lng,
+    });
+  }
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  const st = await get(request, code);
+  const places = st.places as { id: string; name: string }[];
+  await act(request, { action: "vote", code, participantId: leaderId, target: "place", candidateId: places[0].id });
+  await act(request, { action: "vote", code, participantId: mateId, target: "place", candidateId: places[1].id });
+  return { code, leaderId, mateId, places };
+}
+
+test("재투표: 후보는 그대로 남고 표만 지워진다 (되돌리기와 정반대)", async ({ request }) => {
+  const { code, leaderId, places } = await placeTie(request);
+
+  const before = await get(request, code);
+  expect(Object.keys(before.placeVotes ?? {}), "사전 조건: 2표가 있어야 한다").toHaveLength(2);
+
+  const r = await act(request, { action: "revote", code, participantId: leaderId });
+  expect(r.cleared, "지운 표 수를 알려주지 않는다").toBe(2);
+
+  const after = await get(request, code);
+  expect(Object.keys(after.placeVotes ?? {}), "재투표인데 표가 남았다").toHaveLength(0);
+  // ⭐ 이게 되돌리기와 갈리는 지점이다 — 후보는 **그대로** 있어야 한다
+  expect(after.places.map((x: { id: string }) => x.id), "재투표인데 후보가 사라졌다")
+    .toEqual(places.map((x) => x.id));
+  // 단계도 그대로 (투표 칸에 머문다)
+  expect(after.placeVoteOpen, "재투표가 단계를 움직였다").toBe(true);
+});
+
+test("재투표: 결과 화면에서 누르면 확정이 풀리고 투표 칸으로 내려간다", async ({ request }) => {
+  const { code, leaderId, places } = await placeTie(request);
+  await act(request, {
+    action: "confirmManual", code, participantId: leaderId, target: "place", id: places[0].id,
+  });
+  expect((await get(request, code)).stage, "사전 조건: 결과 화면이어야 한다").toBe("result");
+
+  await act(request, { action: "revote", code, participantId: leaderId });
+  const after = await get(request, code);
+  expect(after.stage, "결과에서 재투표했는데 결과에 머물렀다").toBe("chat");
+  expect(after.placeVoteOpen, "지점 투표 칸으로 내려가야 한다").toBe(true);
+  expect(after.winnerPlace, "지점 확정이 안 풀렸다").toBeFalsy();
+  // 지역은 그대로 확정 상태여야 한다 — 재투표는 한 칸만 되돌린다
+  expect(after.winnerRegion, "지역 확정까지 풀려버렸다").toBeTruthy();
+  expect(after.places.length, "재투표인데 지점 후보가 사라졌다").toBeGreaterThan(0);
+});
+
+test("재투표: 방장만 · 등록 칸에서는 거부", async ({ request }) => {
+  const { code, leaderId } = await setup(request);
+  const mate = await act(request, { action: "join", code, name: "참가자2" });
+  const regions = await seedRegions(request, code);
+  await startVoteIfAny(request, code, leaderId);
+  await act(request, { action: "confirmManual", code, participantId: leaderId, target: "region", id: regions[0].id });
+
+  // 지점 등록 칸 — 아직 표가 없다
+  const early = await request.post("/api/meeting", { data: { action: "revote", code, participantId: leaderId } });
+  expect(early.ok(), "등록 칸에서 재투표가 열렸다").toBeFalsy();
+
+  const poi = await (await request.get(`/api/place-poi?code=${code}`)).json();
+  const p0 = poi.items[0];
+  await act(request, {
+    action: "addPlace", code, participantId: leaderId,
+    name: p0.name, category: p0.category, lat: p0.lat, lng: p0.lng,
+  });
+  await act(request, { action: "startVote", code, participantId: leaderId });
+  const byMate = await request.post("/api/meeting", {
+    data: { action: "revote", code, participantId: mate.participantId },
+  });
+  expect(byMate.ok(), "참여자가 재투표를 열 수 있었다").toBeFalsy();
+  expect((await byMate.json()).error).toContain("방장만");
+});
+
+test("재투표 ≠ 되돌리기: 되돌리기는 표를 지킨다", async ({ request }) => {
+  // 두 동작이 헷갈리기 쉬워, **같은 상황에서 다르게 동작한다**는 것을 못 박는다.
+  const { code, leaderId } = await placeTie(request);
+  await act(request, { action: "reopenStep", code, participantId: leaderId });
+
+  const after = await get(request, code);
+  expect(after.placeVoteOpen, "되돌리기가 등록 칸으로 내려가지 않았다").toBe(false);
+  expect(Object.keys(after.placeVotes ?? {}), "되돌리기가 표를 지웠다 — 재투표와 섞였다")
+    .toHaveLength(2);
+});
+
+test("§2 지역에는 재투표가 없다 — 핑을 옮기거나 지우면 된다", async ({ request }) => {
+  // 통합 모드에서 지역의 '표'는 핑이라, 표만 지운다는 개념이 성립하지 않는다.
+  const { code, leaderId } = await setup(request);
+  await seedRegions(request, code);
+  await act(request, { action: "addRegion", code, participantId: leaderId, lat: 37.5665, lng: 126.978 });
+
+  const denied = await actFails(request, { action: "revote", code, participantId: leaderId });
+  expect(denied.error).toContain("핑이 곧 표");
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 후보 상한 5개 (2차 그릴링 — v19 의 "지점 상한 없음"을 되돌림)
+//   근거: "여섯 개를 놓고 고르라고 하면 표가 흩어져 1위가 안 나온다"
+// ═══════════════════════════════════════════════════════════════
+
+test("상한: 지역 후보는 5개까지 · 6번째는 거부", async ({ request }) => {
+  const { code } = await setup(request);
+  // 5명이 각자 다른 곳에 핑을 찍는다 (핑은 인원당 1개라 사람이 그만큼 필요하다)
+  const spots = [
+    { lat: 37.5665, lng: 126.9780 }, { lat: 37.5045, lng: 127.0490 },
+    { lat: 37.5563, lng: 126.9236 }, { lat: 37.5133, lng: 127.1000 },
+    { lat: 37.4765, lng: 126.9816 }, { lat: 37.6066, lng: 127.0927 },
+  ];
+  const ids: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const j = await act(request, { action: "join", code, name: `핑${i + 1}` });
+    ids.push(j.participantId);
+  }
+  for (let i = 0; i < 5; i++) {
+    await act(request, { action: "addRegion", code, participantId: ids[i], ...spots[i] });
+  }
+  expect((await get(request, code)).regions).toHaveLength(5);
+
+  const sixth = await request.post("/api/meeting", {
+    data: { action: "addRegion", code, participantId: ids[5], ...spots[5] },
+  });
+  expect(sixth.ok(), "6번째 후보가 등록됐다 — 상한이 안 걸린다").toBeFalsy();
+  expect((await sixth.json()).error).toContain("최대 5개");
+  expect((await get(request, code)).regions, "거부됐는데 후보가 늘었다").toHaveLength(5);
+});
+
+test("상한: 6번째가 거부돼도 그 사람의 옛 핑은 그대로 남는다", async ({ request }) => {
+  // 🔴 거절 경로는 `write` 를 하지 않는다. 그런데 인메모리 모드에서는 `read()` 가
+  //    저장소의 **살아 있는 객체**를 그대로 준다 — 이동 처리(옛 후보에서 내 몫 빼기)를
+  //    상한 검사보다 **먼저** 하면, 거절당했는데 내 핑만 조용히 사라진다.
+  //    (역 스냅을 켜면 후보가 잘게 갈려 이 경로를 실제로 밟는다)
+  const { code } = await setup(request);
+  const spots = [
+    { lat: 37.5665, lng: 126.9780 }, { lat: 37.5045, lng: 127.0490 },
+    { lat: 37.5563, lng: 126.9236 }, { lat: 37.5133, lng: 127.1000 },
+    { lat: 37.4765, lng: 126.9816 },
+  ];
+  const ids: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const j = await act(request, { action: "join", code, name: `상한${i + 1}` });
+    ids.push(j.participantId);
+    await act(request, { action: "addRegion", code, participantId: j.participantId, ...spots[i] });
+  }
+  // 5명이 각자 다른 곳 = 후보 5개. 이제 1번이 **아무도 없는 여섯 번째 자리**로 옮기려 한다.
+  // 1번이 떠나도 그 후보는 다른 사람이 없어 사라지므로 개수는 그대로 5개 — 그런데
+  // 새 자리도 5개째라 상한에 걸린다(= 거절돼야 하고, 옛 핑은 살아 있어야 한다).
+  const before = await get(request, code);
+  const mine = before.regions.find((r: { contributors?: string[] }) => r.contributors?.includes(ids[0]));
+  expect(mine, "사전 조건: 1번의 핑이 있어야 한다").toBeTruthy();
+
+  const res = await request.post("/api/meeting", {
+    data: { action: "addRegion", code, participantId: ids[0], lat: 37.6066, lng: 127.0927 },
+  });
+
+  const after = await get(request, code);
+  if (!res.ok()) {
+    // 거절됐다면 **아무것도 바뀌지 않아야** 한다
+    expect(after.regions, "거절됐는데 후보 개수가 변했다").toHaveLength(before.regions.length);
+    expect(
+      after.regions.find((r: { contributors?: string[] }) => r.contributors?.includes(ids[0])),
+      "거절당했는데 내 핑(=표)이 사라졌다"
+    ).toBeTruthy();
+  } else {
+    // 허용됐다면 옮겨간 것이니 새 자리에 내 핑이 있어야 한다
+    expect(
+      after.regions.find((r: { contributors?: string[] }) => r.contributors?.includes(ids[0])),
+      "허용됐는데 내 핑이 어디에도 없다"
+    ).toBeTruthy();
+  }
+});
+
+test("상한: 같은 동 병합은 개수를 늘리지 않으므로 상한과 무관하다", async ({ request }) => {
+  // ⚠️ 상한 검사를 병합보다 **앞**에 두면, 다섯 개일 때 같은 동에 합류조차 못 한다.
+  const { code, leaderId } = await setup(request);
+  const spot = { lat: 37.5665, lng: 126.978 };
+  await act(request, { action: "addRegion", code, participantId: leaderId, ...spot });
+  const mate = await act(request, { action: "join", code, name: "같은동" });
+  await act(request, { action: "addRegion", code, participantId: mate.participantId, ...spot });
+
+  const st = await get(request, code);
+  expect(st.regions, "같은 동인데 후보가 두 개로 갈라졌다").toHaveLength(1);
+  expect(st.regions[0].contributors, "병합인데 사람이 안 쌓였다").toHaveLength(2);
+});
+
+test("상한: 추천도 다섯 자리를 넘겨 채우지 않는다", async ({ request }) => {
+  // "추천은 제안이지 결정이 아니고, 다섯 자리를 AI 가 먼저 차지해서도 안 된다" (2차)
+  const { code, leaderId } = await setup(request);
+  const ids = [leaderId];
+  for (let i = 0; i < 4; i++) {
+    const j = await act(request, { action: "join", code, name: `사람${i + 1}` });
+    ids.push(j.participantId);
+  }
+  const spots = [
+    { lat: 37.5665, lng: 126.9780 }, { lat: 37.5045, lng: 127.0490 },
+    { lat: 37.5563, lng: 126.9236 }, { lat: 37.5133, lng: 127.1000 },
+    { lat: 37.4765, lng: 126.9816 },
+  ];
+  for (let i = 0; i < 5; i++) {
+    await act(request, { action: "addRegion", code, participantId: ids[i], ...spots[i] });
+  }
+  expect((await get(request, code)).regions).toHaveLength(5);
+
+  // 이미 꽉 찼는데 방장이 추천을 눌러도 넘치면 안 된다 (append 로 눌러 본다)
+  await act(request, { action: "suggestRegions", code, participantId: leaderId, mode: "append" });
+  expect((await get(request, code)).regions.length, "추천이 상한을 넘겨 채웠다")
+    .toBeLessThanOrEqual(5);
+});
+
+test("화면: 모임 탭 필터가 상태 / 역할 두 줄로 나뉜다", async ({ page, request }) => {
+  const { code, leaderId } = await setup(request, { name: "두줄 필터" });
+  await loginAs(page, code, [{ id: leaderId, name: "방장", isLeader: true }], leaderId);
+  await page.goto("/meetings");
+
+  // 줄 이름이 보여야 두 축이 왜 나뉘어 있는지 읽힌다
+  await expect(page.getByText("상태", { exact: true })).toBeVisible();
+  await expect(page.getByText("역할", { exact: true })).toBeVisible();
+  // 칩은 그대로 다 있다 (한 줄 → 두 줄은 배치만 바뀐 것)
+  for (const label of ["전체", "모집", "지역", "지점", "확정", "지난", "방장", "참여"]) {
+    await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 홈 → 생성 인계 (v19 §4-① · 2차 그릴링 seedPings · lib/handoff.ts)
+//   홈은 "맛보기"다. 거기서 넣은 출발지와 본 중간지점이 모임으로 넘어가지 않으면
+//   홈과 모임이 따로 노는 앱이 된다.
+// ═══════════════════════════════════════════════════════════════
+
+test("인계: 홈에서 넘긴 출발지와 중간지점이 새 모임에 들어간다", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+
+  // 홈 버튼이 저장하는 것과 **같은 모양**을 심는다 (sessionStorage · 한 번 쓰고 버림)
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "moimer:handoff",
+      JSON.stringify({
+        origin: { name: "강남역", lat: 37.4979, lng: 127.0276, transport: "transit" },
+        seed: { name: "홍대입구", lat: 37.5572, lng: 126.9245 },
+      })
+    );
+  });
+
+  await page.goto("/meetings?open=create");
+  await page.getByPlaceholder("예: 협성대 브레인파크 모임").fill("인계 테스트");
+  await page.getByRole("button", { name: "만들기", exact: true }).click();
+
+  // 무엇이 옮겨졌는지 요약에 밝혀야 한다 — 조용히 넣으면 "왜 이미 들어가 있지?"가 된다
+  await expect(page.getByText("홈에서 가져옴")).toBeVisible({ timeout: 15_000 });
+
+  // ⚠️ 코드를 `getByText(/^[A-Z0-9]{6}$/)` 로 찾으면 엉뚱한 걸 집는다(실측).
+  //    요약의 **초대 링크 입력칸**에서 뽑는 게 확실하다.
+  const url = await page.locator("input[readonly]").first().inputValue();
+  const code = (url.match(/\/m\/([A-Z0-9]{6})/) ?? [])[1] ?? "";
+  expect(code, `초대 링크에서 코드를 못 뽑았다: ${url}`).toMatch(/^[A-Z0-9]{6}$/);
+  const st = await get(request, code);
+
+  // ① 방장 출발지가 채워져 있다 (모임에서 또 물어보지 않는다)
+  expect(st.originsSet, "인계했는데 방장 출발지가 비어 있다").toBe(1);
+  expect(st.participants[0].origin).toContain("강남역");
+  // ② 홈에서 본 중간지점이 첫 지역 후보로 올라와 있다
+  expect(st.regions.length, "중간지점이 지역 후보로 안 넘어왔다").toBeGreaterThan(0);
+
+  expect(errors, `콘솔 에러: ${errors.join(" / ")}`).toEqual([]);
+});
+
+test("인계: 한 번 쓰면 사라진다 (다음 모임에 옛 중간지점이 딸려오지 않는다)", async ({ page }) => {
+  // ⚠️ localStorage 에 뒀다면 다음 날 새 모임을 만들 때 어제 본 중간지점이
+  //    후보로 튀어나온다. 읽는 즉시 지우는 계약을 못 박는다.
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "moimer:handoff",
+      JSON.stringify({ seed: { name: "홍대입구", lat: 37.5572, lng: 126.9245 } })
+    );
+  });
+  await page.goto("/meetings?open=create");
+  await page.getByPlaceholder("예: 협성대 브레인파크 모임").fill("인계 1회성");
+  await page.getByRole("button", { name: "만들기", exact: true }).click();
+  await expect(page.getByText("홈에서 가져옴")).toBeVisible({ timeout: 15_000 });
+
+  const left = await page.evaluate(() => sessionStorage.getItem("moimer:handoff"));
+  expect(left, "인계 값이 남아 있다 — 다음 모임에 딸려간다").toBeNull();
+});

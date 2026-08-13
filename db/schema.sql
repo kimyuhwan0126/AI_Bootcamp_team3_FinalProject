@@ -76,6 +76,29 @@ alter table meetings     add column if not exists updated_at  timestamptz not nu
 alter table participants add column if not exists status      text;
 alter table participants add column if not exists eta_text    text;
 
+-- ── v19 설계 확정판 (migrations/001_v19_설계정렬.sql 반영) ────────
+--  자세한 주석은 그 파일에 있다. 여기는 "새로 세팅하는 사람이 이 파일 하나만
+--  돌리면 최신 상태가 된다"는 규칙(migrations/README.md §5)을 지키기 위한 사본이다.
+alter table meetings     add column if not exists scope            text not null default 'place';
+alter table meetings     add column if not exists purpose_category text;
+alter table meetings     add column if not exists meet_time        timestamptz;
+alter table meetings     add column if not exists place_vote_open  boolean not null default false;
+alter table meetings     add column if not exists radius_m         int not null default 700;
+alter table meetings     add column if not exists stashed_places   jsonb;
+alter table meetings     add column if not exists archived_at      timestamptz;
+alter table participants add column if not exists pin              text;
+alter table participants add column if not exists pin_fails        int not null default 0;
+alter table participants add column if not exists kakao_id         text;
+alter table participants add column if not exists late_min         int;
+
+create index if not exists idx_meetings_archived   on meetings(archived_at);
+create index if not exists idx_meetings_meet_time  on meetings(meet_time);
+create index if not exists idx_participants_kakao  on participants(kakao_id);
+
+-- ⚠️ password · reservation 은 v19 에서 폐기됐지만 컬럼을 남겨 둔다.
+--    화면에서 내리는 게 먼저고, 돌아가는 데모를 깨지 않기 위해서다.
+--    DROP 은 발표 이후 별도 마이그레이션에서 한다.
+
 -- ── updated_at 자동 갱신 ────────────────────────────────────────
 create or replace function moimer_touch_updated_at() returns trigger as $$
 begin
