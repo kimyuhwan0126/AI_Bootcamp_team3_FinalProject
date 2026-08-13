@@ -35,6 +35,24 @@ export const pinColor = (i: number) => PIN_COLORS[i % PIN_COLORS.length];
 /** 중간 추천 지역 마커 색 — 참가자 색과 완전히 분리된 강조색 */
 export const MIDPOINT_COLOR = "#f0324b";
 
+/**
+ * 보여줄 것이 아직 없을 때의 지도 첫 화면 — **협성대(화성시 봉담읍) 인근**.
+ *
+ * 예전엔 서울시청(37.5665, 126.978)이었는데, 홈에서 출발지가 하나도 없으면
+ * 지도 자체를 안 그리고 회색 안내문만 띄웠기 때문에 이 값이 보일 일이 거의
+ * 없었다. 이제 빈 홈에서도 지도를 그리므로 **우리 학교 근처**를 첫 화면으로
+ * 둔다 — 발표에서 처음 열었을 때 낯선 서울 도심이 아니라 아는 동네가 뜬다.
+ *
+ * ⚠️ 핀이 하나라도 있으면 곧바로 그 핀들에 맞춰 화면이 맞춰진다(fitBounds).
+ *    이 값은 **아무것도 없을 때만** 쓰인다.
+ *
+ * ⚠️ 좌표는 캠퍼스 근사값이다. 정확히 맞추려면 map.kakao.com 에서 협성대를
+ *    찾아 우클릭 → '좌표 복사' 한 값으로 바꾸면 된다.
+ */
+export const DEFAULT_MAP_CENTER = { lat: 37.2076, lng: 126.9669 };
+/** 카카오 지도 확대 레벨 — 숫자가 작을수록 확대. 5 ≈ 동네 몇 블록. */
+export const DEFAULT_MAP_LEVEL = 5;
+
 export interface MapPin {
   lat: number;
   lng: number;
@@ -200,8 +218,8 @@ export default function KakaoMap({
       const { kakao } = window;
       if (!mapRef.current && boxRef.current) {
         mapRef.current = new kakao.maps.Map(boxRef.current, {
-          center: new kakao.maps.LatLng(37.5665, 126.978), // 서울 시청 기본
-          level: 8,
+          center: new kakao.maps.LatLng(DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lng),
+          level: DEFAULT_MAP_LEVEL,
         });
         // v19 §4-⑥: 지도 탭 → 좌표. 리스너는 **지도 생성 시 한 번만** 붙이고
         // 최신 콜백은 ref 로 본다 — 폴링(1.8초)마다 붙였다 떼면 클릭이 씹힌다.

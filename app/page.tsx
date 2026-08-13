@@ -835,16 +835,7 @@ export default function Home() {
             {mapFull ? "✕" : "⛶"}
           </button>
         </div>
-        {activeOrigins.length === 0 ? (
-          <div className="v8-mapempty">
-            {selectedMeeting ? "아직 출발지를 입력한 참여자가 없어요" : "아직 출발지가 없어요"}
-            <small>
-              {selectedMeeting
-                ? `참여자 ${selectedMeeting.participants.length}명이 각자 출발지를 넣으면 여기에 표시돼요`
-                : "위 검색창에서 출발지를 추가해보세요"}
-            </small>
-          </div>
-        ) : mapFail ? (
+        {mapFail ? (
           <div className="v8-mapempty">
             지도를 불러오지 못했어요
             <small>
@@ -877,6 +868,32 @@ export default function Home() {
                 : undefined
             }
           />
+        )}
+        {/* 출발지가 아직 없을 때 — **지도는 그대로 두고** 안내만 얹는다.
+            예전엔 지도 자리를 회색 상자로 통째로 덮어서, 처음 들어온 사람이
+            "이 앱이 지도를 쓰긴 하나?" 를 알 수 없었다 (2026-08-13 팀 요청).
+            ⚠️ `pointerEvents:none` — 안내문이 지도 조작(확대·이동)을 막으면 안 된다.
+            ⚠️ 위치는 위쪽이다. 가운데에 두면 첫 화면 중심(협성대)을 가린다. */}
+        {activeOrigins.length === 0 && !mapFail && (
+          <div
+            style={{
+              position: "absolute", left: 0, right: 0, bottom: 12,
+              display: "flex", justifyContent: "center", pointerEvents: "none", zIndex: 5,
+            }}
+          >
+            <div
+              style={{
+                background: "rgba(255,255,255,.94)", borderRadius: 999,
+                padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                color: "var(--ink-soft)", boxShadow: "var(--shadow)",
+                maxWidth: "90%", textAlign: "center",
+              }}
+            >
+              {selectedMeeting
+                ? `참여자 ${selectedMeeting.participants.length}명이 출발지를 넣으면 여기에 표시돼요`
+                : "위 검색창에서 출발지를 추가하면 여기에 표시돼요"}
+            </div>
+          </div>
         )}
         {selectedMeeting ? (
           selectedMeeting.winnerRegion ? (
