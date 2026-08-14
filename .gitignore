@@ -1,0 +1,11 @@
+.env.local
+node_modules/
+.next/
+
+# 운영 DB 백업(실제 참가자 데이터 포함) — 절대 올리지 않는다
+backup_v1_*.json
+
+# 빌드/로그 부산물 — 소스가 아니다
+*.tsbuildinfo
+dev.log
+*.log
