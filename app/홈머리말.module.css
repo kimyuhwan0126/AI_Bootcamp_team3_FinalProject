@@ -3,9 +3,9 @@
    디자인 토큰이 정해지는 날 이 파일만 딴소리를 하게 된다. */
 
 .머리 {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center;
   padding: 14px 16px 10px;
-  /* 옛 판은 sticky 였다. 우리도 그대로 둔다 — 스크롤해도 로고와 두 단추가 손 닿는 자리에 남는다.
+  /* 옛 판은 sticky 였다. 우리도 그대로 둔다 — 스크롤해도 로고가 손 닿는 자리에 남는다.
      ⚠ backdrop-filter 는 안 건다. 걸면 그 안의 position:fixed 자손이 머리말에 갇힌다
         (예전판 기록 §12-3 의 경고 — 실제로 모달이 잘렸던 자국이 있다). */
   position: sticky; top: 0; z-index: 11;
@@ -19,25 +19,5 @@
   padding: 6px 2px; margin: -6px -2px;
 }
 
-.단추들 { display: flex; gap: 8px; }
-
-.동그라미 {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: var(--surface); border: 1px solid var(--line);
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 1px 2px rgba(16, 32, 64, .05), 0 8px 20px rgba(16, 32, 64, .08);
-  color: var(--ink); text-decoration: none; flex: none;
-  position: relative;
-}
-/* 36px 은 손가락 자리로 좁다. 보이는 크기는 그대로 두고 **닿는 자리만** 48px 로 넓힌다
-   (지도 핀과 같은 수법 — globals.css 의 .opin::before). */
-.동그라미::before {
-  content: ''; position: absolute; left: 50%; top: 50%;
-  width: var(--tap); height: var(--tap); transform: translate(-50%, -50%);
-}
-.동그라미 svg {
-  width: 17px; height: 17px; fill: none; stroke: currentColor;
-  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
-}
-.동그라미:active { background: var(--bg); }
-.동그라미:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+/* .단추들·.동그라미 는 오늘 없앴다 — 머리말에 있던 단추(＋ 모임 만들기)를 지우면서
+   같이 안 쓰게 됐다(홈머리말.tsx 참고). */

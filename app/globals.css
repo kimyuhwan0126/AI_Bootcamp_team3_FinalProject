@@ -135,6 +135,14 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 .opin[data-mine]{border:3px solid var(--brand)}
 .opin[data-first]{background:#16307a;color:#fff;font-size:15px;padding:8px 16px;z-index:5}
 .opin[data-first][data-mine]{border-color:#8fb4ff}
+/* 이름표만으로는 '핀'으로 안 읽힌다 — 진짜 지도 핀들처럼 아래로 꼬리(삼각형)를 단다.
+   이름표는 이미 translate(-50%,-100%) 로 아래쪽 가운데가 좌표에 붙어 있으니(위 .opin),
+   꼬리는 그 자리에서 아래로 뻗어 나가는 삼각형 하나면 된다. 홈 맛보기의 '가운데' 핀과
+   모임 화면의 1위 후보 핀이 이 클래스를 같이 쓴다 — 하나 고치면 둘 다 핀처럼 보인다. */
+.opin[data-first]::after{
+  content:''; position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
+  width:0; height:0; border:7px solid transparent; border-bottom:0; border-top-color:#16307a;
+}
 /* 누른 자리는 아직 후보가 아니다 — 회색 점선으로만 짚어 둔다 (그릴링 논의81).
    무엇을 고른 셈인지(이름)와 굳히는 단추는 시트가 맡는다. 지도는 '그게 어디인지'만 말한다.
    누르는 자리가 아니다 — 여기에 손이 닿으면 그 밑의 지도를 못 누른다. */
