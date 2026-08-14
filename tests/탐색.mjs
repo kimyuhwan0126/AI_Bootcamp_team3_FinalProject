@@ -4,7 +4,8 @@
 
    바깥 API 는 횟수 제한이 걸려 있고(논의92) 답도 날마다 달라진다 —
    **출발지 이름 찾기는 가짜로 답한다**(page.route). 그래야 여덟 곳 한도 같은 것을 재현할 수 있다.
-   가운데 둘레(`/api/places`)는 [탐5] 한 곳에서만 진짜로 두들긴다.
+   가운데 둘레 목록(`/api/places`)은 오늘(2026-08-14) 홈 화면에서 없앴다 — 그 라우트 자체의
+   시험은 `tests/entry.mjs` 등으로 옮겨 갔다(맨 아래 [탐5] 자리의 주석 참고).
 
    node tests/탐색.mjs — 개발 서버가 떠 있어야 한다 (기본 127.0.0.1:3000 · MOIMER_BASE 로 바꿀 수 있다) */
 import { createRequire } from 'node:module';
@@ -136,7 +137,7 @@ console.log('\n[탐1] 출발지가 없을 때');
   ok('출발지가 없으면 안내 문구가 뜬다', /아직 출발지가 없어요/.test(t), t.slice(0, 120));
   ok('가운데가 아직 없다', (await 가운데of(pg)) === '');
   ok('출발지 검색칸이 있다', await pg.locator('#og').count() > 0);
-  ok('둘레 목록은 아직 안 뜬다', await pg.locator('[data-slot="탐색"] .rows .row[data-static]').count() === 0);
+  ok('둘레 목록은 없다(오늘 없앴다)', await pg.locator('[data-slot="탐색"] .rows .row[data-static]').count() === 0);
   /* 홈에서 만들기로 가는 길은 그대로 있어야 한다 */
   ok('모임 만들기 단추가 있다', await pg.locator('.wrap a.cta', { hasText: '모임 만들기' }).count() === 1);
   /* '초대 코드로 들어가기' 칸은 홈에서 뺐다(오늘 결정) — 초대는 실제 링크로 바로
@@ -152,14 +153,17 @@ console.log('\n[탐1] 출발지가 없을 때');
 /* ── 처음 여는 지도가 지금 있는 자리를 짚는가 ─────────── */
 console.log('\n[탐1-2] 처음 여는 지도는 내가 있는 자리를 짚는다');
 {
-  /* 아직 위치를 허락도 거절도 안 한 사람 — 창을 불쑥 띄우지 않고 길만 준다.
-     브라우저는 한 번 거절당하면 그 뒤로 묻지도 않으므로, 그 한 번을 아껴야 한다. */
+  /* 아직 위치를 허락도 거절도 안 한 사람 — 오늘부터(2026-08-14) 단추를 기다리지 않고
+     화면을 열자마자 스스로 물어본다(지도.tsx). 헤드리스 크롬은 답이 없는 prompt 를
+     스스로 거절한 것처럼 처리하므로, 이 시험에서는 '아무 권한도 안 준' 경우와 같은
+     결과가 나온다 — 그래서 아래 '막아 둔 사람' 블록과 기대값이 같다: 단추는 **어디에도**
+     없고, 못 받으면 조용히 안내 문구만 남는다. */
   const ctx = await 새창(); await 가짜검색(ctx);
   const pg = await ctx.newPage();
   await pg.goto(BASE + '/', { waitUntil: 'load' });
   await 잠깐(2000);
-  ok('안 정한 사람에게는 [내 위치] 단추를 준다', await pg.locator('[data-slot="내위치단추"]').count() === 1);
-  ok('묻기 전에는 내 자리 점이 없다', await pg.locator('[data-slot="내자리"]').count() === 0);
+  ok('[내 위치] 단추는 이제 없다', await pg.locator('[data-slot="내위치단추"]').count() === 0);
+  ok('못 받으면 안내 문구만 남는다', /아직 출발지가 없어요/.test(await 글(pg)));
   /* 그릴 것이 없으면 남의 타일 서버를 안 두들긴다 — 홈은 자주 들르는 자리다 */
   ok('그릴 것이 없으면 타일을 안 받는다', await pg.locator('[data-slot="탐색"] .osm img').count() === 0);
   await ctx.close();
@@ -206,7 +210,8 @@ console.log('\n[탐1-2] 처음 여는 지도는 내가 있는 자리를 짚는�
   await ctx.close();
 }
 {
-  /* 막아 둔 사람 — 눌러도 아무 일이 없는 단추는 안 그린다 (논의105) */
+  /* 막아 둔 사람 — 단추 자체가 이제 없다(논의105). 자동으로 물어보다 거절당해도
+     조용히 안내 문구만 남아야 한다 */
   const ctx = await br.newContext({ viewport: { width: 430, height: 900 } });
   await ctx.grantPermissions([]);          /* 아무 권한도 안 준다 = 거절해 둔 상태 */
   await 가짜검색(ctx);
@@ -245,7 +250,6 @@ console.log('\n[탐2] 출발지 한 곳 → 두 곳');
     `${두곳}`);
 
   await 잠깐(1200);
-  ok('둘레 목록이 뜬다', await pg.locator('[data-slot="탐색"] .rows .row[data-static]').count() === 4);
 
   /* 빼면 가운데가 다시 잡힌다 */
   await pg.locator('[data-slot="탐색"] button[aria-label$="빼기"]').nth(1).click();
@@ -281,39 +285,9 @@ console.log('\n[탐3] 여덟 곳까지만');
   await ctx.close();
 }
 
-/* ── 갈래 거르개 ──────────────────────────────────────── */
-console.log('\n[탐4] 갈래 거르개는 **없앴다**');
-{
-  /* 사람이 뺐다 — 홈을 옛 판 모양으로 되돌리면서. 목록은 그대로 나오되 갈래로 걸러 내지 않는다.
-     되살아나면 여기가 빨개진다. '없앴다' 는 결정도 지켜야 할 약속이다. */
-  const ctx = await 새창(); await 가짜검색(ctx); await 가짜둘레(ctx);
-  const pg = await ctx.newPage();
-  await pg.goto(BASE + '/', { waitUntil: 'load' });
-  await 잠깐(1500);
-  await 넣기(pg, '가가', 0);
-  await 넣기(pg, '나나', 0);
-  await 잠깐(1200);
-
-  const 줄수 = () => pg.locator('[data-slot="탐색"] .rows .row[data-static]').count();
-  ok('거르개 자체가 없다', await pg.locator('[data-slot="거르개"]').count() === 0);
-  /* ⚠ `[aria-pressed]` 를 통째로 세면 **이동 수단 단추까지** 걸린다(실제로 걸렸다) —
-     그건 거르는 장치가 아니라 고르는 장치다. 갈래 이름으로 못 박아 센다. */
-  const 갈래알약 = pg.locator('[data-slot="탐색"] [aria-pressed]')
-    .filter({ hasText: /^(전체|음식점|카페|문화시설|관광명소|주차장|정류장·역)$/ });
-  ok('갈래로 거르는 알약이 하나도 없다', await 갈래알약.count() === 0,
-     (await 갈래알약.allInnerTexts()).join(' · '));
-  /* 거르지 않으니 온 것이 다 보인다 */
-  ok('온 지점이 걸러지지 않고 다 보인다', await 줄수() === 4, `${await 줄수()}줄`);
-  /* 갈래 **표**는 남는다 — 거르는 장치가 아니라 '이게 무엇인지' 를 말하는 이름표다 */
-  const t0 = await 글(pg);
-  ok('줄마다 갈래 이름표는 그대로 붙는다', /음식점/.test(t0) && /카페/.test(t0), t0.slice(0, 90));
-
-  /* 금지 낱말 (논의71~73) — 가짜 지점이라 바깥에서 온 이름에 걸릴 일이 없다 */
-  for (const 금지 of ['투표', '동네', '가게', '마감', '아카이브', '후보지']) {
-    ok(`금지 낱말 '${금지}' 가 없다`, !t0.includes(금지), t0.slice(0, 80));
-  }
-  await ctx.close();
-}
+/* [탐4] "갈래 거르개는 없앴다" 는 오늘(2026-08-14) 통째로 없앴다 — 재던 것(갈래 거르개·갈래 표)이
+   전부 그 둘레 목록 안에 있었는데, 목록 자체를 없앴다(탐색.tsx 참고). 갈래를 다시 보여 주는 날이
+   오면 이 자리에 새로 짜야 한다. */
 
 /* ── 옛 판 모양인가 ───────────────────────────────────── */
 console.log('\n[탐4-2] 홈이 옛 판 모양이다');
@@ -349,24 +323,10 @@ console.log('\n[탐4-2] 홈이 옛 판 모양이다');
   await ctx.close();
 }
 
-/* ── 진짜 둘레 ────────────────────────────────────────── */
-console.log('\n[탐5] 진짜 /api/places 로도 도나');
-{
-  const ctx = await 새창(); await 가짜검색(ctx);
-  const pg = await ctx.newPage();
-  await pg.goto(BASE + '/', { waitUntil: 'load' });
-  await 잠깐(1500);
-  await 넣기(pg, '가가', 0);
-  await 넣기(pg, '가가', 1);
-  await 잠깐(4000);
-  const t = await 글(pg);
-  const 줄 = await pg.locator('[data-slot="탐색"] .rows .row[data-static]').count();
-  ok('둘레가 뜨거나, 못 불러온 까닭을 한국어로 말한다',
-    줄 > 0 || /불러올 수 없어요|보여 줄 지점이 없어요|살펴보는 중/.test(t), t.slice(0, 200));
-  /* 어떤 길로 가든 영문 오류 코드가 새면 안 된다 */
-  ok('영문 오류 코드가 안 샌다', !/places_unavailable|quota_kakao|too_many|bad_coords/.test(t));
-  await ctx.close();
-}
+/* [탐5] "진짜 /api/places 로도 도나" 도 오늘 없앴다 — 홈 화면이 더는 `/api/places` 를
+   부르지 않는다(탐색.tsx 참고). `/api/places` 라우트 자체의 시험(입구 가드·바깥 API 연동)은
+   `tests/entry.mjs`·`tests/external.mjs`·`tests/결정_입구.mjs`·`tests/가게캐시.mjs` 가
+   여전히 맡는다 — 그 라우트는 모임 화면(`/m/[code]`)의 지점 고르기가 그대로 쓴다. */
 
 /* ── 새로고침 ─────────────────────────────────────────── */
 console.log('\n[탐6] 새로고침하면 출발지가 남는다');

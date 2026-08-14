@@ -17,11 +17,6 @@ import s from './탐색.module.css';
 
 /* 예전판과 같은 한도 — 모임 정원도 8이다 */
 const 최대 = 8;
-/* 가운데 둘레를 이만큼 본다. 카카오는 갈래마다 다섯 곳까지만 주므로 넓혀도 목록이 길어지지는 않고,
-   가운데가 뒷골목에 떨어졌을 때 빈손이 되는 것만 막는다. */
-const 반경 = 1000;
-/* 손이 멈춘 뒤에 부른다 (논의92) — 출발지를 잇달아 넣으면 가운데가 그때마다 바뀐다 */
-const 뜸 = 450;
 
 /* 한국 밖은 안 받는다 (논의55·60). 판정하는 상자는 `lib/geo.ts` 의 `한국안` 이지만
    그 파일은 불러오는 순간 DB 연결을 만들어 브라우저에서는 못 쓴다 — 같은 상자를 여기 한 번 더 적는다.
@@ -33,11 +28,11 @@ const 한국안 = (lat: number, lng: number) =>
    좌표만 보면 같은 건물의 다른 출입구가 두 곳이 된다 — 둘을 함께 본다. */
 const 열쇠 = (o: Origin) => `${o.name}@${o.lat.toFixed(5)},${o.lng.toFixed(5)}`;
 
-type 지점 = { id: string; name: string; address: string; lat: number; lng: number; category?: string };
-
-/* ⚠ **갈래(카테고리) 거르개를 없앴다** — 옛 판 홈 모양으로 돌아오면서 사람이 뺀 것이다.
-   둘레 목록은 그대로 나오되 갈래로 걸러 내지 않는다. 목록 줄에 붙는 갈래 표(`.갈래표`)는 남는다 —
-   그건 거르는 장치가 아니라 '이게 무엇인지' 를 말하는 이름표다. */
+/* ⚠ **가운데 둘레 지점 목록(음식점·카페 등)을 없앴다** (2026-08-14) — 맛보기 화면은
+   '가운데가 어디로 잡히는지' 만 보여 주면 충분한데, 그 아래 실제 가게·주차장 목록까지
+   나오면 마치 지금 뭔가를 고르는 화면처럼 보인다. 그건 로그인해서 모임에 들어간 뒤
+   지점을 고를 때(`app/m/[code]`)의 일이다 — 여기서 미리 보여 주면 같은 것을 두 번 하는
+   셈이고, `/api/places` 를 홈에 들를 때마다 부르는 값도 없었다. */
 
 export default function 탐색() {
   /* 두고 간 것을 읽기 전에는 출발지 칸을 안 단다 — 먼저 달면 그 칸이 스스로 얹는 기본 출발지가
@@ -102,45 +97,6 @@ export default function 탐색() {
         lng: 출발지들.reduce((a, o) => a + o.lng, 0) / 출발지들.length }
     : null;
 
-  /* ── 가운데 둘레 지점 ───────────────────────────────────── */
-  const [지점들, set지점들] = useState<지점[] | null>(null);
-  const [부르는중, set부르는중] = useState(false);
-  const [지점문제, set지점문제] = useState('');
-  const [반쪽, set반쪽] = useState(false);
-
-  const 가lat = 가운데?.lat ?? null, 가lng = 가운데?.lng ?? null;
-  useEffect(() => {
-    if (가lat === null || 가lng === null) { set지점들(null); set지점문제(''); return; }
-    let 살아있다 = true;
-    set부르는중(true);
-    const t = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/places?lat=${가lat}&lng=${가lng}&r=${반경}`);
-        const j = await res.json().catch(() => null);
-        if (!살아있다) return;
-        if (!res.ok) {
-          /* 봉투의 `retryable` 이 '기다리면 되는가'를 말한다 — 화면이 상태 코드를 다시 해석하지 않는다
-             (originfield.tsx 와 같은 규칙, 논의101) */
-          set지점문제(
-            j?.error === 'too_many' ? '너무 자주 불러서 잠깐 쉬는 중이에요 — 잠시 뒤에 다시 해 주세요'
-            : j?.error === 'bad_coords' ? '한국 안에서만 둘레를 보여 줄 수 있어요'
-            : j?.retryable ? '지금은 둘레 지점을 불러올 수 없어요 — 잠시 뒤에 다시 해 주세요'
-            : '지금은 둘레 지점을 불러올 수 없어요');
-          set지점들(null);
-          return;
-        }
-        set지점문제('');
-        set반쪽(j?.partial === true);
-        set지점들(j?.places ?? []);
-      /* 대답조차 못 받은 것은 망이 끊긴 쪽이다 — 그건 다시 해 보면 된다 */
-      } catch { if (살아있다) { set지점문제('지금은 둘레 지점을 불러올 수 없어요 — 잠시 뒤에 다시 해 주세요'); set지점들(null); } }
-      finally { if (살아있다) set부르는중(false); }
-    }, 뜸);
-    return () => { 살아있다 = false; clearTimeout(t); };
-  }, [가lat, 가lng]);
-
-  const 보일지점 = 지점들 ?? [];
-
   /* ── 만들기 폼으로 ───────────────────────────────────────
      **링크**로 둔다. 주소가 있는 자리로 가는 길이라 새 탭·오래 눌러 열기가 되어야 하고,
      자바스크립트가 아직 안 붙은 동안에도 눌리면 만들기로 가야 한다.
@@ -193,8 +149,7 @@ export default function 탐색() {
       <div className={s.지도칸}>
         <지도
           출발지들={출발지들.map((o) => ({ 이름: o.name, lat: o.lat, lng: o.lng }))}
-          가운데={가운데}
-          지점들={보일지점.map((p) => ({ 이름: p.name, lat: p.lat, lng: p.lng }))} />
+          가운데={가운데} />
       </div>
 
       {/* 옛 판은 지도 아래에 이 한 줄을 **늘** 뒀다 — 무엇을 하면 무엇이 나오는지 미리 말해 준다.
@@ -220,31 +175,6 @@ export default function 탐색() {
           ))}
         </div>
       </div>
-
-      {!!출발지들.length && (
-        <div className={s.목록칸}>
-          {지점문제 ? <p className="warn" style={{ fontSize: 12.5, margin: 0 }}>{지점문제}</p>
-            : 부르는중 && !지점들 ? <p className="mut" style={{ margin: 0 }}>둘레를 살펴보는 중이에요…</p>
-            : !보일지점.length ? <p className="mut" style={{ margin: 0 }}>여기엔 아직 보여 줄 지점이 없어요.</p>
-            : (
-              <ul className="rows">
-                {보일지점.slice(0, 12).map((p) => (
-                  <li key={p.id}>
-                    <div className="row" data-static>
-                      <span className="nm">{p.name}
-                        {p.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{p.address}</span>}
-                      </span>
-                      {p.category && <span className={s.갈래표}>{p.category}</span>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          {반쪽 && !지점문제 && (
-            <p className="mut" style={{ margin: '6px 0 0' }}>몇 곳은 지금 못 불러왔어요.</p>
-          )}
-        </div>
-      )}
 
       <Link className="cta" href="/new" onClick={짐싣기}>
         {출발지들.length ? '이 출발지들로 모임 만들기' : '＋ 모임 만들기'}

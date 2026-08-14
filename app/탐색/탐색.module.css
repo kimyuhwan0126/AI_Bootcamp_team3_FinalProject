@@ -98,22 +98,9 @@
   .내자리점::after { animation: none; opacity: .55; transform: scale(1.4); }
 }
 
-/* 아직 위치를 안 정한 사람에게 주는 길. 안내 문구 아래에 붙는다 —
-   손가락이 닿는 자리는 48px 다 (논의15·61). */
-.내위치 {
-  margin-top: 12px; min-height: 44px; padding: 0 18px;
-  border-radius: 999px; border: 1px solid var(--brand);
-  background: var(--surface); color: var(--brand);
-  font: inherit; font-size: 13.5px; font-weight: 800; cursor: pointer;
-}
-.내위치:disabled { opacity: .6; cursor: default; }
-.내위치:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+/* .내위치 는 오늘(2026-08-14) 없앴다 — 지도가 물어봐도 되는지 손으로 눌러 정하게 하던
+   단추였다. 지금은 화면을 열자마자 스스로 물어본다(지도.tsx) — 단추가 갈 자리가 없어졌다.
 
-/* ── 둘레 지점 목록 ───────────────────────────────────── */
-/* 갈래 거르개(`.거르개`·`.칩`)는 함께 지웠다 — 카테고리를 없앴으므로 쓰는 곳이 없다.
-   되살릴 일이 생기면 git 기록이 아니라 사람에게 물어야 한다(사람이 정해 뺀 것이다). */
-.목록칸 { margin: 14px 0 12px; }
-.갈래표 {
-  flex: none; font-size: 11.5px; font-weight: 800; color: var(--ink-2);
-  background: var(--bg); border-radius: 999px; padding: 3px 9px; white-space: nowrap;
-}
+   .목록칸·.갈래표(둘레 지점 목록)도 오늘 없앴다 — 탐색.tsx 참고.
+   갈래 거르개(`.거르개`·`.칩`)는 그보다 먼저 지웠다 — 카테고리를 없앴으므로 쓰는 곳이 없다.
+   되살릴 일이 생기면 git 기록이 아니라 사람에게 물어야 한다(사람이 정해 뺀 것들이다). */

@@ -30,10 +30,9 @@ const toLatLng = (x: number, y: number, z: number) => {
 /* 출발지 상자가 지도의 이만큼을 채우게 맞춘다 — 남는 여백은 이름표 몫이다 (osmmap 과 같은 값) */
 const FIT = 0.72;
 
-export default function 지도({ 출발지들, 가운데, 지점들 }: {
+export default function 지도({ 출발지들, 가운데 }: {
   출발지들: 점[];
   가운데: { lat: number; lng: number } | null;
-  지점들: 점[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -49,38 +48,21 @@ export default function 지도({ 출발지들, 가운데, 지점들 }: {
      이 자리는 '가운데를 잡아 주는 곳'이라는 것을 **써 보면서** 알게 하려고 둔 곳인데,
      빈 상자로는 지도가 있다는 것조차 안 보였다.
 
-     묻는 때: 화면을 열자마자 창을 띄우지 않는다. 브라우저는 한 번 거절당하면 그 뒤로는
-     물어보지도 않으므로(그 한 번이 영영이다), **이미 허락해 둔 사람에게만** 조용히 가져온다.
-     아직 안 정한 사람에게는 아래 [내 위치 보기] 단추를 그려 **누른 그 손짓으로** 묻는다.
-     · 권한 API 가 없는 브라우저는 '아직 안 정함' 으로 친다 — 단추가 뜨고, 눌러야 물어본다. */
+     오늘부터(2026-08-14) 화면을 열자마자 **곧바로** 물어본다 — 눌러야만 물어보던 단추를
+     없앴다(사람이 정했다). 거절해도 다시 조르지 않는다: 못 받으면 그냥 조용히 넘어가고
+     출발지는 손으로 넣으면 된다 — 지도가 비어 보이는 것도 아니다(아래 "아직 출발지가
+     없어요" 안내가 그 자리를 채운다). */
   const [내자리, set내자리] = useState<{ lat: number; lng: number } | null>(null);
-  /* 'idle'=아직 모름 · 'ask'=물어볼 수 있다 · 'busy'=가져오는 중 · 'no'=막혔거나 못 찾았다 */
-  const [위치상태, set위치상태] = useState<'idle' | 'ask' | 'busy' | 'no'>('idle');
 
-  const 내자리가져오기 = useCallback((사람이눌렀나: boolean) => {
-    if (!('geolocation' in navigator)) { set위치상태('no'); return; }
-    if (사람이눌렀나) set위치상태('busy');
+  useEffect(() => {
+    if (!('geolocation' in navigator)) return;
     navigator.geolocation.getCurrentPosition(
-      (p) => {
-        set내자리({ lat: p.coords.latitude, lng: p.coords.longitude });
-        set위치상태('idle');
-      },
+      (p) => set내자리({ lat: p.coords.latitude, lng: p.coords.longitude }),
       /* 거절·시간초과·못 찾음을 가르지 않는다 — 사람이 할 일은 셋 다 같다(출발지를 손으로 넣는다) */
-      () => set위치상태('no'),
+      () => {},
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 },
     );
   }, []);
-
-  useEffect(() => {
-    if (!('geolocation' in navigator)) { set위치상태('no'); return; }
-    const 권한 = (navigator as any).permissions?.query?.({ name: 'geolocation' });
-    if (!권한?.then) { set위치상태('ask'); return; }
-    권한.then((r: { state: string }) => {
-      if (r.state === 'granted') 내자리가져오기(false);
-      else if (r.state === 'denied') set위치상태('no');
-      else set위치상태('ask');
-    }).catch(() => set위치상태('ask'));
-  }, [내자리가져오기]);
 
   /* 출발지가 하나도 없을 때만 내 자리로 지도를 맞춘다 — 출발지가 들어오면
      아래 '출발지에 맞추기' 가 임자다. 둘이 다투면 방금 넣은 출발지가 화면 밖으로 밀린다. */
@@ -195,25 +177,16 @@ export default function 지도({ 출발지들, 가운데, 지점들 }: {
       {tileDead && (
         <div className="tiledead">
           <b>지도를 불러오지 못했어요</b>
-          <span>아래 목록에서 둘레를 볼 수 있어요</span>
+          <span>잠시 뒤에 다시 열어 보세요</span>
         </div>
       )}
 
-      {/* 그릴 것이 하나도 없을 때만 덮는다. 무엇을 하면 되는지 말하고, 물어볼 수 있으면 길을 하나 더 준다 —
-          지도를 띄워 놓고 어디인지도 모르게 두는 것보다 낫다. */}
+      {/* 그릴 것이 하나도 없을 때만 덮는다 — 지도를 띄워 놓고 어디인지도 모르게 두는 것보다 낫다.
+          단추는 없다: 위에서 이미 스스로 내 위치를 물어봤다(그래도 안 잡히면 손으로 넣으면 된다). */}
       {!그릴것있나 && !tileDead && (
         <div className="tiledead">
           <b>아직 출발지가 없어요</b>
           <span>위 검색칸에서 출발지를 넣어 보세요</span>
-          {/* 이미 막아 둔 사람에게는 안 그린다 — 눌러도 아무 일이 안 나는 단추는 거짓말이다(논의105) */}
-          {(위치상태 === 'ask' || 위치상태 === 'busy') && (
-            <button className={s.내위치} data-slot="내위치단추"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); 내자리가져오기(true); }}
-              disabled={위치상태 === 'busy'}>
-              {위치상태 === 'busy' ? '내 위치 찾는 중…' : '내 위치에서 시작하기'}
-            </button>
-          )}
         </div>
       )}
 
@@ -231,12 +204,6 @@ export default function 지도({ 출발지들, 가운데, 지점들 }: {
                 style={{ left: q.x, top: q.y }} aria-hidden />
             );
           })()}
-          {/* 둘레 지점은 점으로만 — 이름은 아래 목록에서 읽는다 */}
-          {지점들.map((p) => {
-            const q = 자리(p);
-            return q && <span key={`지점${p.이름}${p.lat}`} className="odot" title={p.이름}
-              style={{ left: q.x, top: q.y, pointerEvents: 'none' }} />;
-          })}
           {출발지들.map((o, i) => {
             const q = 자리(o);
             if (!q) return null;
