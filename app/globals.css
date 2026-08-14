@@ -1,432 +1,237 @@
 :root{
-  /* ── 라이트 고정 (2026-08-10 팀 결정) ──
-     발표에서 노트북·팀원 폰 여러 대를 동시에 띄우는데, 기기마다 다크/라이트가
-     달라 **같은 화면이 서로 다른 색으로** 보였다. 발표는 화면을 비교하며 보는
-     자리라 이 차이가 곧 "버그처럼" 읽힌다 → 전 기기 라이트로 통일한다.
-
-     `color-scheme: light` 은 두 가지를 동시에 한다:
-       · 브라우저 기본 UI(스크롤바·폼 컨트롤)를 라이트로 그린다
-       · 안드로이드 크롬의 '웹 콘텐츠 자동 다크 모드'가 우리 색 위에
-         자기 반전을 덧칠하는 것을 막는다 (이게 색이 뭉개져 보이던 원인) */
-  color-scheme: light;
-  --bg:#eef1f7; --bg2:#e6eaf3; --panel:#ffffff; --panel2:#f6f8fc;
-  --ink:#111a2b; --ink-soft:#54617a; --ink-faint:#8b98ae;
-  --hair:#dbe2ee; --hair2:#c9d3e2;
-  --ac:#2f6fed; --ac-deep:#1f5ae0; --ac-soft:#e8f0ff;
-  --map:#e6edf6; --park:#dbece0; --water:#d3e4f7;
-  --ok:#16a34a; --ok-soft:#dcfce7; --warn:#d97706; --warn-soft:#fef3c7;
-  --car:#fb923c; --danger:#e11d48;
-  --shadow:0 1px 2px rgba(16,32,64,.05), 0 12px 30px rgba(16,32,64,.10);
-  --sheet:0 -6px 24px rgba(16,32,64,.10);
+  --brand:#2f6bff; --ink:#171a21; --ink-2:#5b6472; --ink-3:#656b7d;   /* 대비 5.31:1 — 3.10 은 기준 4.5 미달이었다 (그릴링 논의30 ③) */
+  --line:#e2e6ee; --bg:#f5f7fb; --surface:#fff; --danger:#e11d48; --ok:#2a6a41;
+  --tap:48px;
+  /* 아래 탭바 높이 — 본문 아래 여백도 이 값을 쓴다. 한 곳만 고치면 둘이 같이 따라온다 */
+  --tabbar-h:58px;
 }
-/* 다크 팔레트 — **지우지 않고 잠가 둔다.**
-   예전엔 `@media (prefers-color-scheme:dark)` 였다. 되살리려면 이 선택자를
-   그 media 로 되돌리면 되고, 지금 당장 한 기기만 다크로 보고 싶으면
-   `<html data-theme="dark">` 를 붙이면 된다.
-   ⚠️ 되살릴 땐 위 `color-scheme` 도 `light dark` 로 함께 되돌린다 —
-      한쪽만 바꾸면 크롬이 우리 다크 색 위에 또 덧칠한다. */
-:root[data-theme="dark"]{
-  color-scheme: dark;
-  --bg:#0a0f17; --bg2:#0d131d; --panel:#111a26; --panel2:#0e1620;
-  --ink:#eef3fa; --ink-soft:#9dabc0; --ink-faint:#65728a;
-  --hair:#212c3b; --hair2:#2b3849;
-  --ac:#5b93f8; --ac-deep:#4f8ef7; --ac-soft:#182338;
-  --map:#16202e; --park:#16261d; --water:#132433;
-  --ok:#4ade80; --ok-soft:#0f2a1a; --warn:#fbbf24; --warn-soft:#2a1f0c;
-  --shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5);
-}
+/* 층(z-index)은 여기 한 줄만 보면 된다 — 흩어 두면 새 것이 늘 때마다 값이 겹친다.
+     지도 안 : 저작권 3 · 점 3 · 핀 4 · 1위 핀 5 · 미리보기 5 · 타일 죽음 안내 6 · 확대축소 7
+     지도 위 : 방장 도구 8 · 여닫기 9
+     화면 위 : 탭바 10 · 모달 20 (겹치면 21·22·23) · 토스트 30
+   전에는 .tiledead 만 층이 없어 핀이 안내 문구를 덮었고, 모달 다섯이 전부 20 이었다.
+   탭바는 모달보다 **아래**다 — 시트가 올라오면 탭바가 그 밑으로 깔려야 한다. */
 *{box-sizing:border-box}
-/* 화면 하단에 고정 네비(v8-bottomnav, 방장 leaderbar)가 항상 떠 있어서,
-   포커스/스크롤로 요소를 화면에 맞추는 브라우저 기본 동작(scrollIntoView,
-   모바일에서 입력창 포커스 시 자동 스크롤 등)이 그 요소를 고정 바 뒤로
-   붙여버리는 문제가 있었다 — 바 높이만큼 여유를 항상 남겨둔다. */
-html{scroll-padding-bottom:150px}
 html,body{margin:0;padding:0}
-body{
-  background:
-    radial-gradient(1000px 560px at 82% -10%, color-mix(in srgb,var(--ac) 12%, transparent), transparent 60%),
-    linear-gradient(var(--bg),var(--bg2));
-  color:var(--ink);min-height:100vh;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
-  -webkit-font-smoothing:antialiased;line-height:1.5;
+body{background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif}
+button{font:inherit}
+.wrap{max-width:430px;margin:0 auto;min-height:100dvh;background:var(--surface);position:relative;display:flex;flex-direction:column}
+.hd{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.hd h1{font-size:16px;font-weight:800;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:11.5px;font-weight:800;color:var(--brand);background:#eaf0ff;padding:4px 9px;border-radius:999px;white-space:nowrap}
+.map{flex:1;min-height:300px;position:relative;background:#e9eef6}
+.sheet{border-top:1px solid var(--line);background:var(--surface);max-height:56dvh;overflow-y:auto;padding:14px 16px 18px}
+.note{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--ink-2);margin:10px 0}
+.warn{color:var(--danger);font-weight:800}
+.row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:7px;min-height:var(--tap);background:var(--surface);width:100%;text-align:left;cursor:pointer}
+.row[aria-pressed="true"]{border-color:var(--brand);background:#f4f7ff}
+.row .nm{font-weight:700;flex:1;min-width:0}
+.row .ct{font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
+.cta{display:block;width:100%;min-height:48px;border:0;border-radius:14px;background:var(--brand);color:#fff;font-size:15px;font-weight:800;cursor:pointer;margin-top:8px}
+.cta[disabled]{opacity:.45;cursor:not-allowed}
+.cta.sub{background:var(--bg);color:var(--ink-2);border:1px solid var(--line)}
+/* 같은 단추가 링크일 때도 있다(홈의 '＋ 모임 만들기') — 화면마다 인라인으로 가운데를 맞추던 것을 여기로 모은다 */
+a.cta{display:flex;align-items:center;justify-content:center;text-decoration:none}
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2);margin-bottom:5px}
+.fld input,.fld select{width:100%;min-height:var(--tap);border:1px solid var(--line);border-radius:10px;padding:0 12px;font:inherit;background:var(--surface)}
+.acts{position:absolute;right:14px;top:14px;bottom:62px;display:flex;flex-direction:column-reverse;
+  justify-content:flex-start;gap:8px;z-index:8;overflow-y:auto;overscroll-behavior:contain;
+  padding:2px;scrollbar-width:none;
+  /* 이 띠는 단추를 얹어 두는 자리일 뿐이다 — 빈 곳은 지도가 받는다 (그릴링 논의19 ⓐ).
+     전에는 단추가 둘뿐인데도 띠가 지도 오른쪽을 세로로 다 덮어 지도의 14.2% 에서
+     탭이 통째로 사라졌다(눌러도 후보가 안 생겼다). 끌어서 넘기는 것은 단추를 잡고 하면 된다. */
+  pointer-events:none;
+  /* 도구가 넘치면 위로 잘린다(column-reverse) — 잘린 끝을 흐려 '더 있다'고 말한다.
+     스크롤 막대를 되살리면 지도 위에 늘 떠 있게 되고 손가락에는 어차피 안 보인다.
+     넘치지 않을 때는 단추가 아래로 몰려 있어 이 흐림이 닿지 않는다. */
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 26px);
+  mask-image:linear-gradient(to bottom,transparent 0,#000 26px)}
+.acts-fix{position:absolute;right:14px;bottom:14px;z-index:9;pointer-events:none}
+.acts::-webkit-scrollbar{display:none}
+.acts>*,.acts-fix>*{pointer-events:auto}
+.acts .fab{flex:0 0 auto}
+.fab{min-height:var(--tap);border:0;border-radius:22px;background:var(--surface);box-shadow:0 4px 14px rgba(20,26,40,.16);padding:0 16px;font-weight:800;cursor:pointer}
+.fab.primary{background:var(--brand);color:#fff}
+.err{color:var(--danger);font-size:12.5px;font-weight:700;margin-top:6px}
+.mut{color:var(--ink-3);font-size:12.5px}
+
+/* 아래 탭바 (app/tabbar.tsx) — `/` `/meetings` `/me` 세 곳에만 뜬다.
+   `.wrap` 과 같은 폭으로 가운데 맞춘다. 폰보다 넓은 창에서 화면 끝까지 늘어나면
+   본문과 따로 노는 띠가 된다. */
+.tabbar{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:10;
+  width:100%;max-width:430px;min-height:var(--tabbar-h);display:flex;align-items:stretch;
+  background:var(--surface);border-top:1px solid var(--line);
+  /* 홈 표시줄이 있는 폰에서 글자가 그 밑에 깔리지 않게. viewport-fit=cover 가 아니면 0 이다 */
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+.tab{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;padding:6px 4px;color:var(--ink-3);font-size:11px;font-weight:800;text-decoration:none}
+.tab svg{width:22px;height:22px;flex:0 0 auto}
+/* 아이콘 자리 — 점을 그 오른쪽 위에 얹으려면 기준이 될 상자가 있어야 한다 */
+.tabicon{position:relative;display:flex;line-height:0}
+/* 아직 안 고른 모임이 있다는 표 (논의129). **수는 안 적는다** — 자리를 안 먹고 '뭐가 있다' 만 말한다.
+   테두리를 바탕색으로 둘러 아이콘 선 위에 얹혀도 점으로 읽힌다. */
+.tabdot{position:absolute;top:-1px;right:-3px;width:8px;height:8px;border-radius:50%;
+  background:var(--brand);border:2px solid var(--surface);box-sizing:content-box}
+/* 지금 있는 곳 — 색만으로 말하지 않는다. 글자도 같이 진해진다 */
+.tab[aria-current="page"]{color:var(--brand);font-weight:900}
+.tab:focus-visible{outline:3px solid var(--brand);outline-offset:-3px}
+/* 본문이 탭바 뒤에 숨으면 안 된다 — 탭바가 떠 있는 화면에만 그만큼 자리를 준다.
+   `.wrap` 은 min-height:100dvh 라 여백을 줘도 화면이 더 길어지지는 않는다. */
+body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom,0px))}
+
+/* 돌아가는 길 (`/new` 처럼 탭바가 없는 화면의 머리말).
+   보이는 크기는 작게 두고 손가락 자리만 48px 로 넓힌다 — 줄 높이가 늘면 머리말이 두꺼워진다 (논의54) */
+.back{position:relative;font-size:22px;font-weight:800;line-height:1;color:var(--ink-2);text-decoration:none}
+.back::before{content:'';position:absolute;left:50%;top:50%;
+  width:var(--tap);height:var(--tap);transform:translate(-50%,-50%)}
+.back:focus-visible{outline:3px solid var(--brand);outline-offset:4px;border-radius:4px}
+
+/* 모임 설정 — 되돌릴 수 없는 삭제를 도구 줄에서 빼서 여기 담는다 (그릴링 논의23) */
+.modal{position:fixed;inset:0;background:rgba(16,20,30,.42);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+/* 모달 다섯이 전부 같은 층이라 둘이 열리면 어느 게 위인지 알 수 없었다.
+   나중에 열린 것이 위 — 뒤에 오는 형제일수록 한 층씩 올린다. */
+.modal~.modal{z-index:21}
+.modal~.modal~.modal{z-index:22}
+.modal~.modal~.modal~.modal{z-index:23}
+/* 뒷막은 맨 위 것 하나만 깐다 — 두 겹으로 어두워지면 어느 시트를 보고 있는지 더 흐려진다 */
+.modal:has(~.modal){background:none}
+/* '모임 설정' 만 .sheet 안에 있어 나머지 다섯과 형제가 아니다(ui.tsx:820) — 위 두 줄이 안 닿는다.
+   그래도 .sheet 가 나머지보다 앞서 그려져 늘 아래에 깔리니, 뒷막만 걷어 두 겹을 막는다.
+   ui.tsx 가 이 시트를 .wrap 바로 밑으로 옮기면 이 줄은 지워도 된다. */
+.wrap:has(>.modal) .sheet .modal{background:none}
+.msheet{width:100%;max-width:520px;background:var(--surface);border-radius:18px 18px 0 0;
+  padding:18px 16px 22px;box-shadow:0 -8px 28px rgba(20,26,40,.22);
+  /* 목록이 길어도 제목과 닫기가 화면 밖으로 밀리지 않게 (그릴링 논의32) */
+  max-height:82dvh;display:flex;flex-direction:column}
+.msheet h2{flex:0 0 auto}
+.msheet .rows{overflow-y:auto;min-height:0;flex:1 1 auto;margin:0 -2px;padding:0 2px}
+.msheet h2{margin:0 0 14px;font-size:16px;flex:0 0 auto}
+.msheet label{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700;margin-bottom:12px}
+.msheet input{display:block;width:100%;box-sizing:border-box;margin-top:5px;min-height:var(--tap);border:1px solid var(--line);border-radius:12px;padding:0 12px;font:inherit;font-weight:700}
+.zone{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.zone button{border:0;background:none;color:var(--danger);font:inherit;font-weight:800;font-size:14px;padding:8px 0;cursor:pointer}
+
+/* 오류는 화면 위에 잠시 (그릴링 논의26 ③) — 시트 아래에 두면 후보에 밀려 안 보였다 */
+.toast{position:fixed;left:50%;transform:translateX(-50%);top:64px;z-index:30;max-width:min(92vw,460px);
+  background:#231016;color:#fff;border-radius:12px;padding:11px 15px;font-size:13.5px;font-weight:700;
+  box-shadow:0 8px 26px rgba(20,26,40,.3);animation:toastin .16s ease-out}
+/* 시트가 올라오면 쪽지도 그 위로 내려온다 (그릴링 논의108) — 손이 있는 곳과 답이 있는 곳을 맞춘다.
+   전에는 방금 누른 곳에서 419px 떨어진 데 떠서 못 보고 지나쳤다.
+   방아쇠는 ui.tsx 가 당긴다: 시트가 올라와 있는 동안 .toast 에 data-sheet 를 달아라.
+   시트 높이를 --sheet-h 로 같이 주면 딱 그 위에 붙고, 안 주면 시트의 최대 높이(56dvh)로 잡는다 —
+   .sheet 의 max-height 가 56dvh 라 어림잡아도 시트에 깔리는 일은 없다. */
+.toast[data-sheet]{top:auto;bottom:calc(var(--sheet-h,56dvh) + 12px);animation:toastup .16s ease-out}
+@keyframes toastin{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes toastup{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){.toast,.toast[data-sheet]{animation:none}}
+
+/* 카카오가 막혔을 때 대신 그리는 지도 (그릴링 논의27) */
+.osm{position:absolute;inset:0;overflow:hidden;background:#e8e6e1;touch-action:none;cursor:grab}
+.osm img{pointer-events:none;user-select:none}
+.opin{position:absolute;transform:translate(-50%,-100%);border:1px solid #e2e6ee;border-radius:999px;
+  background:var(--surface);color:var(--ink);padding:4px 10px;font:inherit;font-size:11.5px;font-weight:800;
+  box-shadow:0 2px 8px rgba(20,26,40,.16);white-space:nowrap;cursor:pointer;z-index:4}
+.opin[data-mine]{border:3px solid var(--brand)}
+.opin[data-first]{background:#16307a;color:#fff;font-size:15px;padding:8px 16px;z-index:5}
+.opin[data-first][data-mine]{border-color:#8fb4ff}
+/* 이름표만으로는 '핀'으로 안 읽힌다 — 진짜 지도 핀들처럼 아래로 꼬리(삼각형)를 단다.
+   이름표는 이미 translate(-50%,-100%) 로 아래쪽 가운데가 좌표에 붙어 있으니(위 .opin),
+   꼬리는 그 자리에서 아래로 뻗어 나가는 삼각형 하나면 된다. 홈 맛보기의 '가운데' 핀과
+   모임 화면의 1위 후보 핀이 이 클래스를 같이 쓴다 — 하나 고치면 둘 다 핀처럼 보인다. */
+.opin[data-first]::after{
+  content:''; position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
+  width:0; height:0; border:7px solid transparent; border-bottom:0; border-top-color:#16307a;
 }
-.tnum{font-variant-numeric:tabular-nums}
-button{font-family:inherit;cursor:pointer}
-input,select{font-family:inherit}
-a{color:inherit}
-:focus-visible{outline:2px solid var(--ac);outline-offset:2px;border-radius:8px}
+/* 누른 자리는 아직 후보가 아니다 — 회색 점선으로만 짚어 둔다 (그릴링 논의81).
+   무엇을 고른 셈인지(이름)와 굳히는 단추는 시트가 맡는다. 지도는 '그게 어디인지'만 말한다.
+   누르는 자리가 아니다 — 여기에 손이 닿으면 그 밑의 지도를 못 누른다. */
+.opre{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;
+  border:2px dashed var(--ink-2);background:rgba(255,255,255,.6);z-index:5;pointer-events:none;
+  animation:opre-in .16s ease-out}
+@keyframes opre-in{from{opacity:0;transform:translate(-50%,-50%) scale(.7)}
+  to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@media (prefers-reduced-motion:reduce){.opre{animation:none}}
+.ozoom{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;
+  /* 6px 이면 두 단추의 손가락 자리(48px)가 서로를 먹는다 — 딱 붙되 겹치지는 않는 틈 */
+  gap:12px;z-index:7}
+.ozoom button{width:36px;height:36px;border:0;border-radius:10px;background:var(--surface);
+  box-shadow:0 2px 8px rgba(20,26,40,.18);font-weight:800;font-size:16px;cursor:pointer}
+/* 저작권 표시는 왼쪽 아래 — 오른쪽 아래는 버튼 자리다.
+   전에는 z-index 7 로 버튼 위에 얹혀 '더보기' 클릭을 통째로 가로챘다.
+   손가락 자리 48px 의 예외로 둔다(17px 그대로 — 그릴링 논의61에서 핀과 같이 예외로 적었다):
+   눌릴 일이 드문 표기 링크인데 여기만 48px 로 넓히면 지도 왼쪽 아래 170×48 이 다시 탭을 삼킨다.
+   지도의 4.6% 를 표기 링크가 먹는 셈이라 A9(논의19)를 작게 되풀이한다. */
+.ocred{position:absolute;left:6px;bottom:3px;z-index:3;background:rgba(255,255,255,.78);
+  font-size:9.5px;padding:1px 4px;border-radius:3px;color:#3b4252;text-decoration:none}
 
-/* phone shell (mobile-first, centered on desktop) */
-.device{max-width:440px;margin:0 auto;min-height:100vh;background:var(--panel2);
-  box-shadow:0 0 60px rgba(16,32,64,.12);position:relative;overflow-x:hidden}
-.pad{padding:16px}
-.stack{display:flex;flex-direction:column}
-.row{display:flex;align-items:center;gap:8px}
-.between{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.grow{flex:1;min-width:0}
-.muted{color:var(--ink-soft)}
-.faint{color:var(--ink-faint)}
-.center{text-align:center}
-.wrap-any{word-break:keep-all}
+/* 모임 시간 — 한국시간으로 읽는다 (그릴링 논의28) */
+.when{font-size:12.5px;font-weight:700;color:var(--ink-2);margin:0 0 8px}
 
-/* app bar */
-.appbar{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--panel) 88%,transparent);
-  backdrop-filter:saturate(160%) blur(10px);border-bottom:1px solid var(--hair);padding:10px 16px}
-.appbar h1{font-size:16px;font-weight:850;letter-spacing:-.02em;margin:0}
-.brand{display:flex;align-items:center;gap:8px;font-weight:850;letter-spacing:-.02em}
-.brand .dot{width:18px;height:18px;border-radius:6px 6px 6px 2px;transform:rotate(45deg);
-  background:linear-gradient(135deg,var(--ac),var(--ac-deep))}
+/* 목록이 정식 길이다 (그릴링 논의29) — 키보드 초점이 눈에 보여야 길이 된다 */
+.rows{list-style:none;margin:0;padding:0}
+.row:focus-visible,.fab:focus-visible,.cta:focus-visible,.opin:focus-visible{
+  outline:3px solid var(--brand);outline-offset:2px}
+.row[data-static]{cursor:default}
+.row[data-win]{border-color:var(--brand);background:#f4f7ff}
+/* 아직 후보가 아닌 줄 (그릴링 논의81) — 후보 줄과 같아 보이면 '이미 됐다'고 읽는다.
+   점선·회색 바탕으로 '아직 아니다'를 말하고, 굳히는 말(.ct)만 파랗게 남겨 다음 손짓을 가리킨다.
+   지도에는 같은 자리에 회색 점선 동그라미(.opre)가 뜬다 — 두 곳의 결이 같아야 한 가지 일로 읽힌다. */
+.row[data-preview]{border-style:dashed;border-color:var(--ink-2);background:var(--bg);color:var(--ink-2)}
+.row[data-preview] .nm{font-weight:800;color:var(--ink)}
+.row[data-preview] .ct{white-space:nowrap}
 
-.card{background:var(--panel);border:1px solid var(--hair);border-radius:16px;box-shadow:var(--shadow);padding:16px}
-.card.tight{padding:13px}
-.eyebrow{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ac)}
-h2.sec{font-size:19px;font-weight:850;letter-spacing:-.02em;margin:0 0 2px}
+/* 이동 수단 고르기 (그릴링 논의35 ①) */
+.segs{display:flex;gap:6px}
+.seg{flex:1;min-height:var(--tap);border:1px solid var(--line);border-radius:12px;background:var(--surface);
+  font:inherit;font-weight:700;cursor:pointer}
+.seg[aria-pressed="true"]{border-color:var(--brand);background:#f4f7ff;color:var(--brand)}
 
-.btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;border:0;border-radius:13px;
-  padding:13px;font-weight:800;font-size:14.5px;background:var(--ac);color:#fff;transition:filter .15s}
-.btn:hover{filter:brightness(1.05)}
-.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
-.btn.ghost{background:var(--panel2);color:var(--ink-soft);border:1px solid var(--hair)}
-.btn.kakao{background:#FEE500;color:#000}
-.btn.sm{padding:8px 13px;width:auto;font-size:12.5px;border-radius:11px}
-.btn.danger{background:var(--danger)}
-.btn.ok{background:var(--ok)}
+/* 사람 줄의 작은 버튼 (그릴링 논의35 ②) */
+.tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--bg);
+  color:var(--ink-2);font-size:11px;font-weight:800;vertical-align:middle}
+.mini{min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);
+  font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.mini.danger{color:var(--danger);border-color:#f6d3dc}
 
-.input{width:100%;border:1px solid var(--hair2);border-radius:12px;padding:12px 13px;font-size:14px;
-  background:var(--panel);color:var(--ink)}
-.input:focus{outline:2px solid var(--ac);outline-offset:1px;border-color:var(--ac)}
-.label{font-size:12px;font-weight:800;color:var(--ink-soft);margin-bottom:6px;display:block}
-.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.seg button{border:2px solid var(--hair);background:var(--panel);border-radius:12px;padding:11px;font-weight:800;
-  font-size:13px;color:var(--ink)}
-.seg button.on{border-color:var(--ac);background:var(--ac-soft);color:var(--ac-deep)}
+/* 긴 모임 이름 — 누르면 펼친다 (그릴링 논의40 ①) */
+.hd h1{cursor:pointer}
+.hd h1.open{white-space:normal;overflow:visible;text-overflow:clip;word-break:keep-all;line-height:1.3}
 
-.chip{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
-.chip.ac{background:var(--ac-soft);color:var(--ac-deep)}
-.chip.ok{background:var(--ok-soft);color:var(--ok)}
-.chip.warn{background:var(--warn-soft);color:var(--warn)}
-.chip.leader{background:#ede9fe;color:#7c3aed}
-.chip.line{background:transparent;border:1px solid var(--hair2);color:var(--ink-soft)}
+/* 표 없는 후보는 작은 점 — 이름표가 서로 가리지 않게 (그릴링 논의42) */
+.odot{position:absolute;transform:translate(-50%,-50%);width:14px;height:14px;padding:0;
+  border:2px solid #fff;border-radius:50%;background:var(--brand);opacity:.55;
+  box-shadow:0 1px 4px rgba(20,26,40,.3);cursor:pointer;z-index:3}
+.odot:hover,.odot:focus-visible{opacity:1;width:18px;height:18px}
+/* 이름표 한도(18곳)를 넘어 묶인 곳 (그릴링 논의67). 옮긴 이름표가 가리키는 점보다 진하게 둔다 —
+   저건 이름표의 꼬리표지만 이것은 그 자체로 후보다. 이름은 목록에서 읽는다(논의61). */
+.odot[data-mute]{opacity:.8;width:16px;height:16px}
 
-.tabbar{display:flex;gap:6px;padding:4px;background:var(--panel2);border:1px solid var(--hair);border-radius:14px}
-.tabbar button{flex:1;border:0;background:transparent;border-radius:11px;padding:9px;font-weight:800;font-size:13px;color:var(--ink-soft)}
-.tabbar button.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+/* 타일까지 못 받았을 때 (그릴링 논의43 ①) — 깨진 그림 대신 무슨 일인지 말한다 */
+/* 층이 없어 핀이 안내 문구 위에 얹혔다 — 읽으라고 띄운 글을 핀이 가리면 뜻이 없다.
+   확대·축소(7)보다는 아래에 둔다: 지도가 죽어도 배율을 되돌릴 길은 남아야 한다. */
+.tiledead{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:6px;background:#e9eef6;color:var(--ink-2);text-align:center;padding:0 24px}
+.tiledead b{font-size:14px;color:var(--ink)}
+.tiledead span{font-size:12.5px;color:var(--ink-3)}
 
-/* stepper */
-.stepper{display:flex;align-items:center;gap:6px}
-.stepper .s{flex:1;text-align:center;font-size:11px;font-weight:800;color:var(--ink-faint)}
-.stepper .s.on{color:var(--ac)}
-.stepper .bar{height:5px;border-radius:999px;background:var(--hair);margin-top:5px}
-.stepper .s.on .bar,.stepper .s.done .bar{background:var(--ac)}
-.stepper .s.done{color:var(--ink-soft)}
-
-/* map — 모임 상세 화면. 홈(.v8-mapwrap)과 같은 340px로 맞춘다.
-   420px였을 때는 하단 고정 네비(v8-bottomnav, 64px)가 없던 시절 값이 그대로 남아있던 것 —
-   지금은 지도 다음에 오는 "어디서 출발하세요" 입력 폼이 첫 화면(스크롤 전)에서
-   네비바에 가려지는 문제가 있었다. */
-.map{position:relative;height:340px;background:var(--map);border-radius:16px;overflow:hidden;border:1px solid var(--hair)}
-.blob{position:absolute;border-radius:10px;opacity:.9}
-.pin{position:absolute;z-index:5;width:30px;height:30px;border-radius:50%;background:var(--panel);border:2px solid var(--ac);
-  display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:var(--shadow);transform:translate(-50%,-50%)}
-.pin .tip{position:absolute;bottom:-16px;font-size:9px;font-weight:800;color:var(--ink-soft);white-space:nowrap;background:var(--panel);padding:0 4px;border-radius:4px}
-.cpin{position:absolute;z-index:6;left:50%;top:50%;transform:translate(-50%,-50%)}
-.cpin .body{width:42px;height:42px;border-radius:50% 50% 50% 6px;transform:rotate(45deg);background:var(--ac);
-  display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px color-mix(in srgb,var(--ac) 45%,transparent)}
-.cpin .body b{transform:rotate(-45deg);color:#fff;font-size:11px;font-weight:850}
-.cpin .lab{position:absolute;left:50%;top:-24px;transform:translateX(-50%);white-space:nowrap;background:var(--ink);color:var(--panel);
-  font-size:10px;font-weight:800;padding:3px 8px;border-radius:7px}
-@keyframes pulse{0%{transform:translate(-50%,-50%) scale(.5);opacity:.85}100%{transform:translate(-50%,-50%) scale(1.7);opacity:0}}
-.cpin .pulse{position:absolute;left:50%;top:50%;width:64px;height:64px;border-radius:50%;
-  background:radial-gradient(circle,color-mix(in srgb,var(--ac) 34%,transparent),transparent 62%);animation:pulse 2.4s ease-out infinite}
-@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
-
-/* bars */
-.bar{height:8px;background:var(--panel2);border:1px solid var(--hair);border-radius:999px;overflow:hidden}
-.bar.sm{height:6px}
-.bar>i{display:block;height:100%;border-radius:999px;background:var(--ac);transition:width .4s ease}
-.av{width:30px;height:30px;border-radius:50%;background:var(--ac-soft);color:var(--ac-deep);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
-.av.sm{width:20px;height:20px;font-size:10px}
-.av.car{background:#ffedd5;color:#ea580c}
-
-/* vote option */
-.opt{border:2px solid var(--hair);border-radius:14px;padding:13px;background:var(--panel);transition:.15s}
-.opt.sel{border-color:var(--ac);background:var(--ac-soft)}
-.opt.win{border-color:var(--ok);background:var(--ok-soft)}
-
-/* leader control bar */
-/* position:fixed — .v8-bottomnav 와 같은 방식으로 화면에 고정한다.
-   sticky + bottom:64px 로 두면, 문서 끝까지 스크롤했을 때 바가 흐름 위치보다
-   64px "위로" 올라앉아 마지막 카드를 덮는다(✍ 다른 후보로 정하기 버튼이
-   가려져 눌리지 않았다). fixed 는 흐름에서 빠지므로 .device 의 padding-bottom
-   으로만 자리를 비워 주면 되고, 어느 화면에서든 위치가 흔들리지 않는다.
-   bottom:64px — 이 아래에는 항상 하단 5탭이 고정돼 있다. */
-.leaderbar{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);width:100%;max-width:440px;
-  z-index:25;background:color-mix(in srgb,var(--panel) 92%,transparent);
-  backdrop-filter:saturate(160%) blur(10px);border-top:1px solid var(--hair);padding:11px 16px;display:flex;gap:8px}
-/* .btn 은 width:100% 를 쓰는데, 그걸 flex-basis로 그대로 물려받으면(기본 flex:0 1 auto)
-   한 버튼만 거의 전체 폭을 차지하고 옆 버튼은 몇 px로 짜부러진다(글자가 한 자씩
-   세로로 줄바꿈되는 원인). 직계 자식은 항상 폭을 균등하게 나눠 갖게 한다. */
-.leaderbar>*{flex:1;min-width:0}
-/* 방장 바 버튼 — 보조 문구(투표 진행률)를 위, 액션을 아래 한 줄로 고정한다.
-   후보 이름이 길어도 줄바꿈으로 바 높이가 들쭉날쭉해지지 않게 잘라낸다. */
-.leaderbar .btn{flex-direction:column;gap:1px;padding:9px 8px;line-height:1.25;min-height:46px}
-.leaderbar .btn b{font-size:12.5px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.leaderbar .lb-sub{font-size:9.5px;font-weight:800;opacity:.62;letter-spacing:.02em}
-
-/* toast */
-.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:60;background:var(--ink);color:var(--panel);
-  font-size:13px;font-weight:700;padding:11px 18px;border-radius:12px;box-shadow:var(--shadow);max-width:90%}
-
-/* switcher */
-.switcher{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px dashed var(--hair2);border-radius:12px;padding:8px 10px}
-.switcher select{border:0;background:transparent;font-weight:800;font-size:13px;color:var(--ink);flex:1}
-
-/* modal */
-.backdrop{position:fixed;inset:0;background:rgba(8,14,26,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center;padding:14px}
-/* max-height + overflow-y — 창이 짧으면(노트북 작은 화면·모바일 가로) 내용이
-   뷰포트를 넘쳐 위아래가 잘리고 스크롤도 안 됐다. 오버레이 padding(14px×2)만큼
-   빼서 모달 안에서 스크롤되게 한다. dvh 는 모바일 브라우저 주소창 높이 반영. */
-.modal{width:100%;max-width:412px;background:var(--panel);border-radius:20px 20px 16px 16px;box-shadow:var(--sheet);padding:18px;border:1px solid var(--hair);
-  max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow-y:auto}
-
-.kv{display:flex;gap:10px;font-size:13px;padding:2px 0}
-.kv .k{color:var(--ink-faint);width:72px;flex-shrink:0}
-.kv .v{font-weight:700}
-.divider{height:1px;background:var(--hair);margin:12px 0}
-.badge-pay{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;color:var(--warn);background:var(--warn-soft);padding:3px 8px;border-radius:999px}
-
-.hint{font-size:11.5px;color:var(--ink-faint);text-align:center;margin-top:8px}
-.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* ── AI 대화 (투표 대체) ── */
-.chatlog{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding:4px 2px}
-.cmsg{max-width:82%;display:flex;flex-direction:column}
-.cmsg.me{align-self:flex-end;align-items:flex-end}
-.cmsg.other{align-self:flex-start}
-.cmsg.ai{align-self:flex-start}
-.cmsg .who{font-size:10.5px;color:var(--ink-faint);margin:0 4px 2px;font-weight:700}
-.cmsg .bub{padding:8px 12px;border-radius:14px;font-size:13px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
-.cmsg.other .bub{background:var(--panel2);border:1px solid var(--hair);border-top-left-radius:4px}
-.cmsg.me .bub{background:var(--ac);color:#fff;border-top-right-radius:4px}
-.cmsg.ai .bub{background:var(--ac-soft);border:1px solid color-mix(in srgb,var(--ac) 25%,transparent);color:var(--ink);border-top-left-radius:4px}
-.cmsg.sys{align-self:center;max-width:94%}
-.cmsg.sys .bub{background:transparent;border:1px dashed var(--hair2);color:var(--ink-faint);font-size:11px;padding:5px 11px;border-radius:999px;text-align:center}
-.chips{display:flex;gap:6px;flex-wrap:wrap}
-.chips button{border:1px solid var(--hair2);background:var(--panel);border-radius:999px;padding:6px 11px;font-size:11.5px;font-weight:700;color:var(--ink-soft);cursor:pointer}
-.chips button:active{background:var(--ac-soft)}
-.aithink{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--ac);font-weight:800}
-.aithink .dots i{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--ac);margin-right:3px;animation:blink 1.2s infinite}
-.aithink .dots i:nth-child(2){animation-delay:.2s}
-.aithink .dots i:nth-child(3){animation-delay:.4s}
-@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
-/* 경로 상세 시트 (시안1·2) */
-.ropt{border:2px solid var(--hair);border-radius:13px;padding:11px;background:var(--panel)}
-.ropt.sel{border-color:var(--ac);background:var(--ac-soft)}
-.travelrow{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;
-  padding:6px 4px;border-radius:10px;cursor:pointer;text-align:left;font-family:inherit;color:var(--ink)}
-.travelrow:hover{background:var(--panel2)}
-
-.candmini{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;
-  /* 가로 스크롤은 유지하되 스크롤바는 안 보이게 — 터치/드래그 스와이프는 그대로 동작 */
-  scrollbar-width:none;-ms-overflow-style:none}
-.candmini::-webkit-scrollbar{display:none;width:0;height:0}
-.candmini .cc{flex:0 0 auto;min-width:120px;border:1px solid var(--hair);background:var(--panel2);border-radius:12px;padding:8px 10px;cursor:pointer;text-align:left}
-.candmini .cc.win{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 8%,var(--panel2))}
-.candmini .cc b{font-size:12.5px;display:block}
-.candmini .cc span{font-size:10px;color:var(--ink-faint)}
-
-/* ═══════════════ v8 — 클릭 프로토타입 기준 IA ═══════════════ */
-.v8-page{padding-bottom:84px;min-height:100vh;display:flex;flex-direction:column}
-
-/* 상단 헤더: 로고 + 모임생성/모임참여/알림 */
-.v8-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;position:sticky;top:0;z-index:30;
-  background:color-mix(in srgb,var(--panel2) 90%,transparent);backdrop-filter:blur(8px)}
-.v8-logo{font-size:19px;font-weight:900;letter-spacing:.02em}
-.v8-hbtns{display:flex;gap:8px;position:relative}
-.v8-iconbtn{width:34px;height:34px;border-radius:50%;background:var(--panel);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink-soft);box-shadow:var(--shadow);position:relative}
-.v8-iconbtn svg{width:16px;height:16px}
-.v8-iconbtn .s-badge{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--ac);color:#fff;font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid var(--panel2)}
-
-/* 알림 드롭다운 */
-.v8-notif{position:absolute;top:42px;right:0;width:280px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow);padding:12px;z-index:50}
-.v8-notif h3{margin:0 0 8px;font-size:12px;font-weight:900;color:var(--ink-soft)}
-.v8-notif .n-row{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--hair);font-size:12px}
-.v8-notif .n-row:first-of-type{border-top:none}
-.v8-notif .n-dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0}
-.v8-notif .n-time{margin-left:auto;font-size:10px;color:var(--ink-faint);white-space:nowrap}
-
-/* 검색 + 자동완성 */
-.v8-searchwrap{position:relative;margin:4px 16px 8px}
-.v8-search{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow)}
-.v8-search svg{width:15px;height:15px;color:var(--ink-faint);flex-shrink:0}
-.v8-search input{border:0;outline:0;background:none;font:inherit;font-size:13.5px;color:var(--ink);flex:1;min-width:0}
-.v8-ac{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--panel);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;z-index:40;max-height:240px;overflow-y:auto}
-.v8-ac button{display:block;width:100%;text-align:left;border:0;background:none;padding:10px 14px;font:inherit;font-size:13px;color:var(--ink);border-top:1px solid var(--hair)}
-.v8-ac button:first-child{border-top:none}
-.v8-ac button:hover{background:var(--ac-soft)}
-.v8-ac .addr{display:block;font-size:11px;color:var(--ink-faint);margin-top:1px}
-.v8-ac .empty{padding:12px 14px;font-size:12.5px;color:var(--ink-faint)}
-/* 검색 결과 줄 — 오른쪽 (+)는 "누르면 출발지로 추가된다"는 표시.
-   줄 전체가 버튼이므로 (+)는 시각 표시일 뿐 별도 클릭 대상이 아니다.
-   (프로토타입에서 확정한 안인데 실앱 이식 때 빠져 있었다) */
-.v8-ac button.ac-row{display:flex;align-items:center;gap:10px}
-.v8-ac .ac-txt{flex:1;min-width:0}
-.v8-ac .ac-add{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-  background:var(--ac-soft);color:var(--ac-deep);transition:.15s}
-.v8-ac .ac-add svg{width:14px;height:14px}
-.v8-ac button.ac-row:hover .ac-add{background:var(--ac);color:#fff}
-
-/* 출발지 칩 (최대 8, 가로 스크롤) */
-.v8-chips{display:flex;gap:14px;padding:8px 16px 6px;overflow-x:auto;overflow-y:visible;
-  /* 가로 스크롤은 유지하되 스크롤바는 안 보이게 — 터치/드래그 스와이프는 그대로 동작 */
-  scrollbar-width:none;-ms-overflow-style:none}
-.v8-chips::-webkit-scrollbar{display:none;width:0;height:0}
-.v8-chip{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;position:relative;border:0;background:none;padding:0;font:inherit}
-.v8-chip .c-dot{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:12px;box-shadow:var(--shadow);border:0;font-family:inherit;cursor:pointer;position:relative;padding:0}
-.v8-chip .c-dot:hover{filter:brightness(1.07)}
-/* 칩 위 이동수단 표식 — 눌러서 변경 */
-.v8-chip .c-mode{position:absolute;bottom:-3px;right:-5px;width:19px;height:19px;border-radius:50%;background:var(--panel);
-  display:flex;align-items:center;justify-content:center;font-size:10px;box-shadow:0 1px 4px rgba(0,0,0,.25);border:1.5px solid var(--panel)}
-.v8-chip .c-name{font-size:10px;font-weight:800;color:var(--ink-soft);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.v8-chip .c-x{position:absolute;top:-3px;right:-1px;width:17px;height:17px;border-radius:50%;background:var(--ink);color:var(--panel);font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid var(--panel2);cursor:pointer}
-.v8-chip-add{width:44px;height:44px;border-radius:50%;border:1.8px dashed var(--hair2);background:none;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);flex-shrink:0;cursor:pointer}
-.v8-chip-add svg{width:15px;height:15px}
-.v8-maxhint{padding:0 16px 6px;font-size:10px;color:var(--ink-faint)}
-/* 홈 상단 모임 선택 — 목업의 "협성대 브레인스파크 모임 ▾" 바 */
-.v8-meetbar{width:100%;display:flex;align-items:center;gap:5px;border:1px solid var(--hair2);
-  border-radius:13px;padding:12px 14px;font:inherit;font-size:14px;background:var(--panel);
-  box-shadow:var(--shadow);cursor:pointer;text-align:left}
-.v8-meetbar b{color:var(--ac);font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.v8-meetbar .suffix{color:var(--ink-soft);font-weight:700}
-.v8-meetbar .caret{margin-left:auto;color:var(--ink-faint);font-size:12px;flex-shrink:0}
-.v8-meetbar:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
-.v8-meetmenu{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:40;background:var(--panel);
-  border:1px solid var(--hair);border-radius:13px;box-shadow:0 14px 34px -12px rgba(0,0,0,.32);overflow:hidden}
-.v8-meetmenu button{display:block;width:100%;text-align:left;border:0;background:none;font:inherit;
-  padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--hair)}
-.v8-meetmenu button:last-child{border-bottom:0}
-.v8-meetmenu button:hover{background:var(--ac-soft)}
-.v8-meetmenu button.on{background:var(--ac-soft)}
-.v8-meetmenu button b{display:block;font-size:13px;font-weight:900;color:var(--ink)}
-.v8-meetmenu button span{display:block;font-size:10.5px;color:var(--ink-faint);margin-top:2px}
-
-/* 지도 — 이 앱의 메인 화면이므로 카테고리 리스트 첫 줄 근처까지 크게 잡는다 */
-.v8-mapwrap{position:relative;margin:0 16px;height:420px;border-radius:16px;overflow:hidden;border:1px solid var(--hair);background:var(--map)}
-.v8-maplayer{position:absolute;top:9px;left:9px;right:9px;display:flex;gap:6px;z-index:10}
-
-/* ── 지도 전체화면 ────────────────────────────────────────────
-   지도가 카드 안에 갇혀 있으면 후보 핀이 서로 겹쳐 못 누른다(특히 폰).
-   같은 지도를 화면 가득 띄우는 토글 — 홈(.v8-mapwrap)과 모임 상세(.map)가
-   같은 클래스를 쓴다.
-   ⚠️ 카카오 지도는 컨테이너 크기가 바뀌어도 스스로 다시 그리지 않는다.
-      `KakaoMap` 안의 ResizeObserver 가 relayout 을 부른다. */
-.map-fs{position:fixed;inset:0;z-index:80;margin:0;height:100%;width:100%;border-radius:0;border:0}
-body:has(.map-fs){overflow:hidden}
-.map-fsbtn{
-  border:0;background:var(--panel);color:var(--ink);border-radius:999px;
-  width:34px;height:34px;display:grid;place-items:center;cursor:pointer;
-  box-shadow:var(--shadow);font-size:15px;line-height:1;flex-shrink:0;margin-left:auto
-}
-.map-fsbtn:hover{color:var(--ac-deep)}
-.v8-maplayer .seg2{display:flex;background:var(--panel);border-radius:999px;padding:2px;box-shadow:var(--shadow)}
-.v8-maplayer .seg2 button{border:0;background:none;padding:5px 10px;border-radius:999px;font:inherit;font-size:10.5px;font-weight:800;color:var(--ink-soft);cursor:pointer}
-.v8-maplayer .seg2 button.on{background:var(--ac);color:#fff}
-.v8-mapnote{position:absolute;left:9px;right:9px;bottom:9px;z-index:10;background:var(--panel);border-radius:10px;padding:7px 10px;font-size:10.5px;color:var(--ink-soft);box-shadow:var(--shadow)}
-.v8-mapempty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--ink-soft);font-size:12.5px;font-weight:700;text-align:center;padding:0 24px}
-.v8-mapempty small{font-weight:600;color:var(--ink-faint)}
-
-/* 카테고리 탭 + 주변 리스트 */
-/* ⚠️ 좁은 폰(390px 이하)에서 칩 6개가 한 줄에 안 들어가면, 예전엔 글자가
-   칩 안에서 두 줄로 접혀("정류장·\A 역") 높이가 들쭉날쭉해졌다.
-   접지 말고 **가로로 밀어서** 본다 — 칩은 원래 옆으로 넘기는 UI다.
-   (2026-08-10 폰 실측) */
-.v8-cats{display:flex;gap:7px;padding:12px 16px 8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.v8-cats::-webkit-scrollbar{display:none}
-.v8-cat{border:0;background:var(--panel);color:var(--ink-soft);border-radius:999px;padding:7px 14px;font:inherit;font-size:12px;font-weight:800;box-shadow:var(--shadow);cursor:pointer;white-space:nowrap;flex:0 0 auto}
-.v8-cat.on{background:var(--ac);color:#fff}
-.v8-list{display:flex;flex-direction:column;gap:8px;padding:2px 16px 12px}
-.v8-item{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:11px 13px;box-shadow:var(--shadow);text-decoration:none;color:inherit}
-.v8-item .i-thumb{width:38px;height:38px;border-radius:10px;background:var(--ac-soft);color:var(--ac-deep);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.v8-item .i-title{font-size:13px;font-weight:850}
-.v8-item .i-sub{font-size:11px;color:var(--ink-faint);margin-top:1px}
-.v8-empty{padding:16px;font-size:12.5px;color:var(--ink-faint);text-align:center}
-
-/* 하단 5탭 */
-.v8-bottomnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:440px;z-index:40;
-  display:flex;justify-content:space-around;padding:10px 0 16px;background:color-mix(in srgb,var(--panel) 96%,transparent);
-  border-top:1px solid var(--hair);backdrop-filter:blur(10px)}
-.v8-nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-faint);font-size:10px;font-weight:800;text-decoration:none;border:0;background:none;font-family:inherit;cursor:pointer}
-.v8-nav-item svg{width:20px;height:20px}
-.v8-nav-item.on{color:var(--ac)}
-
-/* 스플래시 */
-.v8-splash{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
-  background:linear-gradient(180deg,var(--ac) 0%,var(--ac-deep) 100%);color:#fff;padding:0 36px;transition:opacity .4s}
-.v8-splash.fade{opacity:0;pointer-events:none}
-.v8-splash .s-logo{font-size:28px;font-weight:900;letter-spacing:.02em;margin-bottom:20px}
-.v8-splash .s-head{font-size:17px;font-weight:850;line-height:1.5;margin-bottom:10px}
-.v8-splash .s-sub{font-size:12.5px;opacity:.85;line-height:1.6}
-.v8-splash .s-sub b{font-weight:900;opacity:1}
-/* 차별점 키워드 — "공평한 장소"만으로는 기존 서비스와 구분이 안 된다는 지적 반영 */
-.v8-splash .s-keys{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:18px}
-.v8-splash .s-keys span{background:rgba(255,255,255,.18);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:800}
-.v8-splash .s-skip{position:absolute;bottom:60px;border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:9px 22px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
-
-/* 투표 화면 */
-.v8-votetabs{display:flex;gap:18px;padding:10px 16px 0;font-size:14px;font-weight:800;color:var(--ink-faint)}
-.v8-votetabs button{border:0;background:none;font:inherit;font-weight:800;color:var(--ink-faint);padding:0 0 8px;cursor:pointer}
-.v8-votetabs button.on{color:var(--ink);border-bottom:2.5px solid var(--ac)}
-.v8-voterow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow)}
-.v8-votepill{margin-left:auto;border:0;background:var(--ac-soft);color:var(--ac-deep);font:inherit;font-size:12px;font-weight:900;padding:8px 16px;border-radius:11px;cursor:pointer;flex-shrink:0}
-.v8-votepill.voted{background:var(--ac);color:#fff}
-.v8-hint{text-align:center;font-size:11px;color:var(--ink-faint);padding:6px 24px;line-height:1.5}
-
-/* 모달 */
-.v8-overlay{position:fixed;inset:0;z-index:80;background:rgba(10,16,28,.5);display:flex;align-items:center;justify-content:center;padding:20px;
-  animation:v8-fade .18s ease}
-/* max-height + overflow-y — 프로토타입에서 고쳐뒀던 것을 실앱에 이식.
-   없으면 창이 짧을 때 내용이 뷰포트를 넘쳐 위쪽(제목·입력칸)이 잘리고,
-   align-items:center 때문에 그 부분으로 스크롤도 못 한다(로그인 시트에서 발생).
-   오버레이 padding(20px×2)만큼 빼서 모달 안에서 스크롤되게 한다. */
-.v8-modal{width:100%;max-width:380px;background:var(--panel);border-radius:18px;padding:20px;box-shadow:var(--shadow);
-  max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow-y:auto;
-  animation:v8-pop .22s cubic-bezier(.2,.9,.3,1.3)}
-@keyframes v8-fade{from{opacity:0}to{opacity:1}}
-@keyframes v8-pop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
-@media (prefers-reduced-motion:reduce){.v8-overlay,.v8-modal{animation:none}}
-.v8-modal h2{margin:0 0 4px;font-size:16px;font-weight:900}
-.v8-modal .m-sub{font-size:12px;color:var(--ink-soft);margin:0 0 14px;line-height:1.55}
-
-/* 참가자 자가신고 도착 상태 — 정상/지체 중/많이 늦음 (모임원 탭) */
-.statusseg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.statusseg button{display:flex;flex-direction:column;align-items:center;gap:4px;border:2px solid var(--hair);
-  background:var(--panel2);border-radius:12px;padding:10px 6px;font-weight:800;font-size:12px;color:var(--ink-soft)}
-.statusseg button .dot{width:10px;height:10px;border-radius:50%}
-.statusseg button.on{border-color:transparent;color:#fff}
-
-/* 내정보 */
-.v8-mycard{margin:0 16px 10px;background:var(--panel);border:1px solid var(--hair);border-radius:15px;padding:14px 15px;box-shadow:var(--shadow)}
-.v8-mycard .t{font-size:13px;font-weight:900;display:flex;align-items:center;gap:6px;margin-bottom:6px}
-.v8-mycard .t svg{width:14px;height:14px;color:var(--ac)}
-.v8-mycard .d{font-size:11px;color:var(--ink-faint);line-height:1.55;margin-bottom:10px}
-.v8-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
-.v8-tag{display:inline-flex;align-items:center;gap:6px;background:var(--ac-soft);color:var(--ac-deep);font-size:12px;font-weight:800;padding:6px 11px;border-radius:999px;border:0;font-family:inherit;cursor:pointer}
-.v8-trans{display:flex;gap:7px}
-.v8-trans button{flex:1;border:0;background:var(--panel2);color:var(--ink-faint);border-radius:12px;padding:11px 4px;font:inherit;font-size:12px;font-weight:800;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
-.v8-trans button svg{width:17px;height:17px}
-.v8-trans button.on{background:var(--ac);color:#fff}
-
-/* ── 피그마형 원형 아이콘 스텝퍼 (거점 투표 ─ 가게 투표 ─ 최종 확정) ── */
-.stepicons{display:flex;align-items:flex-start;padding:2px 6px}
-.stepicons .si{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:5px}
-.stepicons .dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  background:var(--panel);border:2px solid var(--hair2);color:var(--ink-faint);z-index:1}
-.stepicons .lb{font-size:11px;font-weight:800;color:var(--ink-faint);white-space:nowrap}
-.stepicons .si.on .dot{background:var(--ac);border-color:var(--ac);box-shadow:0 4px 12px color-mix(in srgb,var(--ac) 35%,transparent)}
-.stepicons .si.on .lb{color:var(--ac)}
-.stepicons .si.done .dot{background:var(--ac);border-color:var(--ac)}
-.stepicons .si.done .lb{color:var(--ink-soft)}
-/* 연결선 — 원 중심 높이에서 다음 원까지 */
-.stepicons .ln{position:absolute;top:16px;left:calc(50% + 21px);width:calc(100% - 42px);height:2.5px;border-radius:2px;background:var(--hair)}
-.stepicons .si.done .ln{background:var(--ac)}
+/* 손가락 닿는 자리는 48px (그릴링 논의54). --tap 은 .row·.fab·.cta 에만 쓰여
+   작은 것들(.mini 36 · .ozoom 36 · .zone 38 · 핀 28~42)이 다 미달이었다.
+   보이는 크기는 그대로 두고 ::before 로 투명하게만 넓힌다 — 줄 간격이 늘면 목록이 다시 길어진다.
+   넓힌 자리는 getBoundingClientRect 에 안 잡힌다. 재려면 elementFromPoint 로 가장자리를 눌러 봐야 한다. */
+.mini,.zone button,.ozoom button{position:relative}
+.mini::before,.zone button::before{content:'';position:absolute;left:0;right:0;top:50%;
+  height:var(--tap);transform:translateY(-50%)}
+.ozoom button::before{content:'';position:absolute;left:50%;top:50%;
+  width:var(--tap);height:var(--tap);transform:translate(-50%,-50%)}
+/* 지도 핀은 48px 규칙의 예외다 — 32/46px 로 둔다 (그릴링 논의61에서 그렇게 정했다).
+   왜 못 넓히나: 이름표끼리 벌려 주는 최소 틈이 osmmap.tsx 의 GAP=4px 라
+   위아래 2px 씩(= 틈 4px)이 서로를 안 먹는 한도다. 더 주면 옆 이름표가 대신 눌린다.
+   보이는 28.4px → 32 가 지금 한도. 48 로 올리려면 위아래 9.8px 씩이 필요해 GAP 이 20 은 돼야 하는데,
+   GAP 을 4 → 20 으로 벌리면 이름표가 실제 지점에서 눈에 띄게 멀어진다.
+   핀은 둘째 길이고 정식 길은 목록(.row, 48px)이다 — 정확함을 택하고 예외로 적어 둔다.
+   1위 핀은 보이는 42px 이라 6 만 돼도 48 이 된다 — GAP 이 넓어지면 여기부터 48 로 올려라. */
+.opin{--pintap:32px}
+.opin[data-first]{--pintap:46px}
+.opin::before{content:'';position:absolute;left:0;right:0;top:50%;
+  height:var(--pintap);transform:translateY(-50%)}

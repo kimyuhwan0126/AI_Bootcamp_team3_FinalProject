@@ -1,0 +1,81 @@
+/* 모임 목록에만 쓰는 겉모습. globals.css 에 이미 있는 것(.wrap .hd .cta .mut .err)은 그대로 쓰고,
+   여기에는 **목록에만 있는 것**만 둔다. 이 파일은 이 폴더 밖에서 안 쓴다 —
+   globals.css 는 다른 갈래의 파일이라 손대지 않았다. */
+
+/* 머리말 오른쪽 — 만들기로 가는 길. 목록이 비어 있지 않을 때도 늘 보여야 한다 */
+.만들기 {
+  flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px;
+  padding: 0 12px; border-radius: 999px; background: #eaf0ff; color: var(--brand);
+  font-size: 12.5px; font-weight: 800; text-decoration: none; white-space: nowrap;
+  position: relative;
+}
+/* 손가락 자리는 48px (논의54) — 보이는 크기는 그대로 두고 투명하게만 넓힌다 */
+.만들기::before, .칩::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: var(--tap); transform: translateY(-50%);
+}
+
+.몸 { flex: 1; padding: 12px 16px 24px; }
+
+/* ── 거르개 두 줄 (상태 / 역할) ─────────────────────────────
+   두 축을 한 줄에 섞지 않는다. 예전판은 섞어 둬서 '방장이면서 지역 정하는 중'을
+   고를 길이 아예 없었다 (11_예전판_기록 §5). 줄 이름을 적어 두는 것도 예전판에서 가져왔다. */
+.거르개 { display: flex; flex-direction: column; gap: 16px; margin: 2px 0 16px; }
+/* 줄 이름과 칩을 두 칸으로 나눈다 — 한 덩이로 두면 칩이 넘칠 때 **줄 이름 밑으로** 내려가
+   '지난 모임' 이 어느 줄 것인지 알 수 없어진다. 넘친 칩은 첫 칩 밑에 선다. */
+.줄 { display: flex; align-items: flex-start; gap: 6px; }
+.줄이름 { flex: 0 0 auto; width: 26px; padding-top: 8px; font-size: 11px; font-weight: 800; color: var(--ink-3); }
+/* 칩의 손가락 자리(48px)가 위아래로 9px 씩 넘치므로 줄바꿈 사이를 16px 로 벌린다.
+   좁으면 윗줄 칩이 아랫줄 칩의 손가락 자리를 먹는다. */
+.칩들 { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap;
+  column-gap: 5px; row-gap: 16px; }
+.칩 {
+  position: relative; min-height: 30px; padding: 0 11px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+  font-size: 12px; font-weight: 800; white-space: nowrap; cursor: pointer;
+}
+/* 켜진 칩은 이 앱의 강조색(파랑) 하나로 — 예전판은 초록이라 강조색이 둘이었다 */
+.칩[aria-pressed='true'] { border-color: var(--brand); background: #eaf0ff; color: var(--brand); }
+.칩:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+
+/* ── 카드 ──────────────────────────────────────────────────── */
+.목록 { display: flex; flex-direction: column; gap: 8px; }
+.카드 {
+  display: flex; align-items: center; gap: 10px; padding: 12px 13px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+  color: inherit; text-decoration: none;
+}
+.카드:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+/* 내가 고를 것이 남은 모임은 왼쪽에 굵은 자국을 둔다 — 목록을 훑을 때 눈이 먼저 걸린다 */
+.카드[data-todo] { border-left: 4px solid var(--brand); padding-left: 10px; }
+/* 지난 모임은 흐리게. 색만 바꾸면 진행 중인 모임과 같은 무게로 읽힌다 */
+.카드[data-state='past'] { opacity: 0.62; }
+
+.속 { flex: 1; min-width: 0; }
+.머리 { display: flex; align-items: center; gap: 6px; }
+.이름 {
+  font-size: 14.5px; font-weight: 800; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.방장 {
+  flex: 0 0 auto; padding: 1px 7px; border-radius: 999px;
+  background: #eef0ff; color: #4f46e5; font-size: 10.5px; font-weight: 800;
+}
+.요약 { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ink-3); word-break: keep-all; }
+.바닥 { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+/* 내 할 일 — 목록에서 가장 진한 한 조각 */
+.할일 {
+  padding: 2px 8px; border-radius: 999px; background: var(--brand); color: #fff;
+  font-size: 11.5px; font-weight: 800;
+}
+.잔 { font-size: 11.5px; font-weight: 700; color: var(--ink-3); }
+.화살 { flex: 0 0 auto; color: var(--ink-3); font-size: 18px; line-height: 1; }
+
+/* ── 빈 화면 두 가지 (논의78 · 119) ─────────────────────────
+   '모임이 정말 0개' 와 '걸러낸 결과가 0개' 는 다른 말을 한다.
+   앞의 것은 만들기로 이끌고, 뒤의 것은 말만 한다 — 거르개를 되돌리면 모임은 그대로 있으니까. */
+.빈 { padding: 40px 4px 24px; text-align: center; }
+.빈제목 { margin: 0 0 6px; font-size: 15.5px; font-weight: 800; }
+/* .cta 는 globals.css 의 것이다 — 모듈 안에서 그냥 적으면 이름이 뒤섞여 안 걸린다 */
+.빈 :global(.cta) { margin-top: 16px; }
+.걸림 { margin: 20px 0; text-align: center; font-size: 13px; color: var(--ink-3); }

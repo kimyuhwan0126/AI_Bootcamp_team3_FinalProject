@@ -1,0 +1,36 @@
+/* 내정보(/me)에만 쓰는 겉모습. globals.css 에 이미 있는 것(.wrap .hd .note .fld .cta .mut .err)은
+   그대로 쓰고, 여기에는 **이 화면에만 있는 것**만 둔다. 이 파일은 이 폴더 밖에서 안 쓴다 —
+   globals.css 는 다른 갈래의 파일이라 손대지 않았다.
+   색은 전부 globals.css 의 토큰을 쓴다(디자인 토큰이 아직 안 정해졌다 — 값을 여기서 굳히지 않는다). */
+
+.몸 { flex: 1; padding: 12px 16px 24px; }
+
+/* 칸 사이는 줄 하나로만 가른다 — 그림자 얹은 카드로 만들면 화면이 길어지고,
+   430px 에서 좌우 여백까지 겹쳐 글줄이 더 좁아진다.
+   칸마다 제목을 또 얹지 않는다: 라벨(.fld label)이 이미 제목 노릇을 한다 */
+.칸 { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+/* ── 로그인 칸 (논의52·123) ─────────────────────────────────────
+   맨 위에 놓되 카드로 세우지 않는다 — 아래 칸들과 같은 결이어야 화면이 한 장으로 읽힌다.
+   가른 선은 아래(.칸)와 반대로 밑에 둔다: 이 칸이 첫 칸이라 위에 선이 있으면 제목에 붙는다. */
+.로그인 { padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.줄 { display: flex; align-items: center; gap: 10px; }
+/* 사진이 없어도 자리는 그대로 — 있고 없고에 따라 줄 높이가 달라지면 눈에 띈다 */
+.얼굴 { width: 40px; height: 40px; border-radius: 50%; flex: none; background: var(--line); object-fit: cover; }
+.누구 { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.누구 b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.권함 { margin: 0 0 10px; font-size: 13px; color: var(--ink-3); }
+
+/* 카카오 색은 카카오가 정한 것이라 토큰과 무관하다 — 여기서만 굳힌다 */
+.카카오 { width: 100%; height: 46px; border: 0; border-radius: 12px;
+  background: #fee500; color: #191600; font-size: 15px; font-weight: 800; cursor: pointer; }
+.작은단추 { flex: none; height: 34px; padding: 0 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 700; cursor: pointer; }
+
+.임시 { margin-top: 14px; display: block; }
+.임시줄 { display: flex; gap: 8px; margin-top: 6px; }
+.임시줄 input { flex: 1; min-width: 0; height: 34px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 14px; }
+
+/* 저장했다는 말은 단추 바로 밑에 — 화면 위 토스트로 띄우면 손이 있는 곳과 답이 있는 곳이 멀어진다 */
+.알림 { margin: 10px 0 0; text-align: center; font-size: 12.5px; font-weight: 800; color: var(--ok); }

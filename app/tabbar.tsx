@@ -1,0 +1,78 @@
+'use client';
+/* 아래 탭바. app-v2 에는 화면 사이를 오갈 길이 아예 없었다 —
+   모임을 만들고 나면 다른 모임으로 갈 방법이 없다(예전판 기록 §11).
+
+   탭바는 자기가 보일 자리를 스스로 안다. 화면마다 붙이면 새 화면에서 빠뜨린다. */
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+/* 셋뿐이고 순서가 곧 화면 순서다 (주소 얼개 표).
+   `/new` `/join/*` `/m/*` 에는 안 뜬다 — 한 가지 일에만 매달리는 자리라 새는 길을 두지 않는다.
+   그래서 '앞이 같으면'이 아니라 **정확히 같을 때만** 켠다. */
+const 탭 = [
+  { 주소: '/', 이름: '홈', 그림: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 10.6 12 3.2l9 7.4" /><path d="M5.6 9.6V20.3h12.8V9.6" />
+    </svg>
+  ) },
+  { 주소: '/meetings', 이름: '모임', 그림: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="9" cy="8" r="3.3" /><path d="M3.4 20.2c0-3.1 2.5-5.4 5.6-5.4s5.6 2.3 5.6 5.4" />
+      <path d="M16.2 5.4a3.3 3.3 0 0 1 0 6.2" /><path d="M17.6 15.3c1.9.8 3 2.6 3 4.9" />
+    </svg>
+  ) },
+  { 주소: '/me', 이름: '내정보', 그림: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.7" /><path d="M4.6 20.3c0-3.7 3.3-6.1 7.4-6.1s7.4 2.4 7.4 6.1" />
+    </svg>
+  ) },
+];
+
+export default function TabBar() {
+  const 지금 = usePathname();
+  /* 내가 아직 안 고른 모임이 있나 (논의129). **수는 안 적고 점만 찍는다** —
+     자리를 안 먹고, 숫자가 틀리는 순간 들통나는 위험도 없다. '뭐가 있다' 만 말한다.
+     홈에 있던 '내 모임' 요약을 없애면서 그 칸이 하던 마지막 일 하나를 여기로 옮긴 것이다.
+
+     로그인은 필요 없다 — `/api/mine` 은 쿠키만으로도 답한다(논의124). 못 물어보면 안 찍는다:
+     있지도 않은 일감을 있다고 하면, 눌러 보고 아무것도 없을 때 그 점을 다시는 안 믿는다. */
+  const [할일, set할일] = useState(false);
+  /* 탭바가 안 그려지는 화면(`/m/…` · `/new` · `/join/…`)에서는 **묻지도 않는다.**
+     전에는 `useEffect` 가 아래 `return null` 보다 위에 있어서, 탭바가 없는 화면에서도
+     화면을 옮길 때마다 `/api/mine` 을 한 번씩 불렀다 — 아무 데도 안 쓰이는 왕복이었다. */
+  const 보임 = 탭.some((t) => t.주소 === 지금);
+  useEffect(() => {
+    if (!보임) return;
+    let 살아있나 = true;
+    fetch('/api/mine')
+      .then((r) => r.json())
+      .then((j) => { if (살아있나) set할일((j?.meetings ?? []).some((m: { iChose?: boolean; closed?: boolean }) => !m.closed && m.iChose === false)); })
+      .catch(() => { /* 못 물어봤으면 안 찍는다 */ });
+    return () => { 살아있나 = false; };
+    /* 화면을 옮길 때마다 다시 본다 — 방금 고르고 나온 사람에게 점이 남아 있으면 안 된다 */
+  }, [지금, 보임]);
+
+  if (!보임) return null;
+  return (
+    <nav className="tabbar" aria-label="화면 이동">
+      {탭.map((t) => (
+        <Link key={t.주소} href={t.주소} className="tab"
+          /* 지금 어디에 있는지는 색만으로 말하면 안 된다 — 읽어 주는 기계도 알아야 한다 */
+          aria-current={t.주소 === 지금 ? 'page' : undefined}>
+          <span className="tabicon">
+            {t.그림}
+            {t.주소 === '/meetings' && 할일 && (
+              /* 읽어 주는 기계에도 말해 준다 — 색이나 점만으로 말하면 안 보이는 사람에게는 없는 것이다 */
+              <span className="tabdot" aria-label="아직 고르지 않은 모임이 있어요" role="status" />
+            )}
+          </span>
+          <span>{t.이름}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}

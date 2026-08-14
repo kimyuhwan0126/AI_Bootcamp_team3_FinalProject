@@ -1,0 +1,23 @@
+/* 옛 판 `.v8-header` 를 옮긴 것 (예전판 기록 §12-3).
+   값은 우리 토큰(globals.css)으로 갈아 끼웠다 — 옛 판 색을 그대로 굳히면
+   디자인 토큰이 정해지는 날 이 파일만 딴소리를 하게 된다. */
+
+.머리 {
+  display: flex; align-items: center;
+  padding: 14px 16px 10px;
+  /* 옛 판은 sticky 였다. 우리도 그대로 둔다 — 스크롤해도 로고가 손 닿는 자리에 남는다.
+     ⚠ backdrop-filter 는 안 건다. 걸면 그 안의 position:fixed 자손이 머리말에 갇힌다
+        (예전판 기록 §12-3 의 경고 — 실제로 모달이 잘렸던 자국이 있다). */
+  position: sticky; top: 0; z-index: 11;
+  background: var(--surface);
+}
+
+.로고 {
+  font-size: 19px; font-weight: 900; letter-spacing: .02em;
+  color: var(--ink); text-decoration: none;
+  /* 손가락 자리는 넉넉하게 (논의15·61) — 글자만큼만 잡으면 누르기 어렵다 */
+  padding: 6px 2px; margin: -6px -2px;
+}
+
+/* .단추들·.동그라미 는 오늘 없앴다 — 머리말에 있던 단추(＋ 모임 만들기)를 지우면서
+   같이 안 쓰게 됐다(홈머리말.tsx 참고). */

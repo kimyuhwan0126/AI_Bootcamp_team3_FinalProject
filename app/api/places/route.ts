@@ -1,146 +1,48 @@
-// GET /api/places?lat&lng&cat=all|cafe|food|pub|parking|station
-// 중간지점 주변 정보 — 카카오 로컬 검색, 키 없으면 mock (generatePlaces)
-//  · parking / station 은 카테고리 그룹 코드(PK6/SW8)로 검색해 정확도를 높이고
-//    버스정류장은 코드가 없어 키워드로 보완한다.
-import { NextRequest, NextResponse } from "next/server";
-import { env } from "@/lib/env";
-import { searchPlacesKakao, searchByCategoryKakao } from "@/lib/kakao";
-import { generatePlaces } from "@/lib/geo";
+/* 누른 자리 주변의 가게 (그릴링 논의32).
+   화면이 카카오를 직접 부르지 않는다 — 키를 숨기고, 할당량 오류를 한 곳에서 옮긴다.
+   카카오가 막히면 OSM(Overpass)으로 내려간다. 지도와 같은 규칙이다(논의27). */
+import { NextResponse } from 'next/server';
+import { placesNear, PlacesUnavailable, type PlaceList } from '@/lib/places';
+import { 한국안 } from '@/lib/geo';
+import { 횟수확인, 너무잦음 } from '@/lib/ratelimit';
 
-const CAT_KEYWORDS: Record<string, string[]> = {
-  all: ["카페", "음식점"],
-  cafe: ["카페"],
-  food: ["음식점"],
-  pub: ["술집"],
-};
+export const dynamic = 'force-dynamic';
 
-export interface NearbyItem {
-  name: string;
-  category: string;
-  /** 노선/주차 유형 등 카테고리별 부가 정보 (없으면 빈 문자열) */
-  detail: string;
-  /** 아이콘 판정용 카카오 분류 전체 경로 */
-  path: string;
-  distanceM: number;
-  walkMin: number;
-  url: string;
-}
+/* 모이머가 다루는 자리는 한국이다(카카오도 countrycodes=kr 로 묻는다).
+   범위를 안 보면 파라미터가 빠졌을 때 Number(null) 이 0 이 돼 (0,0) — 대서양 한가운데로
+   실제 외부 호출이 나갔다. 값이 없으면 NaN 으로 만들어 아래 비교에서 함께 걸린다.
+   기준은 lib/geo.ts 한 곳에만 둔다 — 세 군데에 베껴 두면 하나만 고치고 잊는다. */
+const 수 = (v: string | null) => (v === null || v.trim() === '' ? NaN : Number(v));
+/* 반경 상한 — r=-1·Infinity 가 그대로 Overpass 로 나가 12초를 흘려보냈다 */
+const R_기본 = 300, R_최소 = 50, R_최대 = 5000;
 
-const walkMin = (m: number) => Math.max(1, Math.round(m / 67));
-
-export async function GET(req: NextRequest) {
-  const lat = parseFloat(req.nextUrl.searchParams.get("lat") || "");
-  const lng = parseFloat(req.nextUrl.searchParams.get("lng") || "");
-  const cat = req.nextUrl.searchParams.get("cat") || "all";
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return NextResponse.json({ error: "lat/lng 필요" }, { status: 400 });
+export async function GET(req: Request) {
+  /* 잠그지 않고 횟수만 본다 (그릴링 논의92) — 참여 전 출발지 고르기가 열려 있어야 한다.
+     검사보다 앞에 둔다: 엉터리 파라미터로 두들기는 것도 서버 일감이다. */
+  const 제한 = 횟수확인('places');
+  if (!제한.ok) return 너무잦음(제한.다시);
+  const u = new URL(req.url);
+  const lat = 수(u.searchParams.get('lat'));
+  const lng = 수(u.searchParams.get('lng'));
+  if (!한국안(lat, lng)) return NextResponse.json({ error: 'bad_coords' }, { status: 400 });
+  const raw = u.searchParams.get('r');
+  const radius = raw === null || raw.trim() === '' ? R_기본 : Number(raw);
+  if (!(radius >= R_최소 && radius <= R_최대)) {
+    return NextResponse.json({ error: 'bad_radius' }, { status: 400 });
   }
-  const center = { lat, lng };
-
-  // ── 주차장 ──
-  if (cat === "parking") {
-    if (env.kakaoRest) {
-      const r = await searchByCategoryKakao("PK6", center, 6);
-      if (r && r.length > 0) {
-        const items: NearbyItem[] = r.map((p) => ({
-          name: p.name,
-          category: "주차장",
-          detail: p.category || "주차 가능",
-          path: "주차장",
-          distanceM: p.distanceM,
-          walkMin: walkMin(p.distanceM),
-          url: p.url,
-        }));
-        return NextResponse.json({ items, mock: false });
-      }
-    }
-    const items: NearbyItem[] = [
-      { name: "중간지점 공영주차장", category: "주차장", detail: "공영 · 10분당 500원", path: "주차장", distanceM: 240, walkMin: 4, url: "" },
-      { name: "중간지점 노상 주차장", category: "주차장", detail: "노상 · 30분 1,000원", path: "주차장", distanceM: 380, walkMin: 6, url: "" },
-      { name: "빌딩 부설주차장", category: "주차장", detail: "부설 · 매장 이용 시 할인", path: "주차장", distanceM: 520, walkMin: 8, url: "" },
-    ];
-    return NextResponse.json({ items, mock: true });
+  /* '못 불러왔다'와 '정말 없다'는 다른 말이다. 안 받으면 Next 가 500 + HTML 을 내보내고
+     화면은 "여기엔 등록된 지점이 없어요" 라고 잘못 말한다.
+     partial 은 셀 수 없는 칸이라 JSON.stringify 가 지운다 — 봉투에 따로 싣는다. */
+  let r: PlaceList | 'quota';
+  try {
+    r = await placesNear(lat, lng, radius);
+  } catch (e) {
+    /* retryable 은 '기다리면 된다'는 표다 — 화면이 "잠시 뒤에 다시" 를 붙일지 여기서 갈린다
+       (그릴링 논의101). 못 고를 자리(좌표 밖)와 지금 못 부르는 것은 다른 말이다. */
+    if (e instanceof PlacesUnavailable)
+      return NextResponse.json({ error: 'places_unavailable', where: e.where, retryable: true }, { status: 503 });
+    throw e;
   }
-
-  // ── 정류장 · 역 (지하철역 + 버스정류장) ──
-  if (cat === "station") {
-    if (env.kakaoRest) {
-      const [subway, bus] = await Promise.all([
-        searchByCategoryKakao("SW8", center, 4),
-        searchPlacesKakao("버스정류장", center, 4),
-      ]);
-      const merged: NearbyItem[] = [
-        ...(subway || []).map((p) => ({
-          name: p.name,
-          category: "지하철역",
-          detail: p.category || "지하철",
-          path: "지하철역",
-          distanceM: p.distanceM,
-          walkMin: walkMin(p.distanceM),
-          url: p.url,
-        })),
-        ...(bus || []).map((p) => ({
-          name: p.name,
-          category: "버스정류장",
-          detail: "버스",
-          path: "버스정류장",
-          distanceM: p.distanceM,
-          walkMin: walkMin(p.distanceM),
-          url: p.url,
-        })),
-      ]
-        .sort((a, b) => a.distanceM - b.distanceM)
-        .slice(0, 6);
-      if (merged.length > 0) return NextResponse.json({ items: merged, mock: false });
-    }
-    const items: NearbyItem[] = [
-      { name: "중간지점 사거리 정류장", category: "버스정류장", detail: "간선 401 · 402", path: "버스정류장", distanceM: 180, walkMin: 3, url: "" },
-      { name: "중간지점역 2번 출구", category: "지하철역", detail: "수도권 2호선", path: "지하철역", distanceM: 320, walkMin: 5, url: "" },
-      { name: "중간지점 환승센터", category: "버스정류장", detail: "광역 M4108", path: "버스정류장", distanceM: 450, walkMin: 7, url: "" },
-    ];
-    return NextResponse.json({ items, mock: true });
-  }
-
-  // ── 카페 / 음식점 / 술집 / 전체 ──
-  const keywords = CAT_KEYWORDS[cat] || CAT_KEYWORDS.all;
-  if (env.kakaoRest) {
-    const results = await Promise.all(keywords.map((kw) => searchPlacesKakao(kw, center, 4)));
-    const merged = results
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      .flat()
-      // 같은 상호가 여러 키워드에 중복으로 잡히는 것 제거 (이름 기준)
-      .filter((p, i, arr) => arr.findIndex((x) => x.name === p.name) === i)
-      .sort((a, b) => a.distanceM - b.distanceM)
-      .slice(0, 6);
-    if (merged.length > 0) {
-      const items: NearbyItem[] = merged.map((p) => ({
-        name: p.name,
-        category: p.category,
-        detail: "",
-        path: p.path,
-        distanceM: p.distanceM,
-        walkMin: walkMin(p.distanceM),
-        url: p.url,
-      }));
-      return NextResponse.json({ items, mock: false });
-    }
-  }
-
-  const items: NearbyItem[] = generatePlaces("중간지점")
-    .filter((p) => {
-      if (cat === "cafe") return p.category === "카페";
-      if (cat === "pub") return p.category === "술집";
-      if (cat === "food") return p.category !== "카페" && p.category !== "술집";
-      return true;
-    })
-    .map((p) => ({
-      name: p.name,
-      category: p.category,
-      detail: "",
-      path: p.category,
-      distanceM: p.distanceM,
-      walkMin: walkMin(p.distanceM),
-      url: "",
-    }));
-  return NextResponse.json({ items, mock: true });
+  if (r === 'quota') return NextResponse.json({ error: 'quota_kakao', retryable: false }, { status: 429 });
+  return NextResponse.json({ places: r, partial: r.partial === true });
 }
