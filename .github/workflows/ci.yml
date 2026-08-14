@@ -1,0 +1,31 @@
+# CI: 타입체크 + 프로덕션 빌드만 수행한다.
+# tests/*.mjs 스위트는 이번 범위에서 제외했다 — 살아있는 DB(Neon)와 떠 있는 dev 서버가
+# 필요해서, 나중에 CI에 포함하려면 저장소 Settings > Secrets and variables > Actions 에
+# DATABASE_URL 등을 등록하는 별도 결정이 먼저 필요하다(레포 소유자 판단 사항).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 타입체크
+        run: npm run check
+
+      - name: 프로덕션 빌드
+        run: npm run build
