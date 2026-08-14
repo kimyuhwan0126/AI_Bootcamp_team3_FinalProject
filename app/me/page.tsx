@@ -181,17 +181,24 @@ export default function 내정보() {
         <OriginField origin={origin} setOrigin={손댐(setOrigin)}
           transport={transport} setTransport={손댐(setTransport)} 쓰임="기본값" />
 
-        <div className={s.칸}>
-          <div className="fld">
-            <label htmlFor="pin">기본 PIN</label>
-            <input id="pin" value={pin} inputMode="numeric" placeholder="숫자 4자리"
-              onChange={(e) => { set알림(''); setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); }} />
-            {pin덜됐다 && <p className="err">PIN 은 숫자 네 자리로 넣어 주세요</p>}
-            <p className="mut" style={{ margin: '6px 0 0' }}>
-              모임에 참여할 때 이름과 함께 나를 알아보는 숫자예요. 넣어 두면 참여 폼에 먼저 채워져요.
-            </p>
+        {/* PIN 은 로그인 안 한 사람의 신원이다(이름+PIN, 논의130) — 로그인하면 계정이
+            그 자리를 대신하므로 참여 폼도 PIN 칸을 숨긴다(join/[code]/form.tsx 의 PIN보임).
+            여기서 기본값을 미리 채워 둘 곳이 없는데 칸만 남겨 두면 로그인한 사람에게
+            쓸데없는 숫자를 채우게 시키는 셈이다 — 세션을 아직 못 읽었을 때는
+            깜빡이지 않게 아예 안 그린다(위 로그인 칸과 같은 규칙). */}
+        {세션 === null && (
+          <div className={s.칸}>
+            <div className="fld">
+              <label htmlFor="pin">기본 PIN</label>
+              <input id="pin" value={pin} inputMode="numeric" placeholder="숫자 4자리"
+                onChange={(e) => { set알림(''); setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); }} />
+              {pin덜됐다 && <p className="err">PIN 은 숫자 네 자리로 넣어 주세요</p>}
+              <p className="mut" style={{ margin: '6px 0 0' }}>
+                모임에 참여할 때 이름과 함께 나를 알아보는 숫자예요. 넣어 두면 참여 폼에 먼저 채워져요.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <button className="cta" onClick={저장} disabled={pin덜됐다}>저장</button>
         {넣어뒀다 && <button className="cta sub" onClick={지우기}>이 기기에서 지우기</button>}

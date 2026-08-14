@@ -123,23 +123,19 @@ export default function 탐색() {
           transport={이동수단} setTransport={이동수단정하기} />
       )}
 
-      {/* 넣은 출발지 알약 줄. **점선 원 ＋ 는 늘 있다** — 옛 판이 그랬다(예전판 사진 02).
-          아직 하나도 안 넣었을 때 이 자리가 통째로 비어 있으면 '무엇을 더 할 수 있는지' 가 안 보인다. */}
-      <ul className={s.알약들}>
-        {출발지들.map((o, i) => (
-          <li key={열쇠(o)} className={s.알약}>
-            <span className={s.알약이름}>{o.name}</span>
-            <button type="button" onClick={() => 빼기(i)} aria-label={`${o.name} 빼기`}>✕</button>
-          </li>
-        ))}
-        {출발지들.length < 최대 && (
-          <li>
-            <button type="button" className={s.더하기} aria-label="출발지 더 넣기"
-              /* 검색칸은 늘 열려 있다 — 이 단추는 거기로 손을 데려다 준다 */
-              onClick={() => document.getElementById('og')?.focus()}>＋</button>
-          </li>
-        )}
-      </ul>
+      {/* 넣은 출발지 알약 줄. 점선 원 ＋(출발지 더 넣기)는 오늘(2026-08-14) 없앴다 — 사람이 정했다.
+          바로 위 검색칸이 늘 열려 있어서 같은 일을 하는 둘째 단추였다. 하나도 안 넣었을 때는
+          알약도 없으니 이 줄 자체를 안 그린다 — 빈 자리를 남기지 않는다. */}
+      {!!출발지들.length && (
+        <ul className={s.알약들}>
+          {출발지들.map((o, i) => (
+            <li key={열쇠(o)} className={s.알약}>
+              <span className={s.알약이름}>{o.name}</span>
+              <button type="button" onClick={() => 빼기(i)} aria-label={`${o.name} 빼기`}>✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
       <p className={s.잔글}>
         {출발지들.length ? `${출발지들.length}곳 넣었어요 · 최대 ${최대}곳까지 넣을 수 있어요.`
           : `최대 ${최대}곳까지 넣을 수 있어요.`}

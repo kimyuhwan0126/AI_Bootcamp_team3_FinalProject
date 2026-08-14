@@ -280,8 +280,6 @@ console.log('\n[탐3] 여덟 곳까지만');
   const 끝 = await 알약수(pg);
   ok('여덟 곳에서 멈춘다', 끝 === 8, `${끝}곳`);
   ok('여덟 곳이 한도라고 말해 준다', /출발지는 8곳까지 넣을 수 있어요/.test(await 글(pg)));
-  ok('여덟 곳이면 ＋ 단추가 사라진다',
-    await pg.locator('[data-slot="탐색"] button[aria-label="출발지 더 넣기"]').count() === 0);
   await ctx.close();
 }
 
@@ -316,9 +314,9 @@ console.log('\n[탐4-2] 홈이 옛 판 모양이다');
   });
   ok('검색칸이 알약 모양이다', parseFloat(둥글기) >= 100, 둥글기);
 
-  /* 아무것도 안 넣었을 때도 점선 원 ＋ 는 있다 — 유일한 '다음 손짓' 이다 */
-  ok('출발지가 없어도 점선 원 ＋ 가 있다',
-     await pg.locator('[data-slot="탐색"] button[aria-label="출발지 더 넣기"]').count() === 1);
+  /* 점선 원 ＋(출발지 더 넣기)는 오늘 없앴다 — 검색칸이 늘 열려 있어 둘째 단추였다 */
+  ok('점선 원 ＋ 는 이제 없다',
+     await pg.locator('[data-slot="탐색"] button[aria-label="출발지 더 넣기"]').count() === 0);
   ok('제목 "가운데 찾기" 는 없앴다', !/가운데 찾기/.test(await 글(pg)));
   await ctx.close();
 }

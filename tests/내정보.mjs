@@ -9,6 +9,8 @@
 
    무엇을 못 박나
      Q1 `/me` 가 있다 · 빈 상태가 멀쩡하다 · 이 기기에만 저장된다고 밝힌다
+     Q1-2 로그인하면 기본 PIN 칸이 사라진다(2026-08-14) — PIN 은 로그인 안 한 사람의
+        신원이라, 계정이 있으면 쓸 자리가 없다
      Q2 넣고 저장하면 **새로고침해도 남는다**
      Q3 **`/new` 만들기 폼에 출발지·이동 수단이 정말 채워진다** ← 가장 중요하다
         (보이기만 하는 게 아니라 그대로 눌러 모임이 만들어져야 한다 — 좌표까지 살아 있다는 뜻)
@@ -175,6 +177,25 @@ try {
       ok('이 기기에만 저장된다고 밝힌다',
          /이 기기에만/.test(글) && /(폰을|기기를) 바꾸/.test(글), 글.slice(0, 160));
     } catch (e) { ok('Q1 시험', false, String(e).split('\n')[0]); }
+    await ctx.close();
+  }
+
+  /* ══ Q1-2 · 로그인하면 기본 PIN 칸이 사라진다 ═══════════════ */
+  console.log('\n[Q1-2] 로그인하면 기본 PIN 칸이 사라진다');
+  {
+    const { ctx, p } = await 새창();
+    try {
+      await 열기(p, '/me');
+      await p.waitForSelector('#pin', { timeout: 10000 });
+      ok('로그인 전에는 기본 PIN 칸이 있다', await p.locator('#pin').count() === 1);
+
+      await 브라우저로그인(p, 'Q핀숨김');
+      await 열기(p, '/me');
+      await 잠깐(500);
+      ok('로그인 뒤에는 기본 PIN 칸이 없다', await p.locator('#pin').count() === 0);
+      /* 사라진 게 아니라 아직 안 그렸을 뿐인 것과 구별한다 — 나머지 칸은 그대로 있어야 한다 */
+      ok('그래도 기본 출발지 칸은 그대로 있다', await p.locator('#og').count() === 1);
+    } catch (e) { ok('Q1-2 시험', false, String(e).split('\n')[0]); }
     await ctx.close();
   }
 
