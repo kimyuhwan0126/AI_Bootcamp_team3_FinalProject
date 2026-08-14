@@ -2,6 +2,15 @@
 # tests/*.mjs 스위트는 이번 범위에서 제외했다 — 살아있는 DB(Neon)와 떠 있는 dev 서버가
 # 필요해서, 나중에 CI에 포함하려면 저장소 Settings > Secrets and variables > Actions 에
 # DATABASE_URL 등을 등록하는 별도 결정이 먼저 필요하다(레포 소유자 판단 사항).
+#
+# ⚠ 빌드 단계에는 그래도 DATABASE_URL 이 있어야 한다 — 실제로 값 없이 돌려 보니 깨졌다:
+#   lib/db.ts·lib/geo.ts 가 `const sql = neon(process.env.DATABASE_URL!, …)` 로 모듈
+#   맨 위에서 곧바로 클라이언트를 만든다(lib/places.ts 처럼 함수 안에서 늦게 만들지 않는다).
+#   /api/auth/[...nextauth] 라우트가 이 모듈을 불러오기만 해도 Next 의 "페이지 데이터
+#   모으기" 단계에서 그 줄이 실행돼 `Error: No database connection string was provided`
+#   로 빌드 자체가 죽는다 — 로컬은 .env.local 이 있어서 안 걸렸을 뿐이다.
+#   아래 값은 **진짜 DB 에 안 닿는다** — neon() 생성자를 통과시키는 모양만 맞춘 가짜 값이다.
+#   실제 연결은 배포 서버(Vercel)의 진짜 DATABASE_URL 이 한다.
 name: CI
 
 on:
@@ -28,4 +37,6 @@ jobs:
         run: npm run check
 
       - name: 프로덕션 빌드
+        env:
+          DATABASE_URL: postgresql://build:build@localhost:5432/build
         run: npm run build
