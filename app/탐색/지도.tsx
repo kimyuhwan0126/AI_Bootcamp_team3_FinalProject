@@ -1,12 +1,20 @@
 'use client';
 /* 홈 탐색용 지도 — 출발지 핀과 가운데 핀을 얹는다.
 
-   모임 화면의 지도(`app/m/[code]/osmmap.tsx`)를 그대로 못 쓰는 까닭:
+   모임 화면의 지도(`app/m/[code]/ui.tsx` · `osmmap.tsx`)를 그대로 못 쓰는 까닭:
    그 물건은 `Candidate` 를 받아 선택 수·이름표 겹침 풀기·묶기·누르면 후보 올리기까지 한다.
    여기는 로그인도 모임도 없는 자리라 후보가 아예 없다 — 핀을 얹는 일만 남는다.
-   타일 셈(toPx·toLatLng)은 같은 규칙이라 그쪽에서 그대로 가져왔다. 고칠 일이 생기면 두 곳이다. */
+
+   ⚠ 2026-08-14 — **카카오를 먼저 시도하고, 막히면 OSM으로 내려간다**(그릴링 논의27과
+   같은 규칙 — 모임 화면과 여기가 서로 다른 지도를 쓰면 안 된다는 게 원래 논의였다).
+   전에는 여기만 OSM 을 곧장 썼는데(카카오 시도조차 안 함), 그러면 카카오가 멀쩡히
+   살아 있어도 맛보기 화면만 늘 OSM 으로 보였다 — 그건 그릴링과 다른 동작이었다.
+   `ui.tsx` 의 카카오 로딩 방식을 그대로 옮겨 왔다 — 고칠 일이 생기면 두 곳이다.
+   타일 셈(toPx·toLatLng)은 OSM 폴백에서만 쓴다. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './탐색.module.css';
+
+declare global { interface Window { kakao: any } }
 
 export type 점 = { 이름: string; lat: number; lng: number };
 
@@ -78,20 +86,65 @@ export default function 지도({ 출발지들, 가운데 }: {
      내 자리를 아는 것도 **보여 줄 것이 생긴** 때라 같이 연다. 둘 다 없으면 여전히 안 받는다. */
   const 그릴것있나 = !!출발지들.length || !!내자리;
 
+  /* ── 카카오 지도 (먼저 시도한다) ──────────────────────────────
+     그릴 것이 생기기 전에는 SDK 를 안 부른다 — 홈에 들를 때마다 카카오 사용량을
+     쓰는 것을 막으려는 것이다(위 '타일을 받을 만한 때인가'와 같은 뜻). */
+  const 카카오맵칸 = useRef<HTMLDivElement>(null);
+  const 카카오맵 = useRef<any>(null);
+  const 카카오오버레이 = useRef<any[]>([]);
+  const [카카오죽음, set카카오죽음] = useState(false);
+  const [카카오준비, set카카오준비] = useState(false);
+
+  useEffect(() => {
+    if (!그릴것있나 || 카카오죽음 || 카카오맵.current) return;
+    const key = process.env.NEXT_PUBLIC_KAKAO_JS_KEY;
+    /* 열쇠가 없으면 시도할 것도 없다 — 곧장 OSM 폴백으로 (ui.tsx 와 같은 규칙, 논의105) */
+    if (!key) { set카카오죽음(true); return; }
+    if (!카카오맵칸.current) return;
+    const boot = () => window.kakao.maps.load(() => {
+      if (!카카오맵칸.current) return;
+      카카오맵.current = new window.kakao.maps.Map(카카오맵칸.current, {
+        center: new window.kakao.maps.LatLng(c.lat, c.lng), level: 7,
+      });
+      set카카오준비(true);
+    });
+    if (window.kakao?.maps) { boot(); return; }
+    /* 모임 화면과 같은 스크립트를 또 붙이면 안 된다 — id 로 막는다(ui.tsx 와 같은 수법) */
+    const ID = 'kakao-sdk';
+    const had = document.getElementById(ID) as HTMLScriptElement | null;
+    const el = had ?? document.createElement('script');
+    if (!had) {
+      el.id = ID;
+      el.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&libraries=services&autoload=false`;
+      document.head.appendChild(el);
+    }
+    el.addEventListener('load', boot);
+    el.addEventListener('error', () => set카카오죽음(true));
+    /* 막히면 error 가 안 오는 경우도 있다 — 시간으로도 잡는다(ui.tsx 와 같은 4초) */
+    const t = setTimeout(() => { if (!window.kakao?.maps) set카카오죽음(true); }, 4000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [그릴것있나, 카카오죽음]);
+
+  /* 창 크기가 바뀌면 카카오 지도도 다시 그려야 한다 — 스스로 못 알아챈다 */
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    const ro = new ResizeObserver(() => {
+      setSize({ w: el.clientWidth, h: el.clientHeight });
+      카카오맵.current?.relayout();
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
   /* 출발지가 바뀔 때마다 다시 맞춘다 — 모임 화면과 규칙이 다른 자리다.
      거기서는 남이 찍을 때마다 지도를 되돌리면 지도를 뺏는 셈이라 한 번만 맞췄지만,
-     여기서 지도를 움직이는 사람은 나 하나다. 방금 넣은 출발지가 화면 밖이면 넣은 뜻이 없다. */
+     여기서 지도를 움직이는 사람은 나 하나다. 방금 넣은 출발지가 화면 밖이면 넣은 뜻이 없다.
+     ⚠ OSM 폴백에서만 쓴다 — 카카오가 살아 있으면 아래 카카오 효과가 LatLngBounds 로 맞춘다. */
   const 서명 = 출발지들.map((o) => `${o.lat},${o.lng}`).join('|');
   useEffect(() => {
-    if (!출발지들.length) return;
+    if (!카카오죽음 || !출발지들.length) return;
     const la = 출발지들.map((o) => o.lat), ln = 출발지들.map((o) => o.lng);
     const 상자가운데 = {
       lat: (Math.min(...la) + Math.max(...la)) / 2,
@@ -107,7 +160,51 @@ export default function 지도({ 출발지들, 가운데 }: {
     setZ(Math.max(4, Math.min(17, 맞는배율)));
     /* 서명 하나로 출발지 바뀜을 본다 — 배열을 그대로 두면 그릴 때마다 새 배열이라 늘 다시 맞춘다 */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [서명, size.w, size.h]);
+  }, [카카오죽음, 서명, size.w, size.h]);
+
+  /* ── 카카오 지도가 살아 있을 때 — 핀을 얹고 화면을 맞춘다 ──────────
+     핀은 CustomOverlay 로 그린다. `.opin` 스타일을 그대로 쓰기 위해 그 안에
+     평범한 HTML 을 담는다 — 카카오 마커 아이콘 대신 우리 이름표 모양 그대로 쓰는 것이다. */
+  useEffect(() => {
+    const m = 카카오맵.current;
+    if (!카카오준비 || !m) return;
+    카카오오버레이.current.forEach((o) => o.setMap(null));
+    카카오오버레이.current = [];
+
+    /* 카카오의 xAnchor·yAnchor 는 안 쓴다(0,0 그대로) — 대신 `.opin`·`.내자리점` 자신의
+       transform:translate(...) 이 자리를 잡게 한다. 그래야 OSM 쪽(`자리()`)과 셈이
+       똑같아져 두 지도가 정확히 같은 곳에 핀을 찍는다. left:0;top:0 은 그 기준점이다. */
+    const 얹기 = (p: { lat: number; lng: number }, html: string) => {
+      const ov = new window.kakao.maps.CustomOverlay({
+        position: new window.kakao.maps.LatLng(p.lat, p.lng), content: html,
+        xAnchor: 0, yAnchor: 0, zIndex: 4,
+      });
+      ov.setMap(m);
+      카카오오버레이.current.push(ov);
+    };
+
+    if (내자리) {
+      얹기(내자리, `<span class="${s.내자리점}" style="left:0;top:0" aria-hidden></span>`);
+    }
+    출발지들.forEach((o) => {
+      얹기(o, `<span class="opin" style="left:0;top:0;cursor:default">${o.이름}</span>`);
+    });
+    if (가운데) {
+      얹기(가운데, `<span class="opin" data-first style="left:0;top:0;cursor:default">가운데</span>`);
+    }
+
+    /* 화면을 맞춘다 — 출발지가 있으면 그걸 다 담게, 없으면(내 자리만) 그 자리로 가깝게 */
+    if (출발지들.length) {
+      const bounds = new window.kakao.maps.LatLngBounds();
+      [...출발지들, ...(가운데 ? [가운데] : [])].forEach((p) =>
+        bounds.extend(new window.kakao.maps.LatLng(p.lat, p.lng)));
+      m.setBounds(bounds, 56, 56, 56, 56);
+    } else if (내자리) {
+      m.setCenter(new window.kakao.maps.LatLng(내자리.lat, 내자리.lng));
+      m.setLevel(5);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 내자리?.lat, 내자리?.lng]);
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
@@ -131,11 +228,16 @@ export default function 지도({ 출발지들, 가운데 }: {
     }
   }
 
+  /* 카카오가 살아 있으면 이 손짓은 쓸 데가 없다 — 카카오 지도가 제 스스로 끌기를 맡는다.
+     아래 두 함수가 건드리는 c·z 는 OSM 폴백에서만 읽는 상태라 그냥 둬도 해는 없지만,
+     헛일을 안 하는 편이 낫다. */
   const down = (e: React.PointerEvent) => {
+    if (!카카오죽음) return;
     drag.current = { x: e.clientX, y: e.clientY };
     try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch { /* 그냥 끌면 된다 */ }
   };
   const move = (e: React.PointerEvent) => {
+    if (!카카오죽음) return;
     const d = drag.current;
     if (!d) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
@@ -163,9 +265,12 @@ export default function 지도({ 출발지들, 가운데 }: {
     <div ref={box} className={`osm ${s.지도}`} onPointerDown={down} onPointerMove={move} onPointerUp={up}
       role="img" aria-label={출발지들.length ? `출발지 ${출발지들.length}곳과 가운데를 얹은 지도`
         : 내자리 ? '지금 있는 자리를 짚은 지도' : '빈 지도'}>
-      {/* 그릴 것이 없으면 타일을 아예 안 받는다 — 어차피 안내 문구가 덮는데
-          홈에 들를 때마다 타일 열 몇 장을 남의 서버에서 받아 오는 셈이 된다 */}
-      {그릴것있나 && tiles.map((t) => (
+      {/* 카카오 지도 칸 — 죽지 않은 동안은 늘 마련해 둔다(ref 를 미리 잡아야 로딩 효과가 붙는다).
+          그릴 것이 없으면(그릴것있나=false) 로딩 자체를 시작 안 하므로 이 칸도 빈 채로 있다. */}
+      {!카카오죽음 && <div ref={카카오맵칸} style={{ position: 'absolute', inset: 0 }} />}
+
+      {/* 카카오가 막혔을 때만 OSM 타일을 그린다(그릴링 논의27과 같은 규칙) */}
+      {카카오죽음 && 그릴것있나 && tiles.map((t) => (
         <img key={t.k} src={t.url} alt="" draggable={false}
           onLoad={() => { tileFail.current = 0; setTileDead(false); }}
           onError={() => { if (++tileFail.current >= 3) setTileDead(true); }}
@@ -174,7 +279,7 @@ export default function 지도({ 출발지들, 가운데 }: {
             visibility: tileDead ? 'hidden' : undefined }} />
       ))}
 
-      {tileDead && (
+      {카카오죽음 && tileDead && (
         <div className="tiledead">
           <b>지도를 불러오지 못했어요</b>
           <span>잠시 뒤에 다시 열어 보세요</span>
@@ -182,15 +287,18 @@ export default function 지도({ 출발지들, 가운데 }: {
       )}
 
       {/* 그릴 것이 하나도 없을 때만 덮는다 — 지도를 띄워 놓고 어디인지도 모르게 두는 것보다 낫다.
-          단추는 없다: 위에서 이미 스스로 내 위치를 물어봤다(그래도 안 잡히면 손으로 넣으면 된다). */}
-      {!그릴것있나 && !tileDead && (
+          단추는 없다: 위에서 이미 스스로 내 위치를 물어봤다(그래도 안 잡히면 손으로 넣으면 된다).
+          카카오·OSM 어느 쪽이든 같다 — 둘 다 '보여 줄 자리'가 없으면 뜻이 없는 안내다. */}
+      {!그릴것있나 && (
         <div className="tiledead">
           <b>아직 출발지가 없어요</b>
           <span>위 검색칸에서 출발지를 넣어 보세요</span>
         </div>
       )}
 
-      {!tileDead && 그릴것있나 && (
+      {/* 카카오가 막혔을 때만 — 핀을 우리 손으로 얹는다(살아 있으면 위 카카오 효과가
+          CustomOverlay 로 같은 일을 한다). */}
+      {카카오죽음 && !tileDead && 그릴것있나 && (
         <>
           {/* 지금 있는 자리 — 출발지 핀과 헷갈리면 안 된다. 점은 파랗게 뛰고 이름표가 따로 붙는다.
               출발지가 들어온 뒤에도 그대로 둔다: 내가 어디 있는지가 가운데를 읽는 잣대가 된다. */}
@@ -221,8 +329,9 @@ export default function 지도({ 출발지들, 가운데 }: {
         </>
       )}
 
-      {/* 지도가 안 보이는 동안에는 확대·축소도, 라이선스 표시도 뜻이 없다 */}
-      {그릴것있나 && (
+      {/* 확대·축소 단추는 OSM 폴백에만 그린다 — 카카오는 제 손가락 확대·스크롤을 스스로 받는다.
+          저작권 표시도 OSM 을 실제로 쓸 때만 뜻이 있다. */}
+      {카카오죽음 && 그릴것있나 && (
         <>
           <div className="ozoom" onPointerDown={(e) => e.stopPropagation()}>
             <button onClick={(e) => { e.stopPropagation(); setZ((v) => Math.min(18, v + 1)); }} aria-label="확대">＋</button>
