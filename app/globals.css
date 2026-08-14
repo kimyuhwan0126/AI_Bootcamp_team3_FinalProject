@@ -142,6 +142,11 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 .opin[data-first]::after{
   content:''; position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
   width:0; height:0; border:7px solid transparent; border-bottom:0; border-top-color:#16307a;
+  /* 꼬리가 라벨과 완전히 같은 색이라 지도 배경(회색·황토색 타일)과 거의 안 갈린다 —
+     실제로 이 자리를 여러 번 확대해서 봐야 겨우 알아볼 정도였다. box-shadow 는 이 요소의
+     사각형 박스 기준으로 그려져 삼각형이 아니라 네모 그림자가 나온다 — 렌더된 모양(삼각형)을
+     따라가는 drop-shadow 를 쓴다. */
+  filter: drop-shadow(0 2px 2px rgba(20,26,40,.35));
 }
 /* 누른 자리는 아직 후보가 아니다 — 회색 점선으로만 짚어 둔다 (그릴링 논의81).
    무엇을 고른 셈인지(이름)와 굳히는 단추는 시트가 맡는다. 지도는 '그게 어디인지'만 말한다.
