@@ -406,6 +406,17 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
       map.current = new window.kakao.maps.Map(mapEl.current, {
         center: new window.kakao.maps.LatLng(c0?.lat ?? 37.5665, c0?.lng ?? 126.978), level: 7,
       });
+      /* 출발지가 둘 이상이면 고정 배율(7) 대신 다 담기는 배율로 시작한다 — 한 곳뿐이면
+         담을 상자가 없으니(점 하나) 기존대로 가운데만 맞춘 고정 배율을 그대로 쓴다.
+         이미 지역이 정해진 채로 열었다면(예: 링크를 나중에 다시 열었을 때) 건드리지 않는다 —
+         바로 아래(마크 그리기 효과)가 그 경우엔 지역으로 다시 맞추지만, 그 전까지 한 프레임
+         참가자들의 집 근처가 잠깐 보이는 것도 굳이 만들 필요는 없다(OSM 쪽에서 실제로 겪은
+         버그와 같은 결 — 거기는 아예 함수로 못 박았다). */
+      if (!winRef.current && originsRef.current.length >= 2) {
+        const b = new window.kakao.maps.LatLngBounds();
+        originsRef.current.forEach((p) => b.extend(new window.kakao.maps.LatLng(p.lat!, p.lng!)));
+        map.current.setBounds(b, 60, 60, 60, 60);
+      }
       /* 지도를 누르면 그 자리의 동으로 — 찍는 것이 곧 표 */
       window.kakao.maps.event.addListener(map.current, 'click', (e: any) => {
         if (!canPingRef.current) return;
@@ -568,6 +579,10 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const winRef = useRef(region); winRef.current = region;
   const radiusRef = useRef(v.meeting.radius_m); radiusRef.current = v.meeting.radius_m;
   const midRef = useRef(midpoint); midRef.current = midpoint;
+  /* 지도가 처음 뜰 때 모두의 출발지가 다 보여야 한다(실사용 신고, 2026-08-15) —
+     가운데만 맞추고 배율은 고정값(7)이면, 출발지가 서로 멀리 떨어진 모임에서는
+     누군가의 출발지가 화면 밖으로 잘렸다. boot() 안에서만 읽는 값이라 ref 로 둔다. */
+  const originsRef = useRef(withOrigin); originsRef.current = withOrigin;
 
   /* 지점 고르기 — 지도를 누르는 것 말고 이름으로도 찾을 수 있게 (원본지필드의
      '이름으로 찾기'와 같은 결, 손을 멈추면 찾는다). 확정된 지역 반경 안으로 좁혀 찾는다 —
