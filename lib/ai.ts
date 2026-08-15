@@ -23,6 +23,7 @@
 import type { Meeting, MeetingView } from './types';
 import { 한국안 } from './geo';
 import { 지금종류 } from './단계';
+import { AI추천_잠시멈춤 } from './기능스위치';
 
 type Pick = { refId: string; name: string; lat: number; lng: number; address?: string };
 /** 닿았나 못 붙었나 — 부른 쪽이 횟수를 태울지 정하는 데 쓴다 (논의93) */
@@ -35,6 +36,11 @@ const 닿음 = (picks: Pick[]): AiResult => ({ 닿음: true, picks });
 const 자리 = (n: number) => n.toFixed(5);
 
 export async function suggest(m: Meeting, v: MeetingView): Promise<AiResult> {
+  /* 2026-08-15 — 쓰던 ollama 계정의 유료 구독이 끝나 모든 호출이 403 이다.
+     굳이 태워 20초를 기다리다 못 붙었다고 답할 까닭이 없다 — 여기서 바로 못 붙었다고 한다.
+     이래도 route 쪽 셈(횟수 매기기·환불)은 그대로 지나간다 — '설정 없음' 때와 같은 길이다.
+     새 키를 받으면 lib/기능스위치.ts 값 하나만 false 로 돌리면 된다. */
+  if (AI추천_잠시멈춤) return 못붙음('구독 만료로 잠시 멈춤');
   const url = process.env.OLLAMA_PRIMARY_URL;
   const model = process.env.OLLAMA_PRIMARY_MODEL;
   const key = process.env.OLLAMA_API_KEY;

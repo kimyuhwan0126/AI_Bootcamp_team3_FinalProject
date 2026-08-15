@@ -38,7 +38,7 @@ rmSync(일터, { recursive: true, force: true });
 mkdirSync(일터, { recursive: true });
 spawnSync(process.execPath, [
   join(APP, 'node_modules', 'typescript', 'bin', 'tsc'),
-  'lib/ai.ts', 'lib/geo.ts', 'lib/단계.ts', 'lib/types.ts',
+  'lib/ai.ts', 'lib/geo.ts', 'lib/단계.ts', 'lib/types.ts', 'lib/기능스위치.ts',
   '--outDir', 일터, '--module', 'commonjs', '--moduleResolution', 'node',
   '--target', 'es2022', '--esModuleInterop', '--skipLibCheck',
 ], { cwd: APP, encoding: 'utf8' });
@@ -48,6 +48,10 @@ for (const f of ['ai.js', 'geo.js']) {
   const p = join(일터, f);
   if (existsSync(p)) writeFileSync(p, readFileSync(p, 'utf8').replaceAll('"@/lib/', '"./'));
 }
+/* 이 시험은 프롬프트 글자만 본다 — 구독이 끝나 있는 동안 켜 둔 잠깐-멈춤 스위치(lib/기능스위치.ts)
+   때문에 suggest() 가 부르기도 전에 못 붙었다고 답하면 가짜 AI 서버가 아무것도 못 받는다.
+   구운 것만 여기서 끈다 — 진짜 소스는 그대로 둔다. */
+writeFileSync(join(일터, '기능스위치.js'), 'exports.AI추천_잠시멈춤 = false;\n');
 ok('lib/ai.js 가 구워졌다', existsSync(join(일터, 'ai.js')));
 
 /* ── 가짜 AI ────────────────────────────────────────────── */
