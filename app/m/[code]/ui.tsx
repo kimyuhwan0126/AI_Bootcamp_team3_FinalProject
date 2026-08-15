@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MeetingView, Action, Kind, Going } from '@/lib/types';
 import OsmMap from './osmmap';
 import { instantToKst, formatKst } from '@/lib/time';
-import { AI추천_잠시멈춤 } from '@/lib/기능스위치';
 
 declare global { interface Window { kakao: any } }
 
@@ -889,9 +888,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             )}
             {tools && (
               <>
-                {/* 계정 구독이 끝나 있는 동안은 단추 자체를 숨긴다 — 눌러도 안 되는 단추를
-                    보여주는 것은 거짓말이다(논의105 와 같은 잣대). lib/기능스위치.ts 참고. */}
-                {!AI추천_잠시멈춤 && v.me.isHost && (
+                {v.me.isHost && (
                   <button className="fab" disabled={busy || aiBusy} onClick={추천받기}>
                     {aiBusy ? '✦ 찾는 중…'
                       : aiLeft == null ? '✦ AI 추천' : `✦ AI 추천 (${aiLeft}번 남음)`}
