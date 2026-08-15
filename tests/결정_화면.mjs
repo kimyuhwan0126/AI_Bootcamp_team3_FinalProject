@@ -5,7 +5,13 @@
    지도는 카카오 SDK 를 막아 OSM 폴백으로 연다(그래야 진짜 손가락처럼 눌러 볼 수 있다).
    타일·주소 찾기는 흉내 낸 응답으로 바꿔 끼운다 — 바깥이 느리다고 빨간불이 켜지면 안 된다. */
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { 로그인 } from './세션.mjs';
+
+/* AI 추천 단추는 계정 구독이 끝나 있는 동안 화면에서 숨겨진다(lib/기능스위치.ts).
+   .ts 를 직접 import 할 수 없는 자리라 다른 시험들처럼 소스를 그대로 읽어 값을 본다. */
+const AI_잠시멈춤 = /AI추천_잠시멈춤\s*=\s*true/.test(
+  readFileSync(new URL('../lib/기능스위치.ts', import.meta.url), 'utf8'));
 
 const BASE = process.env.MOIMER_BASE ?? 'http://127.0.0.1:3000';
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -678,12 +684,19 @@ async function 넘겨받은것시험() {
       contentType: 'application/json', body: JSON.stringify({ error: 'places_unavailable', retryable: true }) }));
   });
 
-  const 남음 = await 다시해도(async () => {
+  if (AI_잠시멈춤) {
+    /* 구독이 끝나 있는 동안은 부를 수도 없다 — 단추 자체가 없는 것이 맞는 모습이다 */
     if (!(await page.$('text=AI 추천'))) await page.click('.acts-fix .fab');
-    await page.click('text=AI 추천');
-  }, () => 글있나(page, '2번 남음'));
-  ok('논의93 AI 를 부르면 남은 횟수를 화면이 말한다', 남음,
-    (await 글(page)).replace(/\s+/g, ' ').slice(0, 160));
+    ok('AI 잠시멈춤 동안은 AI 추천 단추가 안 보인다(lib/기능스위치.ts)',
+      !(await page.$('text=AI 추천')));
+  } else {
+    const 남음 = await 다시해도(async () => {
+      if (!(await page.$('text=AI 추천'))) await page.click('.acts-fix .fab');
+      await page.click('text=AI 추천');
+    }, () => 글있나(page, '2번 남음'));
+    ok('논의93 AI 를 부르면 남은 횟수를 화면이 말한다', 남음,
+      (await 글(page)).replace(/\s+/g, ' ').slice(0, 160));
+  }
 
   page.on('dialog', (d) => d.accept());
   const 닫았다 = await 다시해도(async () => {
