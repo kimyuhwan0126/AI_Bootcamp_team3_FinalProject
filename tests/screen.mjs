@@ -224,7 +224,7 @@ async function 지도시험() {
   /* A32 ① — 새 시트를 열면 앞 시트가 닫힌다 */
   await page.evaluate(() => { window.__zoom = 500; window.__fire('idle'); });
   await 잠깐(200);
-  await page.click('.acts-fix .fab');                       /* ⋯ 더보기 */
+  await page.click('.dial-toggle');                          /* ⋯ 더보기 — 스피드다이얼 */
   await page.click('text=모임 설정');
   await page.waitForSelector('.modal');
   await page.evaluate(() => {
@@ -421,7 +421,7 @@ async function 끝난모임시험() {
   /* 첫 그림은 서버가 그린다 — 한 번 다시 읽어야 바꿔 낀 응답이 화면에 온다.
      후보 줄을 누르면 표가 빠지면서 후보까지 사라진다 — 설정 저장으로 다시 읽힌다. */
   const 다시읽기 = async () => {
-    if (!(await page.$('text=모임 설정'))) await page.click('.acts-fix .fab');
+    if (!(await page.$('text=모임 설정'))) await page.click('.dial-toggle');
     await page.click('text=모임 설정');
     await page.waitForSelector('.modal');
     await page.click('.modal .fab.primary');

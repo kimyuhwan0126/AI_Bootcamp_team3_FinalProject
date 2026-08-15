@@ -25,7 +25,7 @@ const PIN_TAP = 32, PIN_TAP_FIRST = 46;
    나중에 붙는 style 태그라 같은 무게(specificity)면 이쪽이 이긴다. */
 const 고치기전 = `
 .acts{pointer-events:auto;z-index:5;-webkit-mask-image:none;mask-image:none}
-.acts-fix{pointer-events:auto}
+.dial{pointer-events:auto}
 .modal,.modal~.modal,.modal~.modal~.modal,.modal~.modal~.modal~.modal{z-index:20}
 .modal:has(~.modal),.wrap:has(>.modal) .sheet .modal{background:rgba(16,20,30,.42)}
 .tiledead{z-index:auto}
@@ -155,8 +155,8 @@ const 재는도구 = () => {
         전체++;
         const e = document.elementFromPoint(Math.round(x), Math.round(y));
         if (!e) { 셈.그밖++; continue; }
-        if (e.closest('.fab')) 셈.단추++;
-        else if (e.closest('.acts,.acts-fix')) 셈.띠++;
+        if (e.closest('.fab,.dial-item,.dial-toggle')) 셈.단추++;
+        else if (e.closest('.acts,.dial')) 셈.띠++;
         else if (e.closest('.opin')) 셈.핀++;
         else if (e.closest('.ozoom')) 셈.확대++;
         else if (e.closest('.ocred')) 셈.저작권++;
@@ -205,61 +205,72 @@ try {
     적기(`${크기} [도구 접음] 지도 ${s0.지도}% / 띠 ${s0.띠}% / 단추 ${s0.단추}% / 핀 ${s0.핀}% / 확대 ${s0.확대}% / 저작권 ${s0.저작권}%`);
     ok(`A9 ${크기} 접힌 화면에서 빈 띠가 지도 탭을 안 삼킨다`, s0.띠 <= 0.5, `띠 ${s0.띠}%`);
 
-    /* 방장 도구를 편다 — '⋯ 더보기' */
-    await page.evaluate(() => {
-      const b = [...document.querySelectorAll('.acts-fix .fab')].find((x) => x.textContent.includes('더보기'));
-      b?.click();
-    });
+    /* 방장 도구를 편다 — 스피드다이얼(.dial-toggle). 펴면 주 액션 알약(.acts)은
+       숨고 다이얼 항목(.dial-item)이 그 자리에 온다(둘이 겹치던 것을 막느라 그렇게 했다). */
+    await page.evaluate(() => document.querySelector('.dial-toggle')?.click());
     await page.waitForTimeout(300);
 
-    const 단추수 = await page.evaluate(() => document.querySelectorAll('.acts .fab').length);
+    const 단추수 = await page.evaluate(() => document.querySelectorAll('.dial-item').length);
+    const 접힌뒤단추수 = await page.evaluate(() => document.querySelectorAll('.acts .fab').length);
     const 핀글 = await page.evaluate(() => [...document.querySelectorAll('.opin')].map((e) => e.textContent.trim()));
-    적기(`${크기} 도구 단추 ${단추수}개 · 핀 [${핀글.join(' | ')}]`);
+    적기(`${크기} 다이얼 항목 ${단추수}개 · 다이얼 편 동안 .acts 알약 ${접힌뒤단추수}개 · 핀 [${핀글.join(' | ')}]`);
     ok(`${크기} 이름표가 뭉치지 않고 하나씩 그려졌다(시험 전제)`, 핀글.length >= 4, `핀 ${핀글.length}개`);
+    ok(`${크기} 다이얼을 펴면 주 액션 알약은 숨는다(겹침 방지)`, 접힌뒤단추수 === 0, `${접힌뒤단추수}개 남음`);
 
     const s = await page.evaluate(() => window.__sweep(4));
     적기(`${크기} [도구 폄] 지도 ${s.지도}% / 띠 ${s.띠}% / 단추 ${s.단추}% / 핀 ${s.핀}% / 확대 ${s.확대}% / 저작권 ${s.저작권}%`);
     ok(`A9 ${크기} 편 화면에서 빈 띠가 지도 탭을 안 삼킨다`, s.띠 <= 0.5, `띠 ${s.띠}%`);
 
     const pe = await page.evaluate(() => {
-      const a = document.querySelector('.acts'), f = document.querySelector('.acts .fab');
+      const a = document.querySelector('.dial'), f = document.querySelector('.dial-toggle');
       return { 띠: getComputedStyle(a).pointerEvents, 단추: f ? getComputedStyle(f).pointerEvents : null };
     });
-    ok(`A9 ${크기} .acts=none · 단추=auto`, pe.띠 === 'none' && pe.단추 === 'auto',
-      `.acts:${pe.띠} .fab:${pe.단추}`);
+    ok(`A9 ${크기} .dial=none · 단추=auto`, pe.띠 === 'none' && pe.단추 === 'auto',
+      `.dial:${pe.띠} .dial-toggle:${pe.단추}`);
 
-    /* ── A33 ── 넘치면 '더 있다'는 신호 */
+    /* ── A33 ── 넘치면 '더 있다'는 신호. 짧은 화면(375×667)에서는 시트가 자리를 먹어
+       도구가 늘면 다이얼도 넘칠 수 있다 — .acts 와 같은 처방(top+bottom 으로 키를
+       못박고 overflow-y:auto + 위쪽 흐림)을 .dial 에도 넣었다. 잘린 화면 그대로도
+       *맨 처음 그려질 때*는 위쪽이 가려질 수 있다(.acts 도 늘 그래 왔다) —
+       흐림·스크롤이 '더 있다'와 '잡아 끌면 닿는다'를 보장하면 그것으로 족하다. */
     const sc = await page.evaluate(() => {
-      const a = document.querySelector('.acts'), st = getComputedStyle(a);
+      const a = document.querySelector('.dial'), st = getComputedStyle(a);
       a.scrollTop = -9999;                       /* column-reverse 라 위로 넘친다 */
       const 위로스크롤됨 = a.scrollTop;
       a.scrollTop = 0;
       return { ch: a.clientHeight, sh: a.scrollHeight, 위로스크롤됨,
         mask: st.maskImage === 'none' ? st.webkitMaskImage : st.maskImage };
     });
-    적기(`${크기} .acts 보이는 높이 ${sc.ch} / 실제 높이 ${sc.sh} (mask: ${String(sc.mask).slice(0, 46)})`);
+    적기(`${크기} .dial 보이는 높이 ${sc.ch} / 실제 높이 ${sc.sh}`);
     if (sc.sh > sc.ch + 1) {
       ok(`A33 ${크기} 잘린 도구에 더 있다는 신호가 있다`, !!sc.mask && sc.mask !== 'none', `mask-image:${sc.mask}`);
       ok(`A33 ${크기} 넘쳐도 스크롤은 살아 있다`, sc.위로스크롤됨 < 0, `scrollTop ${sc.위로스크롤됨}`);
 
-      /* .acts 를 pointer-events:none 으로 만들었으니(A9) 띠의 빈 곳을 잡고는 못 넘긴다.
-         단추를 잡고는 넘어가야 한다 — 안 되면 잘린 단추에 영영 못 닿는다. */
+      /* .dial 을 pointer-events:none 으로 만들었으니(A9) 빈 곳을 잡고는 못 넘긴다.
+         단추(토글)를 잡고는 넘어가야 한다 — 안 되면 잘린 도구에 영영 못 닿는다. */
       const 단추자리 = await page.evaluate(() => {
-        const a = document.querySelector('.acts');
+        const a = document.querySelector('.dial');
         a.scrollTop = 0;
-        const r = a.querySelector('.fab').getBoundingClientRect();
+        const r = a.querySelector('.dial-toggle').getBoundingClientRect();
         return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
       });
       await page.mouse.move(단추자리.x, 단추자리.y);
       await page.mouse.wheel(0, -240);
       await page.waitForTimeout(200);
-      const 굴린뒤 = await page.evaluate(() => document.querySelector('.acts').scrollTop);
-      적기(`${크기} 단추 위에서 굴린 뒤 .acts scrollTop ${굴린뒤}`);
+      const 굴린뒤 = await page.evaluate(() => document.querySelector('.dial').scrollTop);
+      적기(`${크기} 단추 위에서 굴린 뒤 .dial scrollTop ${굴린뒤}`);
       ok(`A33 ${크기} 단추를 잡으면 잘린 도구까지 넘어간다`, 굴린뒤 < 0, `scrollTop ${굴린뒤}`);
-      await page.evaluate(() => { document.querySelector('.acts').scrollTop = 0; });
+      await page.evaluate(() => { document.querySelector('.dial').scrollTop = 0; });
     } else {
-      적기(`${크기} 도구가 안 넘쳐 A33 판정 건너뜀`);
+      적기(`${크기} 도구가 안 넘쳐 A33 스크롤 판정 건너뜀`);
     }
+
+    /* A9/A33 은 다이얼을 편 채로 봐야 하는 시험이라 여태 열어 뒀다 — 이제부터는
+       핀 자체(넓힌 자리·서로 안 가림)를 잰다. 다이얼을 펴 두면 스크림이 지도를
+       덮어 핀이 다 안 잡히는 게 당연해진다(다이얼의 뜻이다) — 그건 핀 겹침과는
+       다른 얘기이니 다이얼을 닫고 잰다. */
+    await page.evaluate(() => document.querySelector('.dial-toggle')?.click());
+    await page.waitForTimeout(200);
 
     /* ── A54 ── 손가락 닿는 자리 */
     /* 지도 것(확대·핀·저작권)과 시트 것(.mini)은 따로 잰다.
@@ -363,9 +374,11 @@ try {
       투명(뒷막.형제아래) && 투명(뒷막.시트안) && !투명(뒷막.형제위),
       `시트안 ${뒷막.시트안} · 아래 ${뒷막.형제아래} · 위 ${뒷막.형제위}`);
 
-    /* 모임 설정 시트 안의 삭제 단추 */
+    /* 모임 설정 시트 안의 삭제 단추 — A54 재기 전에 다이얼을 닫아 뒀으니 다시 편다 */
+    await page.evaluate(() => document.querySelector('.dial-toggle')?.click());
+    await page.waitForTimeout(200);
     await page.evaluate(() => {
-      const b = [...document.querySelectorAll('.acts .fab')].find((x) => x.textContent.includes('모임 설정'));
+      const b = [...document.querySelectorAll('.dial-item')].find((x) => x.textContent.includes('모임 설정'));
       b?.click();
     });
     await page.waitForTimeout(250);

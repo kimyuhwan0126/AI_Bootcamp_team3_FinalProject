@@ -155,7 +155,8 @@ const 재기 = () => {
     W: m.width, H: m.height,
     pins: [...document.querySelectorAll('.opin')].map((n) =>
       ({ ...상자(n), text: n.textContent.trim(), 읽을말: (n.getAttribute('aria-label') ?? '').trim() })),
-    fixed: [...document.querySelectorAll('.ozoom,.ocred,.acts .fab,.acts-fix .fab')].map(상자),
+    /* 방장 도구는 이제 스피드다이얼(.dial-item·.dial-toggle)이다 */
+    fixed: [...document.querySelectorAll('.ozoom,.ocred,.acts .fab,.dial-item,.dial-toggle')].map(상자),
     묶인것: [...document.querySelectorAll('.odot[data-mute]')].map((n) => ({
       ...상자(n), text: (n.getAttribute('aria-label') ?? '').trim(),
     })),

@@ -205,7 +205,9 @@ export default function OsmMap({
     /* 지도 위 붙박이(확대·축소 · 저작권 · 방장 버튼)는 이미 자리를 차지한 것으로 친다.
        자리를 코드에 박아 두면 방장이 도구를 펼쳤을 때 그 아래 이름표가 깔린다 — 실제로 잰다. */
     const 붙박이: 네모[] = [];
-    el.parentElement?.querySelectorAll('.ozoom,.ocred,.acts .fab,.acts-fix .fab').forEach((n) => {
+    /* 방장 도구는 스피드다이얼(.dial-item·.dial-toggle)로 바뀌었다 — 옛 알약(.acts-fix .fab)
+       셀렉터만 남겨 두면 다이얼이 펴졌을 때 이름표가 그 위에 그대로 깔린다(실측으로 확인). */
+    el.parentElement?.querySelectorAll('.ozoom,.ocred,.acts .fab,.dial-item,.dial-toggle').forEach((n) => {
       const r = (n as HTMLElement).getBoundingClientRect();
       if (!r.width || !r.height) return;
       붙박이.push({ l: r.left - 바탕.left, r: r.right - 바탕.left, t: r.top - 바탕.top, b: r.bottom - 바탕.top });
