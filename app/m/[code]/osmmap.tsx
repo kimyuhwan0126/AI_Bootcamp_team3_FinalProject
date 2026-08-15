@@ -58,7 +58,7 @@ const 겹친넓이 = (a: 네모, b: 네모) =>
   Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t));
 
 export default function OsmMap({
-  candidates, myVotes, center, canPing, preview, onPick, onToggle, onCluster, cluster = true,
+  candidates, myVotes, center, canPing, preview, onPick, onToggle, onCluster, cluster = true, origins,
 }: {
   candidates: Candidate[];
   myVotes: string[];
@@ -72,6 +72,11 @@ export default function OsmMap({
   onCluster: (ids: string[]) => void;
   /* 지점은 한 동네 안이라 늘 붙어 있다 — 묶으면 지도가 빈다 (그릴링 논의42 ①) */
   cluster?: boolean;
+  /* 참가자들이 낸 출발지 (2026-08-15) — 가운데를 셈할 때만 쓰이고 지도에 정작 안 그려졌다.
+     "각자 어디서 오는지 지도로 보고 싶다"는 실제 사용 중 나온 말로 추가했다. 후보(candidates)와
+     달리 고르는 대상이 아니라서, 정교한 이름표 겹침 회피 계산(자리계산)에는 안 넣는다 —
+     참가자 수가 많지 않은 게 보통이라 단순하게 화면 밖만 걸러 그린다. */
+  origins?: { name: string; lat: number; lng: number }[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -439,6 +444,20 @@ export default function OsmMap({
         const p = toPx(preview.lat, preview.lng, z);
         return <span className="opre" style={{ left: p.x - origin.ox, top: p.y - origin.oy }} />;
       })()}
+
+      {/* 참가자들의 출발지 — 후보와 헷갈리면 안 되니 누를 수 없고(pointer-events 없음) 옅게 그린다.
+          겹침 회피 계산에는 안 넣는다(위 그리기 참고) — 화면 밖만 거른다. */}
+      {!tileDead && origins?.map((o) => {
+        const p = toPx(o.lat, o.lng, z);
+        const sx = p.x - origin.ox, sy = p.y - origin.oy;
+        if (sx < -20 || sx > size.w + 20 || sy < -20 || sy > size.h + 20) return null;
+        return (
+          <span key={`origin-${o.name}-${o.lat}-${o.lng}`} className="ofrom" style={{ left: sx, top: sy }}>
+            <span className="pt" aria-hidden />
+            <span className="lb">{o.name}</span>
+          </span>
+        );
+      })}
 
       <div className="ozoom" onPointerDown={(e) => e.stopPropagation()}>
         {/* 배율도 손으로 고른 것이다 — 고른 뒤에는 자동 맞춤이 끼어들지 않는다 */}
