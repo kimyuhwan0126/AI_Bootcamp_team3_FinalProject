@@ -178,18 +178,33 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const [preview, setPreview] = useState<
     { kind: Kind; refId: string; name: string; lat: number; lng: number; address?: string } | null>(null);
   /* 시트는 손잡이로 키우고 줄인다 (논의82) — 손잡이는 맨 윗줄과 요약 줄 둘 다.
-     세 자리다: mini(요약 줄만 남기고 지도를 거의 다 보여 준다) · default(기본) · big(시트를 키운다).
+     세 자리로 **정착**한다: mini(요약 줄만 남기고 지도를 거의 다 보여 준다) · default(기본) · big.
      ⚠ 2026-08-15 — mini 가 여기 없었다. 예전판(v8)엔 '지도 전체화면 보기' 라는 이름으로 있던
-     것이 재작성 때 안 옮겨 왔다 — 사람이 실제로 찾다가 없어진 것을 알아챘다. */
+     것이 재작성 때 안 옮겨 왔다 — 사람이 실제로 찾다가 없어진 것을 알아챘다.
+     ⚠ 처음엔 24px 문턱을 넘는 순간 딱 정착 자리로 점프했다 — 사람이 손가락을 눈으로
+     좇을 수 없어 "이산적이다, 손 위치를 따라가야 한다" 고 다시 고쳤다. 지금은 끄는 동안
+     손가락 y 를 그대로 시트 높이(dragH, px)로 옮긴다 — 매 프레임 시트가 손 밑에 붙어 있다.
+     손을 떼는 순간에만 가장 가까운 정착 자리(mini·default·big)를 골라 그리로 부드럽게
+     스냅한다(css transition, 드래그 중엔 그 transition 을 꺼 즉시 반응하게 한다). */
   type 시트단계 = 'mini' | 'default' | 'big';
   const [sheetStage, setSheetStage] = useState<시트단계>('default');
+  /* 끄는 동안만 값이 있다 — 있으면 이 픽셀 값이 sheetStage 보다 우선한다(아래 style 참고) */
+  const [dragH, setDragH] = useState<number | null>(null);
   /* 지난 모임은 확정된 곳만 크게, 기록은 접어 둔다 (논의74) */
   const [howOpen, setHowOpen] = useState(false);
   /* 알림 쪽지는 시트가 올라오면 그 위로 (논의108) — 평소엔 css 가 정한 화면 위쪽.
      쪽지 높이는 글자 수에 따라 달라진다 — 위가 아니라 아래를 시트 머리에 맞춘다. */
   const [toastUp, setToastUp] = useState<number | null>(null);
-  /* 손잡이를 끌 때 잡아 두는 자리 (논의82) */
-  const 끌기 = useRef<{ y: number; moved: boolean } | null>(null);
+  /* 손잡이를 끌 때 잡아 두는 자리 (논의82). startH 는 끌기 시작한 순간의 시트 실제 높이(px) —
+     여기서부터 손가락이 움직인 만큼(-dy) 더해 나간다. */
+  const 끌기 = useRef<{ y: number; startH: number; moved: boolean } | null>(null);
+  /* 정착 자리 셋을 실제 픽셀로 — mini 는 손잡이(요약 줄) 높이에 맞춘 고정값(sheetmini 실측 76px),
+     default·big 은 dvh 를 그때그때 뷰포트로 환산한다(회전·주소창 접힘으로 뷰포트가 바뀔 수 있어
+     매번 다시 잰다 — 값을 어딘가에 캐시해 두면 오래된 뷰포트 기준으로 어긋난다). */
+  const 시트픽셀 = (stage: 시트단계) => {
+    const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
+    return stage === 'mini' ? 76 : stage === 'big' ? vh * 0.82 : vh * 0.56;
+  };
 
   /* 시트는 한 번에 하나만 (그릴링 논의? — 다섯이 같은 z-index 라 겹치면 뒤엣것이 안 보인 채 살아 있다).
      낡은 시트는 단계가 지난 뒤에도 눌려 wrong_stage 만 돌려받았다. */
@@ -879,21 +894,34 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
 
       {/* 손잡이로 키우고 줄인다 (논의82) — 시트 자체 높이는 css 가 정하고 여기서만 덮어쓴다.
           mini 는 요약 줄만 남기고 나머지(후보 목록·참가자 목록)를 시트의 overflow-y:auto 뒤로
-          넘긴다 — 지우는 게 아니라 접어 두는 것이다, 시트를 다시 키우면 그대로 있다. */}
+          넘긴다 — 지우는 게 아니라 접어 두는 것이다, 시트를 다시 키우면 그대로 있다.
+          끄는 동안(dragH 가 있을 때)은 손가락 위치를 그대로 픽셀로 반영하고 transition 을
+          끈다(안 그러면 화면이 손가락보다 늦게 따라온다) — 손을 떼면 dragH 가 비고
+          sheetStage 의 정착 값(dvh)으로 돌아가며 css 의 transition 이 그 이동을 부드럽게
+          보여 준다. */}
       <div className="sheet" style={
-        sheetStage === 'big' ? { maxHeight: '82dvh' }
+        dragH != null ? { maxHeight: `${dragH}px`, transition: 'none' }
+        : sheetStage === 'big' ? { maxHeight: '82dvh' }
         : sheetStage === 'mini' ? { maxHeight: '76px', overflow: 'hidden' }
         : undefined
       }>
         {/* 손잡이는 맨 윗줄과 요약 줄을 둘 다 잡는다 (논의82) — 사람들은 보통 요약 줄을 잡는다.
-            위로 크게 끌면 big, 아래로 크게 끌면 mini(지도 거의 전체화면), 그냥 누르면
+            끄는 동안은 시트 높이가 손가락을 그대로 따라간다(연속). 손을 떼면 mini·default·big
+            중 지금 높이와 가장 가까운 자리로 스냅한다. 그냥 누르면(끌지 않았으면)
             default ↔ big 을 오간다(mini 에서 누르면 default 로 돌아온다 — 눌러서는 못
             들어가고 끌어야만 들어가는 자리를, 눌러서는 늘 빠져나올 수 있게 한다). */}
         <div data-grip role="button" tabIndex={0} aria-expanded={sheetStage === 'big'}
-          aria-label={`시트 손잡이 — 누르면 ${sheetStage === 'default' ? '커져요' : '기본 크기로 돌아와요'}. 아래로 끌면 지도가 거의 다 보여요`}
+          aria-label={`시트 손잡이 — 누르면 ${sheetStage === 'default' ? '커져요' : '기본 크기로 돌아와요'}. 끌면 지도 크기가 손가락을 따라와요`}
           style={{ cursor: 'grab', touchAction: 'none', margin: '-14px -16px 4px', padding: '10px 16px 2px' }}
           onPointerDown={(e) => {
-            끌기.current = { y: e.clientY, moved: false };
+            /* 끌기 시작점은 **정착 자리의 제한값**(시트픽셀)이지, 지금 실제로 그려진 높이가
+               아니다 — 컨텐츠가 짧으면(후보가 몇 곳 안 되면) 시트의 실제 렌더 높이가 그
+               제한값보다 작다(max-height 라서). 실제 렌더 높이를 시작점으로 삼으면 첫
+               손짓에 시트가 그 차이만큼 훅 줄어드는 것처럼 보인다(실제로 그렇게 됐었다) —
+               우리가 끌면서 조절하는 것은 이 제한값이니 기준도 이 값이어야 손가락 밑에
+               계속 붙어 있다. */
+            const startH = 시트픽셀(sheetStage);
+            끌기.current = { y: e.clientY, startH, moved: false };
             /* 이걸 안 부르면 마우스가 이 작은 손잡이(44×45px)를 살짝만 벗어나도
                pointermove·pointerup 이 이 요소가 아니라 그 밑에 있는 다른 요소(지도 등)로
                가 버려 드래그가 끊긴다 — 실제로 그래서 끌기가 안 됐다. 지도의 같은 손짓
@@ -904,15 +932,34 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             const d = 끌기.current;
             if (!d) return;
             const dy = e.clientY - d.y;
-            if (Math.abs(dy) < 24) return;               /* 손 떨림은 끌기가 아니다 */
-            끌기.current = { y: e.clientY, moved: true };
-            setSheetStage(dy < 0 ? 'big' : 'mini');
+            /* 아주 작은 떨림만 거른다 — 연속으로 따라가야 하니 예전의 24px 문턱(그 안에서는
+               아예 안 움직이던 것)은 너무 크다. */
+            if (!d.moved && Math.abs(dy) < 4) return;
+            d.moved = true;
+            const vh = window.innerHeight;
+            /* 위로 끌면(dy 가 음수) 커지도록 -dy 를 더한다. mini~big 범위를 못 벗어나게 막는다. */
+            setDragH(Math.min(vh * 0.82, Math.max(76, d.startH - dy)));
           }}
           onPointerUp={() => {
             const d = 끌기.current;
             끌기.current = null;
-            /* 끌지 않고 눌렀으면 여닫기 — mini 에서도 default 로 돌아오는 길은 늘 눌러서 된다 */
-            if (d && !d.moved) setSheetStage((s) => (s === 'default' ? 'big' : 'default'));
+            if (!d) return;
+            if (!d.moved) {
+              /* 끌지 않고 눌렀으면 여닫기 — mini 에서도 default 로 돌아오는 길은 늘 눌러서 된다 */
+              setDragH(null);
+              setSheetStage((s) => (s === 'default' ? 'big' : 'default'));
+              return;
+            }
+            /* 끌었으면 손을 뗀 그 순간의 높이에서 가장 가까운 정착 자리로 스냅한다 */
+            const cur = dragH ?? d.startH;
+            const 자리들: 시트단계[] = ['mini', 'default', 'big'];
+            let 가장가까운: 시트단계 = 'default', 최소거리 = Infinity;
+            for (const 자리 of 자리들) {
+              const 거리 = Math.abs(cur - 시트픽셀(자리));
+              if (거리 < 최소거리) { 최소거리 = 거리; 가장가까운 = 자리; }
+            }
+            setDragH(null);
+            setSheetStage(가장가까운);
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
