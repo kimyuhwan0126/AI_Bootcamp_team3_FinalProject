@@ -865,7 +865,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             {/* 혼자면 지금 할 일은 고르는 게 아니라 사람을 부르는 것이다 (그릴링 논의39 ①) */}
             {v.me.isHost && active.length === 1 && !done_ && (
               <button className="fab primary" disabled={busy} onClick={invite}>
-                {copied ? '복사됨 — 붙여넣어 보내세요' : '＋ 친구 초대'}
+                {copied ? '복사됨' : '초대 링크 복사'}
               </button>
             )}
             {v.me.isHost && active.length > 1 && stage === 'region' && !!top && (
@@ -912,7 +912,14 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                       send({ action: 'close', force: true }); }}>정하지 않고 끝내기</button>
                 )}
                 <button className="fab" disabled={busy} onClick={openSettings}>모임 설정</button>
-                <button className="fab" disabled={busy} onClick={invite}>{copied ? '복사됨' : '＋ 초대'}</button>
+                {/* 방장이 혼자일 땐 주 액션(위 '초대 링크 복사')이 이미 떠 있다 — 더보기에도
+                    같은 초대 버튼을 또 넣으면 한 화면에 초대 UI 가 둘로 보인다. 사람이 하나라도
+                    모이고 나면 주 액션이 다른 것으로 바뀌므로 그때부터는 여기가 유일한 초대 길이다. */}
+                {!(v.me.isHost && active.length === 1 && !done_) && (
+                  <button className="fab" disabled={busy} onClick={invite}>
+                    {copied ? '복사됨' : '초대 링크 복사'}
+                  </button>
+                )}
                 {/* 방장에게는 안 그린다 — 서버가 409 로 막는 단추다(논의125). 눌러야만 안 되는 것을
                     알게 되는 단추는 거짓말이다(논의105). 방장이 빠지는 길은 바로 옆 [모임 설정] 안의
                     [✕ 모임 삭제] 하나뿐이다. */}
