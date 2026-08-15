@@ -81,7 +81,9 @@ const 재기 = () => {
   };
   const pins = [...document.querySelectorAll('.opin')].map((n) =>
     ({ ...상자(n), text: n.textContent.trim(), tag: n.tagName }));
-  const fixed = [...document.querySelectorAll('.ozoom,.ocred,.acts .fab,.acts-fix .fab')].map(상자);
+  /* 방장 도구는 이제 스피드다이얼(.dial-item·.dial-toggle)이다 — 알약(.acts .fab)과
+     따로 뜬다. 둘 다 지도 위에 얹히는 '고정 자리'라 이름표와의 겹침 검사에 함께 넣는다. */
+  const fixed = [...document.querySelectorAll('.ozoom,.ocred,.acts .fab,.dial-item,.dial-toggle')].map(상자);
   return {
     W: m.width, H: m.height, pins, fixed,
     /* 점은 두 가지다 — 옮긴 이름표가 가리키는 원래 자리, 그리고 이름표 한도(논의67)를 넘어 묶인 곳.

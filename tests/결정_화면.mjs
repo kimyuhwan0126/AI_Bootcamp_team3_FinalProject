@@ -284,7 +284,7 @@ async function 손잡이시험(code, 방장) {
   });
   const 떴다 = await 다시해도(async () => {
     if (!(await page.$('.msheet'))) {
-      if (!(await page.$('text=모임 설정'))) await page.click('.acts-fix .fab');   /* ⋯ 더보기 */
+      if (!(await page.$('text=모임 설정'))) await page.click('.dial-toggle');   /* ⋯ 더보기 — 스피드다이얼 */
       await page.click('text=모임 설정');
       await page.waitForSelector('.msheet');
     }
@@ -312,13 +312,13 @@ async function 되돌리기시험() {
   await 핑(code, 영희, { kind: 'place', refId: 'k1', name: '연남카페', lat: 37.5626, lng: 126.9257 });
 
   const page = await 열기(code, 방장);
-  await page.click('.acts-fix .fab');
+  await page.click('.dial-toggle');
   const 이름 = await page.evaluate(() => {
-    const b = Array.from(document.querySelectorAll('.acts .fab')).find((x) => x.textContent.includes('‹'));
+    const b = Array.from(document.querySelectorAll('.dial-item .lb')).find((x) => /고르기|뒤로/.test(x.textContent));
     return b ? b.textContent.trim() : null;
   });
   ok('논의113 지점 단계에서는 단추가 "지점 다시 고르기" 라고 적는다',
-    이름 === '‹ 지점 다시 고르기', 이름);
+    이름 === '지점 다시 고르기', 이름);
 
   let 물음 = '';
   page.on('dialog', async (d) => { 물음 = d.message(); await d.dismiss(); });
@@ -334,12 +334,12 @@ async function 되돌리기시험() {
   await api(`/api/m/${code}`, { method: 'POST', cookie: 방장, body: { action: 'confirm', candidateId: 지점.id } });
   const 결과 = await 될때까지(async () => (await 보기(code, 방장)).meeting.stage === 'result', 10000);
   const page2 = await 열기(code, 방장);
-  await page2.click('.acts-fix .fab');
+  await page2.click('.dial-toggle');
   const 이름2 = await page2.evaluate(() => {
-    const b = Array.from(document.querySelectorAll('.acts .fab')).find((x) => x.textContent.includes('‹'));
+    const b = Array.from(document.querySelectorAll('.dial-item .lb')).find((x) => /고르기|뒤로/.test(x.textContent));
     return b ? b.textContent.trim() : null;
   });
-  ok('논의113 결과 단계에서는 "한 칸 뒤로" 다', 결과 && 이름2 === '‹ 한 칸 뒤로', 이름2);
+  ok('논의113 결과 단계에서는 "한 칸 뒤로" 다', 결과 && 이름2 === '한 칸 뒤로', 이름2);
   let 물음2 = '';
   page2.on('dialog', async (d) => { 물음2 = d.message(); await d.accept(); });
   await page2.click('text=한 칸 뒤로');
@@ -487,12 +487,12 @@ async function 추천치우기시험() {
     () => api(`/api/m/${code}`, { method: 'POST', cookie: 방장,
       body: { action: 'update', meetAt: '2026-09-30T18:00' } }),
     () => 글있나(page, 'AI가올린곳'), 8);
-  const 단추 = await 다시해도(() => page.click('.acts-fix .fab'), () => 글있나(page, '추천 치우기'));
+  const 단추 = await 다시해도(() => page.click('.dial-toggle'), () => 글있나(page, '추천 치우기'));
   ok('논의94 AI 가 올린 곳이 있으면 "추천 치우기" 단추가 보인다', 보인다 && 단추,
     (await 글(page)).replace(/\s+/g, ' ').slice(0, 160));
   page.on('dialog', (d) => d.accept());
   const 보냈다 = await 다시해도(async () => {
-    if (!(await page.$('text=추천 치우기'))) await page.click('.acts-fix .fab');
+    if (!(await page.$('text=추천 치우기'))) await page.click('.dial-toggle');
     await page.click('text=추천 치우기');
   }, async () => 보낸것?.action === 'clearAi');
   ok('논의94 누르면 한 번에 치우라고 서버에 보낸다', 보냈다, JSON.stringify(보낸것));
@@ -551,7 +551,7 @@ async function 설정열람시험() {
     body: { action: 'update', meetAt: '2026-09-21T19:00' } });
 
   const page = await 열기(code, 영희);
-  await page.click('.acts-fix .fab');
+  await page.click('.dial-toggle');
   const 있다 = await 글있나(page, '모임 설정');
   ok('논의118 참여자에게도 모임 설정을 여는 길이 있다', 있다);
   if (있다) {
@@ -681,7 +681,7 @@ async function 넘겨받은것시험() {
   });
 
   const 남음 = await 다시해도(async () => {
-    if (!(await page.$('text=AI 추천'))) await page.click('.acts-fix .fab');
+    if (!(await page.$('text=AI 추천'))) await page.click('.dial-toggle');
     await page.click('text=AI 추천');
   }, () => 글있나(page, '2번 남음'));
   ok('논의93 AI 를 부르면 남은 횟수를 화면이 말한다', 남음,
@@ -689,7 +689,7 @@ async function 넘겨받은것시험() {
 
   page.on('dialog', (d) => d.accept());
   const 닫았다 = await 다시해도(async () => {
-    if (!(await page.$('text=정하지 않고 끝내기'))) await page.click('.acts-fix .fab');
+    if (!(await page.$('text=정하지 않고 끝내기'))) await page.click('.dial-toggle');
     await page.click('text=정하지 않고 끝내기');
   }, async () => 닫기본문?.force === true);
   ok('논의106 "정하지 않고 끝내기" 가 방장 도구에 있고 force 를 실어 보낸다',
