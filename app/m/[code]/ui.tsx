@@ -177,8 +177,12 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
      한 번 더 눌러야 후보가 된다. 다른 곳을 누르면 미리보기가 그리로 옮겨간다. */
   const [preview, setPreview] = useState<
     { kind: Kind; refId: string; name: string; lat: number; lng: number; address?: string } | null>(null);
-  /* 시트는 손잡이로 키우고 줄인다 (논의82) — 손잡이는 맨 윗줄과 요약 줄 둘 다 */
-  const [sheetBig, setSheetBig] = useState(false);
+  /* 시트는 손잡이로 키우고 줄인다 (논의82) — 손잡이는 맨 윗줄과 요약 줄 둘 다.
+     세 자리다: mini(요약 줄만 남기고 지도를 거의 다 보여 준다) · default(기본) · big(시트를 키운다).
+     ⚠ 2026-08-15 — mini 가 여기 없었다. 예전판(v8)엔 '지도 전체화면 보기' 라는 이름으로 있던
+     것이 재작성 때 안 옮겨 왔다 — 사람이 실제로 찾다가 없어진 것을 알아챘다. */
+  type 시트단계 = 'mini' | 'default' | 'big';
+  const [sheetStage, setSheetStage] = useState<시트단계>('default');
   /* 지난 모임은 확정된 곳만 크게, 기록은 접어 둔다 (논의74) */
   const [howOpen, setHowOpen] = useState(false);
   /* 알림 쪽지는 시트가 올라오면 그 위로 (논의108) — 평소엔 css 가 정한 화면 위쪽.
@@ -873,12 +877,20 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
         )}
       </div>
 
-      {/* 손잡이로 키우고 줄인다 (논의82) — 시트 자체 높이는 css 가 정하고 여기서만 덮어쓴다 */}
-      <div className="sheet" style={sheetBig ? { maxHeight: '82dvh' } : undefined}>
+      {/* 손잡이로 키우고 줄인다 (논의82) — 시트 자체 높이는 css 가 정하고 여기서만 덮어쓴다.
+          mini 는 요약 줄만 남기고 나머지(후보 목록·참가자 목록)를 시트의 overflow-y:auto 뒤로
+          넘긴다 — 지우는 게 아니라 접어 두는 것이다, 시트를 다시 키우면 그대로 있다. */}
+      <div className="sheet" style={
+        sheetStage === 'big' ? { maxHeight: '82dvh' }
+        : sheetStage === 'mini' ? { maxHeight: '76px', overflow: 'hidden' }
+        : undefined
+      }>
         {/* 손잡이는 맨 윗줄과 요약 줄을 둘 다 잡는다 (논의82) — 사람들은 보통 요약 줄을 잡는다.
-            끌면 커지고 줄고, 그냥 누르면 접었다 편다. */}
-        <div data-grip role="button" tabIndex={0} aria-expanded={sheetBig}
-          aria-label={`시트 손잡이 — 누르면 ${sheetBig ? '줄어들어요' : '커져요'}`}
+            위로 크게 끌면 big, 아래로 크게 끌면 mini(지도 거의 전체화면), 그냥 누르면
+            default ↔ big 을 오간다(mini 에서 누르면 default 로 돌아온다 — 눌러서는 못
+            들어가고 끌어야만 들어가는 자리를, 눌러서는 늘 빠져나올 수 있게 한다). */}
+        <div data-grip role="button" tabIndex={0} aria-expanded={sheetStage === 'big'}
+          aria-label={`시트 손잡이 — 누르면 ${sheetStage === 'default' ? '커져요' : '기본 크기로 돌아와요'}. 아래로 끌면 지도가 거의 다 보여요`}
           style={{ cursor: 'grab', touchAction: 'none', margin: '-14px -16px 4px', padding: '10px 16px 2px' }}
           onPointerDown={(e) => {
             끌기.current = { y: e.clientY, moved: false };
@@ -894,15 +906,19 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             const dy = e.clientY - d.y;
             if (Math.abs(dy) < 24) return;               /* 손 떨림은 끌기가 아니다 */
             끌기.current = { y: e.clientY, moved: true };
-            setSheetBig(dy < 0);
+            setSheetStage(dy < 0 ? 'big' : 'mini');
           }}
           onPointerUp={() => {
             const d = 끌기.current;
             끌기.current = null;
-            if (d && !d.moved) setSheetBig(!sheetBig);    /* 끌지 않고 눌렀으면 여닫기 */
+            /* 끌지 않고 눌렀으면 여닫기 — mini 에서도 default 로 돌아오는 길은 늘 눌러서 된다 */
+            if (d && !d.moved) setSheetStage((s) => (s === 'default' ? 'big' : 'default'));
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheetBig(!sheetBig); }
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setSheetStage((s) => (s === 'default' ? 'big' : 'default'));
+            }
           }}>
           <div aria-hidden style={{ width: 44, height: 5, borderRadius: 999,
             background: 'var(--line)', margin: '0 auto 8px' }} />
