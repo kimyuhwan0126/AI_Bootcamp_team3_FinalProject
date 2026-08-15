@@ -26,7 +26,7 @@ const DB = 읽기('lib/db.ts');
 const TYPES = 읽기('lib/types.ts');
 const GEOROUTE = 읽기('app/api/geo/route.ts');
 const ORIGIN = 읽기('app/originfield.tsx');
-const SCHEMA = readFileSync(new URL('../../schema_v2.sql', import.meta.url), 'utf8');
+const SCHEMA = readFileSync(new URL('../schema_v2.sql', import.meta.url), 'utf8');
 
 function person() {
   const jar = new Map();
