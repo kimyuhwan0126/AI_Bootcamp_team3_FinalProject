@@ -103,38 +103,55 @@ export default function OsmMap({
     return () => ro.disconnect();
   }, []);
 
-  /* 후보가 생기면 처음 한 번만 다 담는다 — 카카오 쪽과 같은 규칙.
-     확정된 지역이 바뀐 순간에도 다시 맞춘다. 그때뿐이다 —
-     손으로 옮긴 지도를 남이 찍을 때마다 되돌리면 지도를 뺏는 셈이다 (그릴링 논의32). */
-  const fitted = useRef(false);
-  const 앞중심 = useRef(center);
-  useEffect(() => {
-    const 지역바뀜 = center.lat !== 앞중심.current.lat || center.lng !== 앞중심.current.lng;
-    앞중심.current = center;
-    if (지역바뀜) fitted.current = false;
-    if (fitted.current) return;
-    if (!candidates.length) {
-      /* 지점 단계로 막 넘어왔다 — 후보는 아직 없고 확정된 지역만 있다.
-         동네 하나가 다 보이는 배율(z=15)이면 어디서 골라야 할지 보인다. */
-      if (지역바뀜) { setC(center); setZ(15); }
-      return;
-    }
-    fitted.current = true;
-    const la = candidates.map((k) => k.lat), ln = candidates.map((k) => k.lng);
+  /* 주어진 점들이 다 담기는 가운데·배율을 잰다 — 후보 담기와 출발지 담기가 같은 식을 쓴다
+     (아래에서 둘 다 부른다). 배율은 실제 지도 요소의 폭·높이로 잰다 — 1024px 같은 어림수로
+     잡던 때는 점이 셋이든 스물이든 늘 같은 배율이 나와 첫 화면에 이름표가 하나도 없었다. */
+  const 담는배치 = (pts: { lat: number; lng: number }[]) => {
+    const la = pts.map((k) => k.lat), ln = pts.map((k) => k.lng);
     const 가운데 = { lat: (Math.min(...la) + Math.max(...la)) / 2, lng: (Math.min(...ln) + Math.max(...ln)) / 2 };
-    setC(가운데);
     /* 한 곳뿐이거나 다 붙어 있으면 외접상자가 0이라 배율이 끝까지 튄다 — 동네만큼은 남긴다 */
     const 반y = Math.max((Math.max(...la) - Math.min(...la)) / 2, 0.002);
     const 반x = Math.max((Math.max(...ln) - Math.min(...ln)) / 2, 0.002);
     const 위 = toPx(가운데.lat + 반y, 가운데.lng - 반x, 0);
     const 아래 = toPx(가운데.lat - 반y, 가운데.lng + 반x, 0);
-    /* 배율은 실제 지도 요소의 폭·높이로 잰다. 1024px 같은 어림수로 잡던 때는
-       후보가 셋이든 스물이든 늘 같은 배율이 나와 첫 화면에 이름표가 하나도 없었다. */
     const el = box.current;
     const w = el?.clientWidth || size.w, h = el?.clientHeight || size.h;
     const 맞는배율 = Math.log2(Math.min((w * FIT) / (아래.x - 위.x), (h * FIT) / (아래.y - 위.y)));
-    setZ(Math.max(3, Math.min(18, 맞는배율)));
-  }, [candidates, center.lat, center.lng]);   // eslint-disable-line react-hooks/exhaustive-deps
+    return { 가운데, z: Math.max(3, Math.min(18, 맞는배율)) };
+  };
+
+  /* 후보가 생기면 처음 한 번만 다 담는다 — 카카오 쪽과 같은 규칙.
+     확정된 지역이 바뀐 순간에도 다시 맞춘다. 그때뿐이다 —
+     손으로 옮긴 지도를 남이 찍을 때마다 되돌리면 지도를 뺏는 셈이다 (그릴링 논의32). */
+  const fitted = useRef(false);
+  /* 후보도 지역도 아직 없는 첫 화면 — 참가자들의 출발지를 담는다(실사용 신고, 2026-08-15).
+     후보 담기와 따로 두는 까닭: 후보가 하나라도 생기면 그쪽이 우선이고, 출발지 담기는
+     그 전까지 딱 한 번만 있으면 되는 일이다. */
+  const originsFitted = useRef(false);
+  const 앞중심 = useRef(center);
+  useEffect(() => {
+    const 지역바뀜 = center.lat !== 앞중심.current.lat || center.lng !== 앞중심.current.lng;
+    앞중심.current = center;
+    if (지역바뀜) { fitted.current = false; originsFitted.current = false; }
+    if (fitted.current) return;
+    if (!candidates.length) {
+      /* 지점 단계로 막 넘어왔다 — 후보는 아직 없고 확정된 지역만 있다.
+         동네 하나가 다 보이는 배율(z=15)이면 어디서 골라야 할지 보인다. */
+      if (지역바뀜) { setC(center); setZ(15); return; }
+      /* 아직 지역도 안 정한 첫 화면일 때만 — 지점 단계(region 이 있음)에서 후보가
+         아직 없는 것과 혼동하면 안 된다. 그건 위 '지역바뀜' 갈래가 이미 다뤘고, 여기서
+         또 손대면 방금 정한 지역 대신 참가자들의 집 근처로 지도가 튄다(실제로 재현됨). */
+      if (!region && !originsFitted.current && origins && origins.length >= 2) {
+        originsFitted.current = true;
+        const { 가운데, z: 맞는배율 } = 담는배치(origins);
+        setC(가운데); setZ(맞는배율);
+      }
+      return;
+    }
+    fitted.current = true;
+    const { 가운데, z: 맞는배율 } = 담는배치(candidates);
+    setC(가운데); setZ(맞는배율);
+  }, [candidates, origins, region, center.lat, center.lng]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
