@@ -187,18 +187,9 @@ export default function TimePicker({ id, value, onChange, readOnly, hint }: Time
               </div>
             ) : (
               <>
-                <div className="tpDigital">
-                  <div className="tpAmPm">
-                    <button type="button" aria-pressed={!오후} onClick={() => set오후(false)}>오전</button>
-                    <button type="button" aria-pressed={오후} onClick={() => set오후(true)}>오후</button>
-                  </div>
-                  <div className="tpBig">
-                    <button type="button" aria-pressed={다이얼 === '시'} onClick={() => set다이얼('시')}>{시12}</button>
-                    <span>:</span>
-                    <button type="button" aria-pressed={다이얼 === '분'} onClick={() => set다이얼('분')}>{pad2(분)}</button>
-                  </div>
-                </div>
-
+                {/* 달력을 먼저 — 날짜 고르고 바로 아래 파란 시간창·시계로 눈이 내려가면 된다.
+                    예전엔 [시간창]-[달력]-[시계] 순서라 시계를 만질 때마다 맨 위 시간창까지
+                    눈이 오르내렸다(실사용 피드백). */}
                 <div className="tpcal-hd">
                   <button type="button" aria-label="이전 달" onClick={() => 달옮기(-1)}>‹</button>
                   <strong>{보는년}년 {보는월}월</strong>
@@ -214,6 +205,18 @@ export default function TimePicker({ id, value, onChange, readOnly, hint }: Time
                       data-today={오늘.getFullYear() === 보는년 && 오늘.getMonth() + 1 === 보는월 && 오늘.getDate() === d ? '' : undefined}
                       onClick={() => set날({ y: 보는년, mo: 보는월, d })}>{d}</button>
                   ))}
+                </div>
+
+                <div className="tpDigital">
+                  <div className="tpAmPm">
+                    <button type="button" aria-pressed={!오후} onClick={() => set오후(false)}>오전</button>
+                    <button type="button" aria-pressed={오후} onClick={() => set오후(true)}>오후</button>
+                  </div>
+                  <div className="tpBig">
+                    <button type="button" aria-pressed={다이얼 === '시'} onClick={() => set다이얼('시')}>{시12}</button>
+                    <span>:</span>
+                    <button type="button" aria-pressed={다이얼 === '분'} onClick={() => set다이얼('분')}>{pad2(분)}</button>
+                  </div>
                 </div>
 
                 <div className="tpclock" ref={face}
