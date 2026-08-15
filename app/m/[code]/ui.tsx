@@ -859,7 +859,10 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             origins={withOrigin.map((p) => ({ name: p.origin_name ?? '', lat: p.lat!, lng: p.lng! }))}
           />
         )}
-        {!v.meeting.closed_at && (
+        {/* 도구(스피드다이얼)가 펴져 있는 동안은 주 액션을 감춘다 — 안 그러면 다이얼이
+            자라며 이 알약과 겹친다. 마침 다이얼이 열린 동안은 눈길이 도구 쪽에 가 있다 —
+            닫으면 바로 되돌아온다. */}
+        {!v.meeting.closed_at && !tools && (
           <div className="acts">
             {/* 지금 할 수 없는 주 액션은 감춘다 (그릴링 논의30 ①) —
                 꺼진 채로 파랗게 남으면 눌릴 것처럼 보인다. */}
@@ -887,60 +890,86 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                 {kind === 'region' ? '지역 고르기' : '지점 고르기'}
               </button>
             )}
+          </div>
+        )}
+        {/* 방장 도구 — 스피드다이얼 FAB (지도를 가장 넓게 쓰는 방식).
+           접힌 채로는 파란 동그라미(⋯) 하나뿐이고, 펴면 도구마다 이름표+아이콘 한 줄이
+           그 위로 쌓인다. 알약이 나란히 쌓여 지도 오른쪽을 세로로 다 덮던 옛 모습을 없앴다. */}
+        {!v.meeting.closed_at && v.me.participantId && (
+          <>
+            {/* 다이얼이 펴져 있으면 지도를 살짝 덮는다 — 안 그러면 다이얼 항목이 후보
+                핀 이름표를 그대로 가려 눌러도 핀이 아니라 다이얼이 잡혔다(실측으로 확인).
+                눌러서 닫는 길도 겸한다. */}
+            {tools && <button className="dialscrim" aria-label="도구 닫기" onClick={() => setTools(false)} />}
+          <div className="dial">
+            {/* 더보기는 '이 모임 사람'에게만. 링크만 받은 사람에게도 떠서
+                누르면 403 이 났다(전수 조사에서 확인).
+                참여자에게도 연다 (논의118) — 안에 모임 설정이 있고, 참여자는 보기만 한다. */}
+            <button className="dial-toggle" aria-expanded={tools}
+              aria-label={tools ? '도구 닫기' : '방장 도구 더보기'}
+              onClick={() => setTools(!tools)}>{tools ? '✕' : '⋯'}</button>
             {tools && (
               <>
                 {v.me.isHost && (
-                  <button className="fab" disabled={busy || aiBusy} onClick={추천받기}>
-                    {aiBusy ? '✦ 찾는 중…'
-                      : aiLeft == null ? '✦ AI 추천' : `✦ AI 추천 (${aiLeft}번 남음)`}
+                  <button className="dial-item" disabled={busy || aiBusy} onClick={추천받기}>
+                    <span className="lb">
+                      {aiBusy ? '찾는 중…' : aiLeft == null ? 'AI 추천' : `AI 추천 (${aiLeft}번 남음)`}
+                    </span>
+                    <span className="ic" aria-hidden>✦</span>
                   </button>
                 )}
                 {/* AI 것은 0표여도 안 사라진다 (논의53) — 치울 길을 함께 둔다 (논의94) */}
                 {v.me.isHost && ai후보수 > 0 && (
-                  <button className="fab" disabled={busy}
+                  <button className="dial-item" disabled={busy}
                     onClick={() => { if (window.confirm(`AI 가 올린 ${ai후보수}곳을 치울까요? 누군가 고른 곳은 남아요.`))
-                      send({ action: 'clearAi' }); }}>✦ 추천 치우기</button>
+                      send({ action: 'clearAi' }); }}>
+                    <span className="lb">추천 치우기</span>
+                    <span className="ic" aria-hidden>⌫</span>
+                  </button>
                 )}
                 {/* 되돌리기 — 글자가 무게를 말한다 (논의113) */}
                 {v.me.isHost && stage !== 'region' && (
-                  <button className="fab" disabled={busy} onClick={되돌리기}>‹ {되돌리기이름}</button>
+                  <button className="dial-item" disabled={busy} onClick={되돌리기}>
+                    <span className="lb">{되돌리기이름}</span>
+                    <span className="ic" aria-hidden>‹</span>
+                  </button>
                 )}
                 {/* 약속은 깨지기도 한다 — 지우지 않고 닫는 길 (논의106).
                     되돌릴 수 없으니 한 번 더 묻는다. */}
                 {v.me.isHost && !done_ && (
-                  <button className="fab" disabled={busy}
+                  <button className="dial-item" disabled={busy}
                     onClick={() => { if (window.confirm('아무 곳도 정하지 않고 끝낼까요? 지난 모임으로 남고 더는 못 고쳐요.'))
-                      send({ action: 'close', force: true }); }}>정하지 않고 끝내기</button>
+                      send({ action: 'close', force: true }); }}>
+                    <span className="lb">정하지 않고 끝내기</span>
+                    <span className="ic" aria-hidden>■</span>
+                  </button>
                 )}
-                <button className="fab" disabled={busy} onClick={openSettings}>모임 설정</button>
+                <button className="dial-item" disabled={busy} onClick={openSettings}>
+                  <span className="lb">모임 설정</span>
+                  <span className="ic" aria-hidden>⚙</span>
+                </button>
                 {/* 방장이 혼자일 땐 주 액션(위 '초대 링크 복사')이 이미 떠 있다 — 더보기에도
                     같은 초대 버튼을 또 넣으면 한 화면에 초대 UI 가 둘로 보인다. 사람이 하나라도
                     모이고 나면 주 액션이 다른 것으로 바뀌므로 그때부터는 여기가 유일한 초대 길이다. */}
                 {!(v.me.isHost && active.length === 1 && !done_) && (
-                  <button className="fab" disabled={busy} onClick={invite}>
-                    {copied ? '복사됨' : '초대 링크 복사'}
+                  <button className="dial-item" disabled={busy} onClick={invite}>
+                    <span className="lb">{copied ? '복사됨' : '초대 링크 복사'}</span>
+                    <span className="ic" aria-hidden>＋</span>
                   </button>
                 )}
                 {/* 방장에게는 안 그린다 — 서버가 409 로 막는 단추다(논의125). 눌러야만 안 되는 것을
                     알게 되는 단추는 거짓말이다(논의105). 방장이 빠지는 길은 바로 옆 [모임 설정] 안의
                     [✕ 모임 삭제] 하나뿐이다. */}
                 {!v.me.isHost && (
-                  <button className="fab" disabled={busy} onClick={leave}>나가기</button>
+                  <button className="dial-item" disabled={busy} onClick={leave}>
+                    <span className="lb">나가기</span>
+                    <span className="ic" aria-hidden>↩</span>
+                  </button>
                 )}
               </>
             )}
           </div>
-        )}
-        {/* 여닫는 버튼은 스택 밖에 둔다 — 도구가 넘쳐 스크롤돼도 닫는 길은 늘 보여야 한다 (논의31 ②) */}
-        {!v.meeting.closed_at && (
-          <div className="acts-fix">
-            {/* 더보기는 '이 모임 사람'에게만. 링크만 받은 사람에게도 떠서
-                누르면 403 이 났다(전수 조사에서 확인).
-                참여자에게도 연다 (논의118) — 안에 모임 설정이 있고, 참여자는 보기만 한다. */}
-            {v.me.participantId
-              ? <button className="fab" onClick={() => setTools(!tools)}>{tools ? '✕ 닫기' : '⋯ 더보기'}</button>
-              : null}
-          </div>
+          </>
         )}
       </div>
 

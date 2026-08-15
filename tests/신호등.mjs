@@ -370,18 +370,18 @@ console.log('\n[I10] 추천 치우기 — 누르면 AI 것만 사라진다');
   await page.bringToFront();
   const 보인다 = await 될때까지(() => 글있나(page, 'AI혼자'), 10000);
   ok('AI 가 올린 곳이 화면에 보인다', 보인다, (await 글(page)).replace(/\s+/g, ' ').slice(0, 160));
-  const 단추 = await 다시해도(() => page.click('.acts-fix .fab'), () => 글있나(page, '추천 치우기'));
+  const 단추 = await 다시해도(() => page.click('.dial-toggle'), () => 글있나(page, '추천 치우기'));
   ok('논의94 AI 가 올린 0표 후보가 있으면 "추천 치우기" 가 보인다', 단추);
 
   page.on('dialog', (d) => d.accept());
-  /* 방장 도구 안의 단추만 집는다 — 화면 어딘가에 같은 글자가 또 있으면 그쪽이 먼저 잡힌다 */
-  const 치우기단추 = page.locator('.acts button', { hasText: '추천 치우기' });
+  /* 방장 도구(스피드다이얼) 안의 단추만 집는다 — 화면 어딘가에 같은 글자가 또 있으면 그쪽이 먼저 잡힌다 */
+  const 치우기단추 = page.locator('.dial-item', { hasText: '추천 치우기' });
   const 사라졌나 = async () => !(await 보기(code, 방장)).candidates.some((c) => c.name === 'AI혼자');
   let 클릭오류 = '';
   let 치웠다 = false;
   for (let i = 0; i < 4 && !치웠다; i++) {
     try {
-      if (!(await 치우기단추.count())) await page.click('.acts-fix .fab');
+      if (!(await 치우기단추.count())) await page.click('.dial-toggle');
       await 치우기단추.click({ timeout: 8000 });
     } catch (e) { 클릭오류 = String(e?.message ?? e).split('\n')[0]; }
     치웠다 = await 될때까지(사라졌나, 5000);
