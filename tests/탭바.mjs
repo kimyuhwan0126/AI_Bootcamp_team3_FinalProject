@@ -3,9 +3,11 @@
 
    무엇을 못 박나
      O1 탭바가 `/` `/meetings` `/me` 세 곳에 뜨는가 · 지금 탭이 표시되는가
-     O2 `/new` `/join/*` `/m/*` 에는 안 뜨는가 (몰입해야 하는 자리)
+     O2 `/new` `/join/*` `/m/<모르는코드>` 에는 안 뜨는가 (몰입해야 하는 자리)
      O3 탭을 눌러 서로 오갈 수 있는가
-     O4 **만들기가 `/new` 에서 여전히 되는가** — 옮기다 흐름을 깨면 여기서 빨간불
+     O4 **만들기가 `/new` 에서 여전히 되는가** — 옮기다 흐름을 깨면 여기서 빨간불.
+        방장은 자기 모임 화면(`/m/<코드>`)에도 탭바가 있어야 한다(2026-08-15) — 그 모임만
+        보는 게 아니라서. O4b 는 같은 모임에서 **참가자**는 그대로 안 뜨는 것을 잰다.
      O5 430×900 · 390×844 에서 탭바가 안 잘리는가 · 본문이 탭바 뒤에 안 숨는가
      O6 탭바가 시트·모달(층 20~23)보다 아래인가
 
@@ -186,8 +188,41 @@ try {
       await p.waitForURL(/\/m\/[A-Z0-9]{6}$/, { timeout: 20000 });
       코드 = new URL(p.url()).pathname.split('/').pop();
       ok('모임이 만들어져 모임 화면으로 간다', /^[A-Z0-9]{6}$/.test(코드 || ''), 코드 || '못 갔다');
-      ok('모임 화면에는 탭바가 없다', (await 탭바재기(p)) === null);
+
+      /* 방장은 그 모임만 보는 게 아니다 — 모임 화면에도 탭바가 있어야 딴 데로 돌아갈 길이 있다
+         (실사용 신고, 2026-08-15). 탭바는 /api/mine 왕복 뒤에 뜬다 — 폴링해서 기다린다. */
+      await p.waitForSelector('nav.tabbar', { timeout: 8000 }).catch(() => {});
+      const 방장탭바 = await 탭바재기(p);
+      ok('방장에게는 모임 화면에도 탭바가 있다', !!방장탭바);
+      if (방장탭바) {
+        ok('그 탭바도 탭이 셋 그대로다', 방장탭바.탭.length === 3, String(방장탭바.탭.length));
+        /* /m/<코드> 는 세 주소(/·/meetings·/me) 어디와도 안 같다 — 억지로 하나를 켜진 것처럼
+           속이지 않는다(주소 얼개 표의 "정확히 같을 때만 켠다" 규칙을 그대로 지킨다) */
+        ok('모임 화면에서는 어느 탭도 억지로 지금 탭이 되지 않는다', 방장탭바.탭.every((x) => !x.지금));
+      }
     } catch (e) { ok('만들기 흐름 시험', false, String(e).split('\n')[0]); }
+
+    /* ── O4b · 참가자에게는 그대로 없다 ─────────────────────── */
+    if (코드) {
+      try {
+        const 영희r = await fetch(`${BASE}/api/m/${코드}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'join', name: '영희', origin: '성수역', lat: 37.5446, lng: 127.056, transport: 'transit' }),
+        });
+        const 영희쿠키 = (영희r.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]);
+        const { ctx: 영희ctx, p: 영희p } = await 새창();
+        await 영희ctx.addCookies(영희쿠키.filter(Boolean).map((c) => {
+          const i = c.indexOf('='); return { name: c.slice(0, i), value: c.slice(i + 1), domain: new URL(BASE).hostname, path: '/' };
+        }));
+        await 열기(영희p, `/m/${코드}`);
+        /* 방장과 달리 이 사람은 자기 모임이 이거 하나뿐이라도 탭바가 없어야 한다 —
+           링크 하나 타고 들어온 사람에게 딴 데로 새는 길을 새로 만들 필요는 없다 */
+        await 영희p.waitForTimeout(1500);   /* 방장 쪽과 같은 왕복 시간을 준 뒤에 '없다' 를 확인한다 */
+        ok('참가자에게는 모임 화면에 탭바가 없다', (await 탭바재기(영희p)) === null);
+        await 영희ctx.close();
+      } catch (e) { ok('참가자 탭바 없음 시험', false, String(e).split('\n')[0]); }
+    }
+
     /* 내가 만든 모임만 치운다 */
     if (코드) {
       try {
