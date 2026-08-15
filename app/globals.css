@@ -67,8 +67,12 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
    보였다(align-items:flex-end 로 늘어나던 것은 고쳤지만, '짧다·길다' 자체가
    뒤섞여 있는 건 그대로였다) — 여기 남은 건 이제 주 액션 알약뿐이라 176px 는
    그 알약들끼리만 맞추면 된다. 더보기 안의 도구는 아래 .dial 로 옮겨 갔다
-   (스피드다이얼 — 지도를 가장 넓게 쓰는 방식). */
-.acts .fab{width:176px}
+   (스피드다이얼 — 지도를 가장 넓게 쓰는 방식).
+   ⚠ 2026-08-15 — 176px 는 다이얼로 옮겨 가기 전, "정하지 않고 끝내기"(162.5px)까지
+   맞추던 값을 그대로 남겨 뒀던 것이다. 지금 이 자리에 남는 글자 중 가장 긴 것은
+   "초대 링크 복사"(실측 132.5px)뿐인데 176px 를 그대로 뒀더니, 확정 단추 하나만
+   떠 있을 때 유난히 크고 헐렁해 보였다(실제 화면 신고) — 지금 글자에 맞춰 줄인다. */
+.acts .fab{width:144px}
 .fab{min-height:var(--tap);border:0;border-radius:22px;background:var(--surface);box-shadow:0 4px 14px rgba(20,26,40,.16);padding:0 16px;font-weight:800;cursor:pointer}
 .fab.primary{background:var(--brand);color:#fff}
 
