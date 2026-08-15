@@ -20,7 +20,11 @@ button{font:inherit}
 .hd h1{font-size:16px;font-weight:800;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{font-size:11.5px;font-weight:800;color:var(--brand);background:#eaf0ff;padding:4px 9px;border-radius:999px;white-space:nowrap}
 .map{flex:1;min-height:300px;position:relative;background:#e9eef6}
-.sheet{border-top:1px solid var(--line);background:var(--surface);max-height:56dvh;overflow-y:auto;padding:14px 16px 18px}
+.sheet{border-top:1px solid var(--line);background:var(--surface);max-height:56dvh;overflow-y:auto;padding:14px 16px 18px;
+  /* 손 뗀 뒤 정착 자리로 스냅할 때만 이 이동이 눈에 보인다 — 끄는 동안은 ui.tsx 가
+     인라인 style 로 transition:none 을 덮어써서 손가락과 어긋나지 않게 즉시 반응한다. */
+  transition:max-height .22s cubic-bezier(.2,.8,.3,1)}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}}
 .note{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--ink-2);margin:10px 0}
 .warn{color:var(--danger);font-weight:800}
 .row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:7px;min-height:var(--tap);background:var(--surface);width:100%;text-align:left;cursor:pointer}
