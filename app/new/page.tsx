@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import OriginField, { type Origin, type Transport } from '../originfield';
+import TimePicker from '../timepicker';
 import { 엿보기, 내려놓기, 만들던것담기, 만들던것꺼내기 } from '@/lib/넘기기';
 import { 이동수단 } from '@/lib/이동수단';
 
@@ -154,12 +155,7 @@ export default function New() {
         <OriginField origin={origin} setOrigin={setOrigin}
           transport={transport} setTransport={setTransport} />
 
-        <div className="fld">
-          <label htmlFor="mt">약속 시간</label>
-          <input id="mt" type="datetime-local" value={meetAt}
-                 onChange={(e) => setMeetAt(e.target.value)} />
-          <p className="mut" style={{ margin: '6px 0 0' }}>아직 안 정했으면 비워 두세요 — 나중에 설정에서 넣을 수 있어요.</p>
-        </div>
+        <TimePicker id="mt" value={meetAt} onChange={setMeetAt} />
 
         <div className="fld">
           <label htmlFor="sc">어디까지 정할까요</label>

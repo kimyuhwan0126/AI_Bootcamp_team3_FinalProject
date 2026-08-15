@@ -30,6 +30,16 @@ const ok = (이름, 참, 덧 = '') => {
 };
 const 잠깐 = (ms) => new Promise((r) => setTimeout(r, ms));
 const 한줄 = (s) => String(s).replace(/\s+/g, ' ').trim().slice(0, 90);
+/* 약속 시간 단추(app/timepicker.tsx) — 구석의 키보드 아이콘으로 옛 datetime-local
+   예비 길을 불러 값을 그대로 채운다. 지금 정해진 값은 data-value 에서 읽는다. */
+async function 시간고르기(p, 값) {
+  await p.click('#mt');
+  await p.waitForSelector('.tpsheet');
+  await p.click('.tpkbd');
+  await p.fill('#tp-manual', 값);
+  await p.click('.tpfoot button:has-text("확인")');
+}
+const 시간값 = (p) => p.getAttribute('#mt', 'data-value');
 
 const br = await chromium.launch({ executablePath: CHROME, headless: true });
 const 새창 = () => br.newContext({ viewport: { width: 430, height: 900 } });
@@ -57,7 +67,7 @@ let 출발값 = '';
 {
   await pg.fill('#mn', '금요일 저녁');
   await pg.fill('#hn', '지훈');
-  await pg.fill('#mt', '2026-08-21T19:00');
+  await 시간고르기(pg, '2026-08-21T19:00');
   await pg.selectOption('#sc', 'region');
 
   /* 출발지는 고르면 검색 칸이 사라지고 '고른 곳' 단추가 그 자리에 온다 —
@@ -85,7 +95,7 @@ let 출발값 = '';
 
   ok('모임 이름이 그대로', (await pg.inputValue('#mn')) === '금요일 저녁', await pg.inputValue('#mn'));
   ok('내 이름이 그대로', (await pg.inputValue('#hn')) === '지훈', await pg.inputValue('#hn'));
-  ok('약속 시간이 그대로', (await pg.inputValue('#mt')) === '2026-08-21T19:00', await pg.inputValue('#mt'));
+  ok('약속 시간이 그대로', (await 시간값(pg)) === '2026-08-21T19:00', await 시간값(pg));
   ok('정할 범위가 그대로', (await pg.inputValue('#sc')) === 'region', await pg.inputValue('#sc'));
   ok('출발지가 그대로', (await 출발칸()) === 출발값, 한줄(await 출발칸()));
 

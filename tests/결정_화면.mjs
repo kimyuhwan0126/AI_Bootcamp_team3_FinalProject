@@ -564,7 +564,9 @@ async function 설정열람시험() {
         잠김: Array.from(시트.querySelectorAll('input')).every((i) => i.disabled || i.readOnly),
         저장: !!Array.from(시트.querySelectorAll('button')).find((b) => b.textContent.trim() === '저장'),
         삭제: 시트.innerText.includes('모임 삭제'),
-        시간: 시트.querySelector('input[type="datetime-local"]')?.value,
+        /* 시간 칸은 이제 <input> 이 아니라 눌러서 여는 단추다(app/timepicker.tsx) —
+           지금 정해진 값은 data-value 에 그대로 실려 있다 */
+        시간: 시트.querySelector('[data-value]')?.getAttribute('data-value'),
         /* 잠금은 칸 안에 적혀 있다 — innerText 에는 안 잡힌다 */
         범위: Array.from(시트.querySelectorAll('input')).map((i) => i.value).join('|'),
       };

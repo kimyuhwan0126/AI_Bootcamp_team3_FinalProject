@@ -17,6 +17,15 @@ const 읽기 = (p) => { try { return readFileSync(뿌리 + p, 'utf8'); } catch {
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { c ? pass++ : fail++; console.log(`  ${c ? '✓' : '✗'} ${n}${d ? '  → ' + d : ''}`); };
 const 쉬기 = (ms) => new Promise((r) => setTimeout(r, ms));
+/* 약속 시간 단추(app/timepicker.tsx)를 열어 값을 채운다 — 다이얼을 손짓으로 돌리는 대신
+   구석의 키보드 아이콘으로 옛 datetime-local 예비 길을 불러 정확한 값을 그대로 박아 넣는다. */
+async function 시간고르기(p, 값) {
+  await p.click('#mt');
+  await p.waitForSelector('.tpsheet');
+  await p.click('.tpkbd');
+  await p.fill('#tp-manual', 값);
+  await p.click('.tpfoot button:has-text("확인")');
+}
 
 const require = createRequire(import.meta.url);
 function 크롬조종기() {
@@ -281,15 +290,16 @@ try {
           const 칸 = p.locator('#mt');
           const 있다 = await 칸.count() === 1;
           ok('만들기 화면에 약속 시간 칸이 있다', 있다);
-          /* 칸이 없으면 아래를 물어봐야 30초씩 기다릴 뿐이다 — 없다는 것으로 한 번만 적는다 */
-          ok('그 칸은 datetime-local 이다', 있다 && await 칸.getAttribute('type') === 'datetime-local');
+          /* 옛 datetime-local 을 버리고 달력+시계 다이얼(app/timepicker.tsx)을 직접 그린다 —
+             칸이 없으면 아래를 물어봐야 30초씩 기다릴 뿐이다. 없다는 것으로 한 번만 적는다 */
+          ok('그 칸은 눌러서 여는 단추다(달력+시계 다이얼)', 있다 && await 칸.evaluate((el) => el.tagName) === 'BUTTON');
           const 시트 = await p.locator('.sheet').innerText();
           ok('시간 칸에 라벨이 붙어 있다', 있다 && /약속 시간/.test(시트));
           ok('비워도 된다고 화면이 말한다', /비워 두세요/.test(시트));
         }
         await p.fill('#mn', '우리 팀 회식'); await p.fill('#hn', '김방장'); await p.fill('#og', '성수역');
         await p.waitForSelector('.rows .row'); await p.click('.rows .row');
-        if (시간) await p.fill('#mt', 시간);
+        if (시간) await 시간고르기(p, 시간);
         const 단추 = p.locator('button.cta:not(.sub)');
         ok(`시간을 ${이름} 만들기 단추가 눌린다`, await 단추.isEnabled());
         await 단추.click();
