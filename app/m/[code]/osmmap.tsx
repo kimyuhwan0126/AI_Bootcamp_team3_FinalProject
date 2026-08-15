@@ -59,6 +59,7 @@ const 겹친넓이 = (a: 네모, b: 네모) =>
 
 export default function OsmMap({
   candidates, myVotes, center, canPing, preview, onPick, onToggle, onCluster, cluster = true, origins,
+  region, regionRadiusM,
 }: {
   candidates: Candidate[];
   myVotes: string[];
@@ -77,6 +78,10 @@ export default function OsmMap({
      달리 고르는 대상이 아니라서, 정교한 이름표 겹침 회피 계산(자리계산)에는 안 넣는다 —
      참가자 수가 많지 않은 게 보통이라 단순하게 화면 밖만 걸러 그린다. */
   origins?: { name: string; lat: number; lng: number }[];
+  /* 확정된 지역의 범위 — 카카오 쪽(ui.tsx 의 regionCircle)과 같은 뜻·같은 반경(regionRadiusM,
+     실은 meetings.radius_m). 표시가 없으면 스크롤하다 딴 동네를 고를 수 있다(실사용 신고). */
+  region?: { lat: number; lng: number } | null;
+  regionRadiusM?: number;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -313,6 +318,20 @@ export default function OsmMap({
           <span>아래 목록에서 고를 수 있어요</span>
         </div>
       )}
+
+      {/* 확정된 지역의 범위 — 반경(m)을 화면 픽셀로 바꾸려고 toPx 를 두 번 쓴다(중심과
+         북쪽으로 반경만큼 간 자리) — 계수를 새로 만들지 않고 지도가 이미 쓰는 투영과
+         똑같은 잣대를 그대로 쓰는 것이다. 핀보다 먼저 그려 아래에 깔린다. */}
+      {region && !tileDead && (() => {
+        const p0 = toPx(region.lat, region.lng, z);
+        const dLat = ((regionRadiusM ?? 700) / 6371000) * (180 / Math.PI);
+        const p1 = toPx(region.lat + dLat, region.lng, z);
+        const 반경px = Math.abs(p0.y - p1.y);
+        return (
+          <span className="oregion" aria-hidden
+            style={{ left: p0.x - origin.ox, top: p0.y - origin.oy, width: 반경px * 2, height: 반경px * 2 }} />
+        );
+      })()}
 
       {(() => {
         /* 안 보이는 지도 위에 핀만 뜨면 안내 문구를 가린다 — 지도가 죽으면 핀도 쉰다 */

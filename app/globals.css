@@ -209,6 +209,13 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 @keyframes opre-in{from{opacity:0;transform:translate(-50%,-50%) scale(.7)}
   to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
 @media (prefers-reduced-motion:reduce){.opre{animation:none}}
+/* 확정된 지역의 범위(원) — 표시가 없으면 지점을 찾다가 스크롤 끝에 딴 동네를 고를 수
+   있었다(실사용 신고). radius_m 을 반지름으로 그대로 쓴다 — 서버가 판정하는 범위와
+   화면에 보이는 범위가 어긋나면 안 된다. 핀·미리보기보다 아래(낮은 z-index)라 손이
+   안 막힌다(pointer-events:none). 색은 당근마켓 동네 범위 표시를 임시로 빌렸다 —
+   기능이 자리 잡으면 그때 우리 색으로 바꾼다. */
+.oregion{position:absolute;transform:translate(-50%,-50%);border-radius:50%;
+  background:rgba(255,138,61,.12);border:2px solid #ff8a3d;z-index:1;pointer-events:none}
 /* 참가자 출발지 (2026-08-15) — 가운데를 셈할 때만 쓰이고 지도에 정작 안 그려졌었다.
    후보(.opin)와 헷갈리면 안 되니 누를 수 없다(pointer-events:none) —
    '여기서 골라야 하나' 로 오해하면 안 된다, 그냥 '누가 어디서 오는지' 참고 정보다.
