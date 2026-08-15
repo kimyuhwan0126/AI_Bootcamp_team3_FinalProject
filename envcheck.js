@@ -42,7 +42,7 @@ async function get(url, opt) {
 (async function () {
   console.log('\n[1] 키가 있는가 (값은 가립니다)');
   ['DATABASE_URL', 'KAKAO_REST_API_KEY', 'NEXT_PUBLIC_KAKAO_JS_KEY', 'KAKAO_REDIRECT_URI',
-   'ODSAY_API_KEY', 'TMAP_APP_KEY', 'OLLAMA_PRIMARY_URL', 'OLLAMA_PRIMARY_MODEL',
+   'TMAP_APP_KEY', 'OLLAMA_PRIMARY_URL', 'OLLAMA_PRIMARY_MODEL',
    'OLLAMA_FALLBACK_URL', 'OLLAMA_FALLBACK_MODEL'].forEach(function (k) {
     say(k, !!env[k], mask(env[k]));
   });
@@ -101,25 +101,26 @@ async function get(url, opt) {
     } catch (e) { say('Kakao Local', false, e.message.slice(0, 90)); }
   }
 
-  console.log('\n[5] ODsay — 대중교통 길찾기');
-  if (!env.ODSAY_API_KEY) say('ODsay', false, '키 없음');
+  console.log('\n[5] Kakao 대중교통 길찾기 — Local 검색과 같은 REST 키');
+  /* 2026-07-21 에 카카오가 새로 연 API(대중교통·도보·자전거·정적지도) — 신청·심사 없이
+     카카오 디벨로퍼스에서 [카카오맵] 사용 설정만 켜면 KAKAO_REST_API_KEY 그대로 쓴다.
+     ⚠ 예전엔 여기서 ODsay 를 쟀었다 — Vercel 배포에서 IP 화이트리스트에 막혀 route_unavailable
+     이 났고(실사용 신고), 이 API 로 바꿔 붙였다(lib/routes.ts). ODSAY_API_KEY 는 이제 안 쓴다. */
+  if (!env.KAKAO_REST_API_KEY) say('Kakao 대중교통', false, '키 없음(Kakao Local 과 같은 키)');
   else {
     try {
       /* 강남역 → 성수역 */
-      const url = 'https://api.odsay.com/v1/api/searchPubTransPathT?apiKey=' +
-        encodeURIComponent(env.ODSAY_API_KEY) +
-        '&SX=127.027621&SY=37.497942&EX=127.055961&EY=37.544581';
-      const r = await get(url);
-      const j = JSON.parse(r.text);
-      /* ODsay 는 오류를 배열로 준다 — j.error[0].code / .message */
-      const err = Array.isArray(j.error) ? j.error[0] : j.error;
-      if (err) {
-        const code = String(err.code || '');
-        const msg = err.message || err.msg || '';
-        say('ODsay', false, code + ' ' + msg +
-          (/ApiKeyAuthFailed/i.test(msg) ? ' → 키가 틀렸거나 이 서버 IP 가 화이트리스트에 없음' : ''));
-      } else say('ODsay', true, '경로 ' + ((j.result && j.result.path) || []).length + '개');
-    } catch (e) { say('ODsay', false, e.message.slice(0, 90)); }
+      const r = await get(
+        'https://dapi.kakao.com/v2/routing/publictraffic?start_x=127.027621&start_y=37.497942' +
+        '&end_x=127.055961&end_y=37.544581',
+        { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_API_KEY } });
+      if (r.status === 200) {
+        const j = JSON.parse(r.text);
+        const 첫길 = (j.routes || [])[0];
+        say('Kakao 대중교통', true, 'HTTP 200 · 안내 ' + (j.routes || []).length + '개 · ' +
+          (첫길 ? Math.round(첫길.properties.totalTime / 60) + '분 · ' + 첫길.properties.totalDistance + 'm' : j.status));
+      } else say('Kakao 대중교통', false, 'HTTP ' + r.status + ' · ' + r.text.slice(0, 100));
+    } catch (e) { say('Kakao 대중교통', false, e.message.slice(0, 90)); }
   }
 
   console.log('\n[6] TMAP — 자차 경로');
