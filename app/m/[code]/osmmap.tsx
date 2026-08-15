@@ -59,7 +59,7 @@ const 겹친넓이 = (a: 네모, b: 네모) =>
 
 export default function OsmMap({
   candidates, myVotes, center, canPing, preview, onPick, onToggle, onCluster, cluster = true, origins,
-  region, regionRadiusM,
+  region, regionRadiusM, routes,
 }: {
   candidates: Candidate[];
   myVotes: string[];
@@ -82,6 +82,9 @@ export default function OsmMap({
      실은 meetings.radius_m). 표시가 없으면 스크롤하다 딴 동네를 고를 수 있다(실사용 신고). */
   region?: { lat: number; lng: number } | null;
   regionRadiusM?: number;
+  /* 정해진 지점까지 참가자별로 그리는 이동 경로 (2026-08-15) — 대중교통·자차 API 가 준 꺾은선을
+     그대로 잇는다. 카카오 쪽(ui.tsx)은 Polyline 을 쓰고 여기는 SVG 로 같은 모양을 낸다. */
+  routes?: { id: string; points: { lat: number; lng: number }[]; color: string }[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -332,6 +335,24 @@ export default function OsmMap({
             style={{ left: p0.x - origin.ox, top: p0.y - origin.oy, width: 반경px * 2, height: 반경px * 2 }} />
         );
       })()}
+
+      {/* 참가자별 이동 경로 — 지역 범위보다는 위, 핀보다는 아래(z-index 2, 위 표 참고).
+         선 위에 핀이 얹혀야 어디가 목적지인지 늘 보인다. */}
+      {!!routes?.length && !tileDead && (
+        <svg width={size.w} height={size.h}
+          style={{ position: 'absolute', left: 0, top: 0, zIndex: 2, pointerEvents: 'none' }}>
+          {routes.map((rt) => {
+            if (rt.points.length < 2) return null;
+            const 꺾은선 = rt.points
+              .map((p) => { const q = toPx(p.lat, p.lng, z); return `${q.x - origin.ox},${q.y - origin.oy}`; })
+              .join(' ');
+            return (
+              <polyline key={rt.id} points={꺾은선} fill="none" stroke={rt.color}
+                strokeWidth={4} strokeOpacity={0.75} strokeLinecap="round" strokeLinejoin="round" />
+            );
+          })}
+        </svg>
+      )}
 
       {(() => {
         /* 안 보이는 지도 위에 핀만 뜨면 안내 문구를 가린다 — 지도가 죽으면 핀도 쉰다 */
