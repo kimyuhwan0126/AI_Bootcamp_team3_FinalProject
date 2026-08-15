@@ -964,8 +964,14 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             들어가고 끌어야만 들어가는 자리를, 눌러서는 늘 빠져나올 수 있게 한다). */}
         <div data-grip role="button" tabIndex={0} aria-expanded={sheetStage === 'big'}
           aria-label={`시트 손잡이 — 누르면 ${sheetStage === 'default' ? '커져요' : '기본 크기로 돌아와요'}. 끌면 지도 크기가 손가락을 따라와요`}
-          style={{ cursor: 'grab', touchAction: 'none', margin: '-14px -16px 4px', padding: '10px 16px 2px' }}
+          style={{ cursor: 'grab', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
+            margin: '-14px -16px 4px', padding: '10px 16px 2px' }}
           onPointerDown={(e) => {
+            /* 마우스로 끌 때 e.preventDefault() 가 없으면 손을 움직이는 동안 브라우저가
+               밑에 깔린 글자를 문장 선택으로 집어 버린다 — 파랗게 훑히면서 끌기가 끊기는
+               것처럼 보인다(실제로 데스크톱에서 그랬다). 손가락(touch)은 원래 안 그래서
+               모바일에서는 안 드러났다. */
+            e.preventDefault();
             /* 끌기 시작점은 **정착 자리의 제한값**(시트픽셀)이지, 지금 실제로 그려진 높이가
                아니다 — 컨텐츠가 짧으면(후보가 몇 곳 안 되면) 시트의 실제 렌더 높이가 그
                제한값보다 작다(max-height 라서). 실제 렌더 높이를 시작점으로 삼으면 첫
