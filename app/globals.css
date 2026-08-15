@@ -60,6 +60,14 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
 .acts::-webkit-scrollbar{display:none}
 .acts>*,.acts-fix>*{pointer-events:auto}
 .acts .fab{flex:0 0 auto}
+/* 방장 도구 단추들(더보기·지역 확정·정하지 않고 끝내기…)이 저마다 제 글자 길이만큼
+   폭이 달라 나란히 쌓이면 삐뚤빼뚤해 보였다(align-items:flex-end 로 늘어나던 것은
+   고쳤지만, '짧다·길다' 자체가 뒤섞여 있는 건 그대로였다) — 실제로 헷갈린다는
+   말이 나와서 전부 한 폭으로 맞춘다. 176px 는 가장 긴 글자("정하지 않고 끝내기",
+   실측 162.5px)에 여유를 더한 값 — 그보다 짧은 글자("닫기"·"나가기" 등)는 버튼
+   안에서 가운데로 놓인다(button 요소의 기본 정렬). .acts-fix 의 더보기/닫기 단추도
+   같은 폭이어야 이 묶음 전체가 한 몸처럼 보인다. */
+.acts .fab,.acts-fix .fab{width:176px}
 .fab{min-height:var(--tap);border:0;border-radius:22px;background:var(--surface);box-shadow:0 4px 14px rgba(20,26,40,.16);padding:0 16px;font-weight:800;cursor:pointer}
 .fab.primary{background:var(--brand);color:#fff}
 .err{color:var(--danger);font-size:12.5px;font-weight:700;margin-top:6px}
