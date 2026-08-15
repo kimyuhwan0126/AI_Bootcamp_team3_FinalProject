@@ -172,6 +172,13 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   /* 지점은 '누른 자리 주변 지점'에서 고른다 (그릴링 논의32) — 지역 이름이 후보로 오르지 않게 */
   const [near, setNear] = useState<{ loading: boolean; at: { lat: number; lng: number } | null;
     list: { id: string; name: string; address: string; lat: number; lng: number }[] } | null>(null);
+  /* 지점 고르기에서 지도만 누르는 게 아니라 이름으로도 찾을 수 있게 — 확정된 지역
+     반경 안으로 좁혀 찾는다(app/originfield.tsx 의 '이름으로 찾기'와 같은 결). */
+  const [qPlace, setQPlace] = useState('');
+  const [placeHits, setPlaceHits] = useState<
+    { id: string; name: string; address: string; lat: number; lng: number }[] | null>(null);
+  const [place문제, setPlace문제] = useState<string | null>(null);
+  const placeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* 모임 설정 — 참여자도 열어 볼 수 있다 (논의118). 고치는 것은 방장만 */
   const [settings, setSettings] = useState(false);
   const [sName, setSName] = useState('');
@@ -544,6 +551,45 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const winRef = useRef(region); winRef.current = region;
   const radiusRef = useRef(v.meeting.radius_m); radiusRef.current = v.meeting.radius_m;
   const midRef = useRef(midpoint); midRef.current = midpoint;
+
+  /* 지점 고르기 — 지도를 누르는 것 말고 이름으로도 찾을 수 있게 (원본지필드의
+     '이름으로 찾기'와 같은 결, 손을 멈추면 찾는다). 확정된 지역 반경 안으로 좁혀 찾는다 —
+     안 좁히면 '상대원1동' 을 확정해 놓고 '강남역' 을 쳐도 전국에서 걸려 나온다. */
+  useEffect(() => {
+    if (placeTimer.current) clearTimeout(placeTimer.current);
+    const s = qPlace.trim();
+    if (!(stage === 'place' && !done_ && region) || s.length < 2) { setPlaceHits(null); return; }
+    placeTimer.current = setTimeout(async () => {
+      try {
+        const radius = radiusRef.current || RADIUS_FALLBACK_M;
+        const res = await fetch(
+          `/api/places/search?q=${encodeURIComponent(s)}&lat=${region.lat}&lng=${region.lng}&r=${radius}`);
+        if (!res.ok) {
+          const j = await res.json().catch(() => null);
+          setPlace문제(j?.error === 'too_many' ? '너무 자주 불러서 잠깐 쉬는 중이에요 — 잠시 뒤에 다시 해 주세요'
+            : j?.retryable ? '지금은 장소를 찾을 수 없어요 — 잠시 뒤에 다시 해 주세요'
+            : '지금은 장소를 찾을 수 없어요');
+          setPlaceHits(null);
+          return;
+        }
+        setPlace문제(null);
+        setPlaceHits((await res.json()).places ?? []);
+      } catch { setPlace문제('지금은 장소를 찾을 수 없어요 — 잠시 뒤에 다시 해 주세요'); setPlaceHits(null); }
+    }, 350);
+    return () => { if (placeTimer.current) clearTimeout(placeTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qPlace, stage, done_, region?.id]);
+
+  /* 검색 결과를 고르면 지도 탭과 같은 길(미리보기)로 합류한다 — 한 번 더 눌러야 후보가 된다.
+     반경 검사도 지도 탭과 같다(pickAt) — 바깥 API 가 반경을 못 지켜도 여기서 한 번 더 막는다. */
+  const 지점검색고르기 = (p: { id: string; name: string; address: string; lat: number; lng: number }) => {
+    if (region && dist(p.lat, p.lng, region.lat, region.lng) > (radiusRef.current || RADIUS_FALLBACK_M)) {
+      flash(`${region.name} 안에서 골라 주세요`);
+      return;
+    }
+    setPreview({ kind: 'place', refId: p.id, name: p.name, lat: p.lat, lng: p.lng, address: p.address });
+    setQPlace(''); setPlaceHits(null);
+  };
 
   /* 콜백이 낡은 값을 잡지 않게 — 지도 리스너는 한 번만 달기 때문 */
   const canPingRef = useRef(canPing); canPingRef.current = canPing;
@@ -1093,6 +1139,33 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
           </div>
         )}
         {statusLine}
+
+        {/* 지점 고르기 — 지도를 누르는 것 말고 이름으로도 찾는다(원본지필드의 '이름으로
+            찾기'와 같은 결). 확정된 지역 안으로 좁혀 찾으니 딴 동네 가게가 안 섞인다. */}
+        {stage === 'place' && !done_ && region && canPing && (
+          <div className="fld" style={{ margin: '0 0 12px' }}>
+            <input value={qPlace} onChange={(e) => setQPlace(e.target.value)}
+              placeholder={`${region.name} 안에서 가게·카페·공원 이름으로 찾기`}
+              aria-label="지점 이름으로 찾기" />
+            {place문제 && qPlace.trim().length >= 2 &&
+              <p className="warn" style={{ margin: '6px 0 0', fontSize: 12.5 }}>{place문제}</p>}
+            {!place문제 && placeHits && !placeHits.length && qPlace.trim().length >= 2 &&
+              <p className="mut" style={{ margin: '6px 0 0' }}>찾는 곳이 없어요 — 다른 이름으로 해보세요.</p>}
+            {!!placeHits?.length && (
+              <ul className="rows" style={{ marginTop: 6 }}>
+                {placeHits.slice(0, 6).map((p) => (
+                  <li key={p.id}>
+                    <button className="row" disabled={busy} onClick={() => 지점검색고르기(p)}>
+                      <span className="nm">{p.name}
+                        {p.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{p.address}</span>}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* 미리보기 — 한 번 더 눌러야 후보가 된다 (논의81 · 120) */}
         {preview && canPing && (

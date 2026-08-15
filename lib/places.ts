@@ -259,15 +259,24 @@ const dedupe = (ps: Place[]) => {
   return ps.filter((p) => !seen.has(p.name) && seen.add(p.name));
 };
 
-/* 이름으로 찾기 (그릴링 논의35 ①) — 출발지 고르기용.
+/** 검색을 한 자리 둘레로 좁힌다 — 지점 고르기(확정된 지역 안에서 찾기)가 쓴다.
+    안 주면(출발지 찾기처럼) 예전처럼 전국을 본다 — 골라 쓰는 것이지 늘 켜는 것이 아니다. */
+export type SearchNear = { lat: number; lng: number; radius: number };
+
+/* 이름으로 찾기 (그릴링 논의35 ①) — 출발지 고르기용으로 만들었지만, near 를 주면
+   지점 고르기에서 '확정된 지역 안에서만' 찾는 검색으로도 쓴다 (같은 함수 — 갈라 두면
+   한쪽만 고치고 잊는다).
    카카오 키워드가 역·건물을 잘 찾는다. 막히면 Nominatim 으로 내려간다. */
-export async function searchPlaces(q: string): Promise<PlaceList | 'quota'> {
+export async function searchPlaces(q: string, near?: SearchNear): Promise<PlaceList | 'quota'> {
   const k = process.env.KAKAO_REST_API_KEY;
   let 카카오못물음 = false;
   if (k) {
     try {
+      /* 카카오 키워드 검색의 x·y·radius 는 그 반경 안으로 결과를 실제로 좁힌다
+         (검색 자체가 아니라 정렬만 바꾸는 값이 아니다) — near 가 있으면 붙인다. */
+      const 좌표제한 = near ? `&x=${near.lng}&y=${near.lat}&radius=${Math.round(near.radius)}` : '';
       const r = await fetch(
-        `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(q)}&size=8`,
+        `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(q)}&size=8${좌표제한}`,
         { headers: { Authorization: `KakaoAK ${k}` }, cache: 'no-store', signal: AbortSignal.timeout(T_KAKAO) });
       if (r.status === 429) return 'quota';
       if (r.ok) {
@@ -284,9 +293,16 @@ export async function searchPlaces(q: string): Promise<PlaceList | 'quota'> {
   /* null 은 '못 물어봤다', 빈 배열은 '물어봤는데 없다' — 아래에서 이 둘을 갈라 쓴다 */
   let ps: Place[] | null = null;
   try {
+    /* Nominatim 은 반경이 아니라 네모난 viewbox 다 — 반경을 낀 네모로 감싼다.
+       bounded=1 이 없으면 viewbox 는 그저 힌트일 뿐이라 전국이 다시 섞여 든다. */
+    const 상자 = near ? (() => {
+      const dLat = near.radius / 111_000;
+      const dLng = near.radius / (111_000 * Math.cos((near.lat * Math.PI) / 180));
+      return `&viewbox=${near.lng - dLng},${near.lat + dLat},${near.lng + dLng},${near.lat - dLat}&bounded=1`;
+    })() : '';
     const r = await fetch(
       `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=kr&limit=8` +
-      `&accept-language=ko&q=${encodeURIComponent(q)}`,
+      `&accept-language=ko&q=${encodeURIComponent(q)}${상자}`,
       {
         headers: { 'user-agent': 'moimer/0.1 (contact: whoami611319@gmail.com)' },
         cache: 'no-store', signal: AbortSignal.timeout(T_NOMINATIM),
