@@ -100,6 +100,10 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const marks = useRef<any[]>([]);
   /* 참가자 출발지 핀(후보 marks 와 따로 관리 — 고르는 대상이 아니라서 뭉침 계산도 안 받는다) */
   const originMarks = useRef<any[]>([]);
+  /* 확정된 지역의 범위(원) — 지점을 고르는 자리가 어디까지인지 지도에 그려 준다.
+     표시가 없으면 스크롤하다 딴 동네를 고를 수 있다(실사용 신고). 색은 당근마켓 것을
+     임시로 빌렸다 — 기능이 자리 잡으면 그때 우리 색으로 바꾼다. */
+  const regionCircle = useRef<any>(null);
   /* 뭉치느라 지도에서 뗀 핀 — 다시 흩을 때 되돌릴 대상이 누구인지 알아야 한다 */
   const hiddenIds = useRef<Set<string>>(new Set());
 
@@ -676,6 +680,24 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     });
   }, [v, mapReady]);
 
+  /* 확정된 지역의 범위(원) — 지점을 지도에서 찾다 보면 스크롤 끝에 딴 동네를 고를
+     수도 있었다(실사용 신고). radius_m 을 그대로 반지름으로 쓴다 — 서버가 "이 지역
+     안에서 골라 주세요" 를 판정하는 값과 같아서, 화면에 보이는 범위와 실제로 고를 수
+     있는 범위가 어긋나지 않는다. 색은 당근마켓 동네 범위 표시를 임시로 빌렸다 —
+     기능이 자리 잡으면 그때 우리 색으로 바꾼다. */
+  useEffect(() => {
+    if (!map.current) return;
+    if (regionCircle.current) { regionCircle.current.setMap(null); regionCircle.current = null; }
+    if (!(region && kind === 'place')) return;
+    regionCircle.current = new window.kakao.maps.Circle({
+      center: new window.kakao.maps.LatLng(region.lat, region.lng),
+      radius: v.meeting.radius_m,
+      strokeWeight: 2, strokeColor: '#FF8A3D', strokeOpacity: 0.85, strokeStyle: 'solid',
+      fillColor: '#FF8A3D', fillOpacity: 0.12,
+    });
+    regionCircle.current.setMap(map.current);
+  }, [region?.id, v.meeting.radius_m, kind, mapReady]);
+
   const invite = async () => {
     const url = `${location.origin}/join/${code}`;
     try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
@@ -903,6 +925,9 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             cluster={kind === 'region'}
             /* 참가자 출발지 — 카카오 쪽(위 useEffect)과 같은 데이터, 같은 뜻 */
             origins={withOrigin.map((p) => ({ name: p.origin_name ?? '', lat: p.lat!, lng: p.lng! }))}
+            /* 확정된 지역의 범위 — 카카오 쪽(위 regionCircle useEffect)과 같은 뜻·같은 반경 */
+            region={region && kind === 'place' ? { lat: region.lat, lng: region.lng } : null}
+            regionRadiusM={v.meeting.radius_m}
           />
         )}
         {/* 도구(스피드다이얼)가 펴져 있는 동안은 주 액션을 감춘다 — 안 그러면 다이얼이
