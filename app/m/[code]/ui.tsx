@@ -880,7 +880,14 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
         <div data-grip role="button" tabIndex={0} aria-expanded={sheetBig}
           aria-label={`시트 손잡이 — 누르면 ${sheetBig ? '줄어들어요' : '커져요'}`}
           style={{ cursor: 'grab', touchAction: 'none', margin: '-14px -16px 4px', padding: '10px 16px 2px' }}
-          onPointerDown={(e) => { 끌기.current = { y: e.clientY, moved: false }; }}
+          onPointerDown={(e) => {
+            끌기.current = { y: e.clientY, moved: false };
+            /* 이걸 안 부르면 마우스가 이 작은 손잡이(44×45px)를 살짝만 벗어나도
+               pointermove·pointerup 이 이 요소가 아니라 그 밑에 있는 다른 요소(지도 등)로
+               가 버려 드래그가 끊긴다 — 실제로 그래서 끌기가 안 됐다. 지도의 같은 손짓
+               (탐색/지도.tsx·osmmap.tsx)도 이 한 줄로 잡는다. */
+            try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch { /* 그냥 끌면 된다 */ }
+          }}
           onPointerMove={(e) => {
             const d = 끌기.current;
             if (!d) return;
