@@ -97,6 +97,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const marks = useRef<any[]>([]);
+  /* 참가자 출발지 핀(후보 marks 와 따로 관리 — 고르는 대상이 아니라서 뭉침 계산도 안 받는다) */
+  const originMarks = useRef<any[]>([]);
   /* 뭉치느라 지도에서 뗀 핀 — 다시 흩을 때 되돌릴 대상이 누구인지 알아야 한다 */
   const hiddenIds = useRef<Set<string>>(new Set());
 
@@ -602,6 +604,31 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     }
   }, [v, mapReady]);
 
+  /* 참가자 출발지 핀 (2026-08-15) — withOrigin(가운데를 셈할 때 이미 만들던 목록)이
+     지도에 정작 안 그려지고 있었다. "각자 어디서 오는지 지도로 보고 싶다"는 실제 사용
+     중 나온 말로 추가했다. 후보(marks)와 다른 ref(originMarks)로 따로 관리한다 —
+     고르는 대상이 아니라서 뭉침 계산(layout)에는 안 들어간다.
+     xAnchor·yAnchor 를 0 으로 두고 style 로 left:0;top:0 을 박는 것은 홈 맛보기 지도
+     (탐색/지도.tsx)와 같은 수법이다 — .ofrom 자신의 transform:translate(-50%,-100%) 가
+     자리를 잡게 하려는 것이다(카카오 자체 앵커와 이중으로 겹치면 어긋난다). */
+  useEffect(() => {
+    if (!map.current) return;
+    originMarks.current.forEach((ov) => ov.setMap(null));
+    originMarks.current = withOrigin.map((p) => {
+      const ov = new window.kakao.maps.CustomOverlay({
+        position: new window.kakao.maps.LatLng(p.lat!, p.lng!), xAnchor: 0, yAnchor: 0, zIndex: 3,
+      });
+      const el = document.createElement('span');
+      el.className = 'ofrom';
+      el.style.cssText = 'left:0;top:0';
+      const pt = document.createElement('span'); pt.className = 'pt'; pt.setAttribute('aria-hidden', 'true');
+      const lb = document.createElement('span'); lb.className = 'lb'; lb.textContent = p.origin_name ?? '';
+      el.appendChild(pt); el.appendChild(lb);
+      ov.setContent(el); ov.setMap(map.current);
+      return ov;
+    });
+  }, [v, mapReady]);
+
   const invite = async () => {
     const url = `${location.origin}/join/${code}`;
     try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
@@ -827,6 +854,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             onToggle={(c, mine) => toggle(c.id, mine)}
             onCluster={(ids) => { closeSheets(); setClusterIds(ids); }}
             cluster={kind === 'region'}
+            /* 참가자 출발지 — 카카오 쪽(위 useEffect)과 같은 데이터, 같은 뜻 */
+            origins={withOrigin.map((p) => ({ name: p.origin_name ?? '', lat: p.lat!, lng: p.lng! }))}
           />
         )}
         {!v.meeting.closed_at && (
