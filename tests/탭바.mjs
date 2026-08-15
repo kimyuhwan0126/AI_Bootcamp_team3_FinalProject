@@ -173,8 +173,10 @@ try {
       ok('/new 에 만들기 폼이 그대로 있다',
          await p.locator('#mn').count() === 1 && await p.locator('#hn').count() === 1
          && await p.locator('#og').count() === 1 && await p.locator('#mt').count() === 1);
-      ok('/new 에 초대 코드로 들어가는 길도 함께 왔다',
-         /초대 코드로 들어가기/.test(await p.locator('.wrap').innerText()));
+      /* 초대 코드 칸은 /new 에서도 뺐다(오늘 결정) — 초대는 실제 링크로 바로 들어간다.
+         6자리를 옮겨 적을 일 자체가 없어야 한다(홈과 같은 결정, tests/홈.mjs 참고). */
+      ok('/new 에 초대 코드로 들어가는 칸이 없다',
+         !/초대 코드로 들어가기/.test(await p.locator('.wrap').innerText()));
 
       await p.fill('#mn', 'O시험 탭바'); await p.fill('#hn', '김방장'); await p.fill('#og', '성수역');
       await p.waitForSelector('.rows .row'); await p.click('.rows .row');

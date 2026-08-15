@@ -40,7 +40,6 @@ export default function New() {
   const [origin, setOrigin] = useState<Origin | null>(넘김?.출발지들[0] ?? null);
   const [transport, setTransport] = useState<Transport>(넘김?.이동수단 ?? 'transit');
   const [busy, setBusy] = useState(false);
-  const [join, setJoin] = useState('');
   const [err, setErr] = useState('');
   /* 로그인이 없어서 막힌 것은 오류가 아니라 '아직 안 한 일' 이다 — 따로 잡아 길을 준다 */
   const [로그인필요, set로그인필요] = useState(false);
@@ -180,12 +179,6 @@ export default function New() {
           </div>
         )}
         <button className="cta" onClick={make} disabled={busy || !name.trim() || !host.trim() || !origin}>만들기</button>
-
-        <p className="mut" style={{ margin: '22px 0 6px' }}>초대 코드로 들어가기</p>
-        <div className="fld">
-          <input value={join} onChange={(e) => setJoin(e.target.value.toUpperCase())} maxLength={6} placeholder="6자리 코드" />
-        </div>
-        <button className="cta sub" onClick={() => r.push(`/join/${join}`)} disabled={join.length !== 6}>참여하기</button>
       </div>
     </div>
   );
