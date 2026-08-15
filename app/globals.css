@@ -174,6 +174,15 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 @keyframes opre-in{from{opacity:0;transform:translate(-50%,-50%) scale(.7)}
   to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
 @media (prefers-reduced-motion:reduce){.opre{animation:none}}
+/* 참가자 출발지 (2026-08-15) — 가운데를 셈할 때만 쓰이고 지도에 정작 안 그려졌었다.
+   후보(.opin)와 헷갈리면 안 되니 옅게·작게 그리고 누를 수 없다(pointer-events:none) —
+   '여기서 골라야 하나' 로 오해하면 안 된다, 그냥 '누가 어디서 오는지' 참고 정보다. */
+.ofrom{position:absolute;transform:translate(-50%,-100%);pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:2px;z-index:3}
+.ofrom .pt{width:9px;height:9px;border-radius:50%;background:#8a94ad;
+  border:2px solid #fff;box-shadow:0 1px 3px rgba(20,26,40,.25)}
+.ofrom .lb{font-size:10px;font-weight:700;color:#5b6472;background:rgba(255,255,255,.9);
+  padding:1px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 2px rgba(20,26,40,.12)}
 .ozoom{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;
   /* 6px 이면 두 단추의 손가락 자리(48px)가 서로를 먹는다 — 딱 붙되 겹치지는 않는 틈 */
   gap:12px;z-index:7}
