@@ -17,6 +17,15 @@ declare global { interface Window { kakao: any } }
    반경은 모임마다 다를 수 있다 — meetings.radius_m 을 그대로 쓴다.
    상수로 박아 두면 DB 값을 바꿔도 화면만 다른 반경으로 막는다. */
 const RADIUS_FALLBACK_M = 700;
+
+/* 지점이 정해진 뒤, 각자 오는 길을 지도로 보여준다 (2026-08-15) — 대중교통은 ODsay,
+   자차는 TMAP. 사람마다가 아니라 이동수단마다 색을 가른다 — "이 선은 대중교통, 저 선은
+   차" 가 알고 싶은 것이지 누구 선인지는 목록(글)이 이미 말해 준다. */
+const 경로색: Record<'transit' | 'car', string> = { transit: '#2f6bff', car: '#f59e0b' };
+type RouteFetch =
+  | { st: 'loading' }
+  | { st: 'error' }
+  | { st: 'ok'; points: { lat: number; lng: number }[]; distanceM: number | null; durationS: number | null; found: boolean };
 const dist = (a: number, b: number, c: number, d: number) => {
   const R = 6371000, r = Math.PI / 180;
   const dp = (c - a) * r, dl = (d - b) * r;
@@ -104,6 +113,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
      표시가 없으면 스크롤하다 딴 동네를 고를 수 있다(실사용 신고). 색은 당근마켓 것을
      임시로 빌렸다 — 기능이 자리 잡으면 그때 우리 색으로 바꾼다. */
   const regionCircle = useRef<any>(null);
+  /* 참가자별 이동 경로 선(카카오 Polyline) — 2026-08-15 */
+  const routePolylines = useRef<any[]>([]);
   /* 뭉치느라 지도에서 뗀 핀 — 다시 흩을 때 되돌릴 대상이 누구인지 알아야 한다 */
   const hiddenIds = useRef<Set<string>>(new Set());
 
@@ -382,6 +393,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const placed = useRef(false);
   const [tools, setTools] = useState(false);      /* 방장 도구 펼침 */
   const [copied, setCopied] = useState(false);
+  /* 참가자 id → 경로 (2026-08-15). 지점이 정해진 뒤에만 채운다 */
+  const [routes, setRoutes] = useState<Record<string, RouteFetch>>({});
 
   /* ── 지도 ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -698,6 +711,26 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     regionCircle.current.setMap(map.current);
   }, [region?.id, v.meeting.radius_m, kind, mapReady]);
 
+  /* 참가자별 이동 경로 — 지점이 정해진 뒤에만 그린다. 대중교통은 파랑, 자차는 주황으로
+     이동수단을 가른다(색은 위 경로색 상수 하나). routes(state)가 /api/routes 응답을 채우면
+     여기서 카카오 Polyline 으로 그린다 — OSM 폴백 쪽(osmmap.tsx)은 같은 좌표를 SVG 로 그린다. */
+  useEffect(() => {
+    if (!map.current) return;
+    routePolylines.current.forEach((pl) => pl.setMap(null));
+    routePolylines.current = [];
+    if (!v.meeting.winner_place_id) return;
+    for (const p of v.participants) {
+      const r = routes[p.id];
+      if (!r || r.st !== 'ok' || r.points.length < 2) continue;
+      const pl = new window.kakao.maps.Polyline({
+        path: r.points.map((pt) => new window.kakao.maps.LatLng(pt.lat, pt.lng)),
+        strokeWeight: 4, strokeColor: 경로색[p.transport], strokeOpacity: 0.75, strokeStyle: 'solid',
+      });
+      pl.setMap(map.current);
+      routePolylines.current.push(pl);
+    }
+  }, [routes, v.meeting.winner_place_id, v.participants, mapReady]);
+
   const invite = async () => {
     const url = `${location.origin}/join/${code}`;
     try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
@@ -830,6 +863,36 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
      아직 겨루는 중인 것처럼 후보를 다 늘어놓으면 무엇이 정해졌는지 안 보인다. */
   const onMap = done_ && winner ? [winner] : shown;
 
+  /* 참가자별 이동 경로 — 지점(winner_place_id)이 있을 때만 부른다. 지역은 범위일 뿐 한 점이
+     아니라 길찾기 API 에 줄 도착점이 없다 (사용자 말: "지점이 정해져 있다면"). SSE 로 화면이
+     자주 다시 읽혀도 출발지·이동수단·도착점이 그대로면 다시 부르지 않는다 — 문자열 하나로
+     그 셋을 뭉쳐 두고 그 값이 바뀔 때만 훅을 다시 돈다. */
+  const routeKey = v.meeting.winner_place_id && winner
+    ? `${winner.id}:${winner.lat}:${winner.lng}|` +
+      withOrigin.map((p) => `${p.id}:${p.transport}:${p.lat}:${p.lng}`).join(',')
+    : '';
+  useEffect(() => {
+    if (!routeKey) { setRoutes({}); return; }
+    if (!winner) return;
+    let 취소 = false;
+    withOrigin.forEach((p) => {
+      setRoutes((r) => ({ ...r, [p.id]: { st: 'loading' } }));
+      const qs = new URLSearchParams({
+        fromLat: String(p.lat), fromLng: String(p.lng),
+        toLat: String(winner.lat), toLng: String(winner.lng), mode: p.transport,
+      });
+      fetch(`/api/routes?${qs}`, { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+        .then((j) => {
+          if (취소) return;
+          setRoutes((r) => ({ ...r, [p.id]: { st: 'ok', points: j.points ?? [], distanceM: j.distanceM ?? null, durationS: j.durationS ?? null, found: !!j.found } }));
+        })
+        .catch(() => { if (!취소) setRoutes((r) => ({ ...r, [p.id]: { st: 'error' } })); });
+    });
+    return () => { 취소 = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeKey]);
+
   /* 신호등 — 시간이 정해지면 켜진다 (논의116). 장소가 정해지기 전에도 켜진다.
      다시 누르면 '아직' 으로 돌아간다 (논의115). 표도 가운데 계산도 안 건드린다 — 알리기만 한다.
      값은 서버에 있다(participants.going) — 화면에만 두면 나만 보고, 나만 보는 것은 알림이 아니다.
@@ -928,6 +991,12 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             /* 확정된 지역의 범위 — 카카오 쪽(위 regionCircle useEffect)과 같은 뜻·같은 반경 */
             region={region && kind === 'place' ? { lat: region.lat, lng: region.lng } : null}
             regionRadiusM={v.meeting.radius_m}
+            /* 참가자별 이동 경로 — 카카오 쪽(위 routePolylines useEffect)과 같은 데이터 */
+            routes={v.meeting.winner_place_id ? v.participants
+              .map((p) => { const r = routes[p.id]; return r?.st === 'ok' && r.points.length >= 2
+                ? { id: p.id, points: r.points, color: 경로색[p.transport] } : null; })
+              .filter((x): x is { id: string; points: { lat: number; lng: number }[]; color: string } => !!x)
+              : []}
           />
         )}
         {/* 도구(스피드다이얼)가 펴져 있는 동안은 주 액션을 감춘다 — 안 그러면 다이얼이
@@ -951,7 +1020,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             )}
             {v.me.isHost && stage === 'result' && (
               <button className="fab primary" disabled={busy}
-                onClick={() => send({ action: 'close' })}>모임 마무리</button>
+                onClick={() => send({ action: 'close' })}>모임 종료</button>
             )}
             {/* 아직 안 골랐으면 누구에게나 같은 안내를 준다 (그릴링 논의30 ② · 논의40).
                 방장도 그 모임의 참가자다 — 방장만 안내가 없으면 자기 선택을 잊는다. */}
@@ -1234,6 +1303,42 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                   </span></>
               : <>아직 정해지지 않았어요</>}
           </p>
+        )}
+
+        {/* 참가자별 오는 길 (2026-08-15) — 지점이 정해졌을 때만. 지역은 범위일 뿐이라
+            도착점이 없어 길찾기를 못 한다("지점이 정해져 있다면"이 사용자 조건이었다).
+            지도 위 선(위 routePolylines·osmmap routes)과 같은 색으로 이동수단을 가른다. */}
+        {done_ && v.meeting.winner_place_id && withOrigin.length > 0 && (
+          <>
+            <p className="mut" style={{ margin: '10px 0 4px', fontWeight: 800, fontSize: 13 }}>오는 길</p>
+            <ul className="rows">
+              {withOrigin.map((p) => {
+                const r = routes[p.id];
+                const 말 = !r || r.st === 'loading' ? '경로를 찾는 중…'
+                  : r.st === 'error' ? '경로를 못 불러왔어요'
+                  : !r.found ? '경로를 찾지 못했어요'
+                  : [r.distanceM != null ? `${(r.distanceM / 1000).toFixed(1)}km` : null,
+                     r.durationS != null ? `${Math.round(r.durationS / 60)}분` : null]
+                      .filter(Boolean).join(' · ') || '경로를 찾았어요';
+                return (
+                  <li key={p.id}>
+                    <div className="row" data-static>
+                      <span className="nm">
+                        <span aria-hidden style={{
+                          display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                          background: 경로색[p.transport], marginRight: 6, verticalAlign: 'middle',
+                        }} />
+                        {p.name}
+                        <span className="mut" style={{ display: 'block', fontWeight: 600 }}>
+                          {p.transport === 'car' ? '자차' : '대중교통'} · {말}
+                        </span>
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
 
         {/* 지난 모임은 확정된 곳만 크게, 기록은 접어 둔다 (논의74) */}
