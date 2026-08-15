@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MeetingView, Action, Kind, Going } from '@/lib/types';
 import OsmMap from './osmmap';
 import { instantToKst, formatKst } from '@/lib/time';
+import TimePicker from '../../timepicker';
 
 declare global { interface Window { kakao: any } }
 
@@ -1233,10 +1234,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                 <input value={sName} readOnly={!v.me.isHost} disabled={!v.me.isHost}
                   onChange={(e) => setSName(e.target.value)} placeholder="모임 이름" />
               </label>
-              <label>시간
-                <input type="datetime-local" value={sAt} readOnly={!v.me.isHost} disabled={!v.me.isHost}
-                  onChange={(e) => setSAt(e.target.value)} />
-              </label>
+              <TimePicker value={sAt} onChange={setSAt} readOnly={!v.me.isHost} hint={null} />
               {/* 범위는 만들 때 정하고 끝이다 (논의79) — 잠금이라고 화면이 먼저 말한다 */}
               <label>어디까지 정하나
                 <input value={v.meeting.scope === 'region' ? '지역까지 🔒' : '지점까지 🔒'} readOnly disabled />
