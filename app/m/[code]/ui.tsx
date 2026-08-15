@@ -406,6 +406,21 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     return () => clearTimeout(t);
   }, []);
 
+  /* ⚠ 2026-08-15 — 요약 시트를 끌어 지도 칸(.map, flex:1)의 실제 크기가 바뀌어도
+     카카오 SDK 는 그 변화를 스스로 못 알아챈다(리사이즈 이벤트를 안 듣는다) — 지도
+     타일은 처음 그렸던 크기 그대로 남고, 그 아래(또는 옆) 새로 생긴 자리는 `.map`의
+     민무늬 배경(#e9eef6)만 보인다. 실제로 시트를 내려도 지도가 안 커지는 것처럼
+     보인다는 말이 나와서 찾았다 — relayout() 을 불러 주면 컨테이너의 지금 크기에
+     맞춰 다시 그린다(가운데 좌표는 그대로 둔 채). ResizeObserver 로 크기가 바뀔
+     때마다(시트를 끄는 매 순간 포함) 자동으로 부른다. */
+  useEffect(() => {
+    if (!mapReady || !mapEl.current) return;
+    const el = mapEl.current;
+    const ro = new ResizeObserver(() => { map.current?.relayout(); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mapReady]);
+
   /* 겹친 핀을 다룬다 (그릴링 논의21 · 논의38 ②).
      둘이 겹치면 위로 벌린다. 셋 이상이 한 덩어리로 뭉치면 벌려도 모자라서
      '이 근처 N곳' 하나로 합치고, 누르면 시트로 펼친다.
