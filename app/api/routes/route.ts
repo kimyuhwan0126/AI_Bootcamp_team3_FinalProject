@@ -1,6 +1,6 @@
 /* 참여자 출발지 → 정해진 지점까지의 경로 (2026-08-15).
-   화면이 ODsay·TMAP 키를 직접 들고 부르지 않는다 — places 와 같은 규칙(키를 숨기고,
-   장애·할당량 오류를 한 곳에서 옮긴다). */
+   화면이 카카오 대중교통 길찾기·TMAP 키를 직접 들고 부르지 않는다 — places 와 같은 규칙
+   (키를 숨기고, 장애·할당량 오류를 한 곳에서 옮긴다). */
 import { NextResponse } from 'next/server';
 import { routeTransit, routeCar, RouteUnavailable } from '@/lib/routes';
 import { 한국안 } from '@/lib/geo';
