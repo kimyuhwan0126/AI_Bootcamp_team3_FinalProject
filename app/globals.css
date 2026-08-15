@@ -36,6 +36,11 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
 .fld label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2);margin-bottom:5px}
 .fld input,.fld select{width:100%;min-height:var(--tap);border:1px solid var(--line);border-radius:10px;padding:0 12px;font:inherit;background:var(--surface)}
 .acts{position:absolute;right:14px;top:14px;bottom:62px;display:flex;flex-direction:column-reverse;
+  /* align-items 를 안 주면 기본값 stretch 라, '더보기'로 긴 글자 단추(예: '정하지 않고 끝내기')가
+     끼어드는 순간 이 칸의 고유 폭이 넓어지고 stretch 가 이미 떠 있던 짧은 단추(지역 고르기 등)
+     까지 그 폭으로 늘려 버렸다 — 더보기를 열고 닫을 때마다 단추 크기가 출렁였다.
+     flex-end 로 각 단추가 제 글자 폭만 차지하게 하고, 오른쪽 끝(이 칸의 right:14px)에 맞춰 세운다. */
+  align-items:flex-end;
   justify-content:flex-start;gap:8px;z-index:8;overflow-y:auto;overscroll-behavior:contain;
   padding:2px;scrollbar-width:none;
   /* 이 띠는 단추를 얹어 두는 자리일 뿐이다 — 빈 곳은 지도가 받는다 (그릴링 논의19 ⓐ).
