@@ -210,14 +210,18 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
   to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
 @media (prefers-reduced-motion:reduce){.opre{animation:none}}
 /* 참가자 출발지 (2026-08-15) — 가운데를 셈할 때만 쓰이고 지도에 정작 안 그려졌었다.
-   후보(.opin)와 헷갈리면 안 되니 옅게·작게 그리고 누를 수 없다(pointer-events:none) —
-   '여기서 골라야 하나' 로 오해하면 안 된다, 그냥 '누가 어디서 오는지' 참고 정보다. */
+   후보(.opin)와 헷갈리면 안 되니 누를 수 없다(pointer-events:none) —
+   '여기서 골라야 하나' 로 오해하면 안 된다, 그냥 '누가 어디서 오는지' 참고 정보다.
+   처음엔 옅은 회색 점으로 그렸는데, 카카오 지도 자체의 장소 이름표(예: '협성대학교')와
+   글자·색이 거의 같아 실제 화면에서 어느 게 우리 표시인지 구분이 안 됐다(실측으로 확인) —
+   그래서 뚜렷한 파란 점 하나로 바꾼다. 후보(.opin)는 흰 바탕 알약이거나(0표) 진남색
+   1위 배지라 이 파란 점·이름표와 형태부터 다르다 — 채워진 원 vs 물방울 핀. */
 .ofrom{position:absolute;transform:translate(-50%,-100%);pointer-events:none;
-  display:flex;flex-direction:column;align-items:center;gap:2px;z-index:3}
-.ofrom .pt{width:9px;height:9px;border-radius:50%;background:#8a94ad;
-  border:2px solid #fff;box-shadow:0 1px 3px rgba(20,26,40,.25)}
-.ofrom .lb{font-size:10px;font-weight:700;color:#5b6472;background:rgba(255,255,255,.9);
-  padding:1px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 2px rgba(20,26,40,.12)}
+  display:flex;flex-direction:column;align-items:center;gap:3px;z-index:3}
+.ofrom .pt{width:15px;height:15px;border-radius:50%;background:var(--brand);
+  border:3px solid #fff;box-shadow:0 2px 6px rgba(20,26,40,.35)}
+.ofrom .lb{font-size:11px;font-weight:800;color:#fff;background:var(--brand);
+  padding:2px 8px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 6px rgba(20,26,40,.25)}
 .ozoom{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;
   /* 6px 이면 두 단추의 손가락 자리(48px)가 서로를 먹는다 — 딱 붙되 겹치지는 않는 틈 */
   gap:12px;z-index:7}
