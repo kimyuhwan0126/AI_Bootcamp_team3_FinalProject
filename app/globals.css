@@ -216,19 +216,37 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 }
 /* 최종 도착점(모이는 곳) — 사용자가 준 참고 이미지의 물방울 모양 지도 핀으로 바꾼다
    (2026-08-18). data-first(아직 견주는 중인 1위 후보 — 이름·표가 있는 알약)와는 뜻이
-   다르다: 이건 더는 견줄 대상이 없는, 하나로 정해진 자리다. 그래서 글자를 없앤다 —
-   이름·표는 목록에 이미 있고, 지도는 '거기가 어디인지'만 가리키면 된다(읽어 주는
-   기계에는 aria-label 로 남긴다). 홈 맛보기의 '가운데'·'시간상 가운데'와 모임 결과
-   화면의 확정된 지점이 함께 쓴다 — data-first 뒤에 나란히 붙여 위 알약 스타일을
-   덮어쓴다(캐스케이드 순서로 이긴다). 그림은 SVG 데이터 URI 하나뿐이라 새 요청·이미지
-   파일이 안 든다. ⚠ 카카오 지도 쪽 핀(app/m/[code]/ui.tsx)은 앵커 방식이 달라(자기
-   좌표를 스스로 계산) 이 클래스를 못 쓰고 같은 그림을 JS 문자열로 한 번 더 갖고 있다 —
-   모양을 바꾸면 두 곳 다 고쳐야 한다. */
+   다르다: 이건 더는 견줄 대상이 없는, 하나로 정해진 자리다. 표는 없앤다("3명이
+   골랐어요"는 견주던 중에나 쓸모 있는 말이다) — 하지만 이름은 참고 이미지처럼 핀 위에
+   여전히 띄운다(2026-08-21, 사용자 확인: "텍스트는 있어야 될 것 같다"). 참고 이미지의
+   ⓘ 아이콘은 안 넣는다(사용자 요청: "핀 이모티콘은 빼야돼") — 글자만 있는 빨간 알약.
+   홈 맛보기의 '가운데'·'시간상 가운데'와 모임 결과 화면의 확정된 지점이 함께 쓴다 —
+   data-first 뒤에 나란히 붙여 위 알약 스타일을 덮어쓴다(캐스케이드 순서로 이긴다).
+   그림은 SVG 데이터 URI 하나뿐이라 새 요청·이미지 파일이 안 든다. ⚠ 카카오 지도 쪽
+   핀(app/m/[code]/ui.tsx)은 앵커 방식이 달라(자기 좌표를 스스로 계산) 이 클래스를
+   못 쓰고 같은 그림·이름표를 DOM 요소로 한 번 더 만든다 — 모양을 바꾸면 두 곳 다
+   고쳐야 한다. */
 .opin[data-goal]{
   background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='40' viewBox='0 0 30 40'><path d='M15 0C6.716 0 0 6.716 0 15c0 11.25 15 25 15 25s15-13.75 15-25C30 6.716 23.284 0 15 0z' fill='%23FF3B4E'/><circle cx='15' cy='15' r='6' fill='white'/></svg>") no-repeat center/contain;
   border:0; box-shadow:none; padding:0; border-radius:0; width:30px; height:40px; cursor:default;
 }
-.opin[data-goal]::after{content:none}
+/* 이름표는 핀 위에 붕 뜬 빨간 알약이다 — 실제 텍스트(attr(data-label))를 낸다.
+   .opin 자체는 좌표에 translate(-50%,-100%) 로 앵커돼 있으니(위 공통 .opin 규칙),
+   이름표는 핀 박스의 위(bottom:100%)에 얹으면 저절로 핀 머리 위에 온다. */
+.opin[data-goal]::before{
+  content: attr(data-label);
+  position:absolute; left:50%; bottom:100%; transform:translateX(-50%);
+  margin-bottom:11px; background:#FF3B4E; color:#fff; font-size:12px; font-weight:800;
+  padding:6px 13px; border-radius:999px; white-space:nowrap;
+  box-shadow:0 2px 8px rgba(20,26,40,.28);
+}
+/* 이름표를 핀으로 잇는 꼬리 — data-first::after(아래쪽 꼬리)와 달리 이건 이름표
+   밑, 핀 위쪽을 향해 위에서 아래로 뻗는다. */
+.opin[data-goal]::after{
+  content:''; position:absolute; left:50%; bottom:100%; transform:translateX(-50%);
+  margin-bottom:3px; width:0; height:0;
+  border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #FF3B4E;
+}
 /* 누른 자리는 아직 후보가 아니다 — 회색 점선으로만 짚어 둔다 (그릴링 논의81).
    무엇을 고른 셈인지(이름)와 굳히는 단추는 시트가 맡는다. 지도는 '그게 어디인지'만 말한다.
    누르는 자리가 아니다 — 여기에 손이 닿으면 그 밑의 지도를 못 누른다. */
