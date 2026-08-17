@@ -35,8 +35,9 @@ export default function New() {
   /* 시간은 받되 건너뛸 수 있다 (그릴링 논의70) — "일단 모이긴 모이자" 식 모임이 더 흔하다 */
   const [meetAt, setMeetAt] = useState('');
   /* 방장도 '그 모임의 참가자'다 — 출발지를 똑같이 받는다 (그릴링 논의35 ①).
-     홈에서 여러 곳을 잡아 왔어도 폼이 받는 것은 **첫 곳 하나**다 —
-     나머지는 아직 안 온 사람들 것이라 방장이 대신 낼 자리가 없다. */
+     홈에서 여러 곳을 잡아 왔으면 일단 첫 곳으로 채워 둔다 — 그래야 칸이 비어 있지 않다.
+     하지만 첫 곳이 늘 방장 것은 아니다(실사용 신고, 2026-08-17) — 아래 OriginField 에
+     quickPicks 로 전체 목록을 넘겨, '바꾸기'를 누르면 그중 실제 자기 출발지를 고를 수 있다. */
   const [origin, setOrigin] = useState<Origin | null>(넘김?.출발지들[0] ?? null);
   const [transport, setTransport] = useState<Transport>(넘김?.이동수단 ?? 'transit');
   const [busy, setBusy] = useState(false);
@@ -147,12 +148,18 @@ export default function New() {
         {!!넘김?.출발지들.length && (
           <p className="note" data-slot="넘어온출발지" style={{ margin: '0 0 12px' }}>
             홈에서 잡은 출발지를 가져왔어요.
-            {넘김.출발지들.length > 1 &&
-              ` 나머지 ${넘김.출발지들.length - 1}곳은 친구들이 들어와서 각자 넣어요.`}
+            {넘김.출발지들.length > 1
+              /* 2026-08-17 — 전에는 "나머지는 친구들이 각자 넣어요" 라고만 말했다.
+                 그런데 첫 곳이 늘 방장 것은 아니다 — 홈에서 넣은 순서가 곧 '누가 나인가'를
+                 말하지 않는다(실사용 신고: 원치 않는 곳이 자동으로 들어갔다). 아래 출발지
+                 칸에서 '바꾸기'를 누르면 이 목록 중 골라 담을 수 있다고 같이 알려 준다. */
+              ? ` 아래에서 그중 내 출발지를 고를 수 있어요 — 나머지는 친구들이 들어와서 각자 넣어요.`
+              : ''}
           </p>
         )}
         <OriginField origin={origin} setOrigin={setOrigin}
-          transport={transport} setTransport={setTransport} />
+          transport={transport} setTransport={setTransport}
+          quickPicks={넘김?.출발지들} />
 
         <TimePicker id="mt" value={meetAt} onChange={setMeetAt} />
 
