@@ -53,7 +53,8 @@ type 네모 = { l: number; r: number; t: number; b: number };
 type 단위 = {
   id: string; sx: number; sy: number; votes: number; 차례: number; 이름: string;
   /* goal — 더는 견줄 대상이 없는 확정된 자리(2026-08-18). 알약 대신 물방울 핀으로 그리고
-     글자(이름·표)를 없앤다 — .opin[data-goal], globals.css 참고. */
+     표는 없애되(더는 견줄 게 없으니) 이름은 핀 위 이름표로 그대로 보여 준다
+     (2026-08-21) — .opin[data-goal], globals.css 참고. */
   꾸밈: { first?: boolean; mine?: boolean; goal?: boolean }; 글: React.ReactNode; 누름: () => void;
 };
 const 겹친넓이 = (a: 네모, b: 네모) =>
@@ -410,6 +411,9 @@ export default function OsmMap({
             'data-first': 꾸밈.first || undefined,
             'data-mine': 꾸밈.mine || undefined,
             'data-goal': 꾸밈.goal || undefined,
+            /* 확정된 자리는 핀 위 이름표(글자)로 읽을말을 그대로 보여 준다 —
+               .opin[data-goal]::before(attr(data-label), globals.css) 참고. */
+            'data-label': 꾸밈.goal ? 읽을말 : undefined,
             /* 핀에는 '가1집 3' 처럼 숫자만 있다 — 읽어 주는 말로는 문장을 준다 (그릴링 논의72) */
             'aria-label': 읽을말,
             style: { left: sx + dx, top: sy + dy, ...(canPing ? null : { cursor: 'default' }) },
@@ -422,8 +426,8 @@ export default function OsmMap({
             );
             그린것.push(<span key={'점' + id} className="odot" style={{ left: sx, top: sy, pointerEvents: 'none' }} />);
           }
-          /* 확정된 자리(goal)는 물방울 핀뿐이다 — 이름·표 글자를 안 그린다. 그림은
-             .opin[data-goal](globals.css)이 내고, 읽어 주는 말은 공통.aria-label 이 맡는다. */
+          /* 확정된 자리(goal)는 핀 안에 표까지 든 글(글)을 안 그린다 — 표는 뜻을 잃었으니.
+             대신 이름표는 .opin[data-goal]::before(attr(data-label))가 핀 위에 얹는다. */
           const 속 = 꾸밈.goal ? null : 글;
           그린것.push(canPing ? (
             <button key={id} ref={달기(id)} {...공통}
