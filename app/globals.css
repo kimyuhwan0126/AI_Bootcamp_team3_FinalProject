@@ -43,7 +43,12 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
 .fld{margin-bottom:12px}
 .fld label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2);margin-bottom:5px}
 .fld input,.fld select{width:100%;min-height:var(--tap);border:1px solid var(--line);border-radius:10px;padding:0 12px;font:inherit;background:var(--surface)}
-.acts{position:absolute;right:14px;top:14px;bottom:62px;display:flex;flex-direction:column-reverse;
+/* bottom:80px — 이 아래 자리는 .dial(⋯ 다이얼 토글)이 쓴다. 다이얼 토글은 지름 56px 원이고
+   .dial 자신도 bottom:14px+padding:2px 만큼 더 내려가 있어(같은 파일 .dial 규칙), 토글의
+   맨 위는 부모 바닥에서 72px(=14+2+56) 위다. .acts 를 그보다 안 띄우면(전에는 62px 였다)
+   토글이 이 칸의 맨 아래 단추를 파고든다(실측·스크린샷 신고로 확인, 8px 겹침).
+   72px 에 다른 단추 사이 간격(gap:8px, 아래)과 맞춘 여백을 더해 80px 로 띄운다. */
+.acts{position:absolute;right:14px;top:14px;bottom:80px;display:flex;flex-direction:column-reverse;
   /* align-items 를 안 주면 기본값 stretch 라, '더보기'로 긴 글자 단추(예: '정하지 않고 끝내기')가
      끼어드는 순간 이 칸의 고유 폭이 넓어지고 stretch 가 이미 떠 있던 짧은 단추(지역 고르기 등)
      까지 그 폭으로 늘려 버렸다 — 더보기를 열고 닫을 때마다 단추 크기가 출렁였다.
