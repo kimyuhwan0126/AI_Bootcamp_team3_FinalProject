@@ -28,6 +28,69 @@ const 한국안 = (lat: number, lng: number) =>
    좌표만 보면 같은 건물의 다른 출입구가 두 곳이 된다 — 둘을 함께 본다. */
 const 열쇠 = (o: Origin) => `${o.name}@${o.lat.toFixed(5)},${o.lng.toFixed(5)}`;
 
+/* ── 가운데를 잡는 기준 (2026-08-17) ──────────────────────────
+   '거리'만 있으면 다들 오는 데 걸리는 실제 시간은 다르다는 것을 맛보기 화면에서도
+   보여 달라는 요청 — 대중교통·차 사정에 따라 지리적 가운데가 늘 최선은 아니다.
+   시간·AI는 실제로 뜻이 있으려면 출발지가 둘 이상이어야 한다. */
+type 기준값 = '거리' | '시간' | 'AI';
+const 기준목록: { key: 기준값; 이름: string }[] = [
+  { key: '거리', 이름: '거리' }, { key: '시간', 이름: '시간' }, { key: 'AI', 이름: 'AI' },
+];
+const 기준설명: Record<기준값, string> = {
+  거리: '참가자들의 출발지 한가운데를 잡아요.',
+  시간: '다 같이 오는 데 걸리는 시간이 가장 적게 드는 곳을 찾아요.',
+  AI: '여러 조건을 살펴 AI가 장소를 추천해요.',
+};
+
+type 점 = { lat: number; lng: number };
+/* 같은 자리를 두 번 안 잰다 — 소수 5자리(약 1m)까지 같으면 같은 후보로 친다 */
+const 좌표중복빼기 = (pts: 점[]): 점[] => {
+  const seen = new Set<string>();
+  return pts.filter((p) => {
+    const k = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+};
+/* 시간을 재 볼 후보 자리 — 출발지 전부를 다 후보로 두면(N명) 잴 거리가 N×N으로 늘어난다.
+   출발지가 4곳 이하면 각자의 자리 + 지리적 가운데(최대 5곳)를, 그보다 많으면 가운데에서
+   가장 먼 4곳 + 가운데(역시 최대 5곳)만 잰다 — 실제로 가운데를 밀어낼 힘이 큰 자리들이다. */
+function 시간후보들(출발지들: Origin[]): 점[] {
+  const n = 출발지들.length;
+  const 중심 = { lat: 출발지들.reduce((a, o) => a + o.lat, 0) / n, lng: 출발지들.reduce((a, o) => a + o.lng, 0) / n };
+  if (n <= 4) return 좌표중복빼기([...출발지들.map((o) => ({ lat: o.lat, lng: o.lng })), 중심]);
+  const 평면거리 = (a: 점, b: 점) => Math.hypot(a.lat - b.lat, a.lng - b.lng);
+  const 먼순 = [...출발지들].sort((a, b) => 평면거리(b, 중심) - 평면거리(a, 중심)).slice(0, 4);
+  return 좌표중복빼기([중심, ...먼순.map((o) => ({ lat: o.lat, lng: o.lng }))]);
+}
+/* 후보마다 모두의 실제 이동시간(/api/routes, 이번 세션에 만든 카카오 대중교통·TMAP 연동)을
+   재서 평균이 가장 짧은 곳을 고른다 — 몇 사람 것을 못 구해도(길이 없거나 잠시 막혀도)
+   구한 것만으로 평균을 낸다. 아무도 하나도 못 구한 후보는 버린다. */
+async function 시간가운데찾기(출발지들: Origin[], transport: Transport): Promise<(점 & { 평균분: number }) | null> {
+  const 후보들 = 시간후보들(출발지들);
+  const 평가 = await Promise.all(후보들.map(async (cand) => {
+    const 시간들 = await Promise.all(출발지들.map(async (o) => {
+      try {
+        const qs = new URLSearchParams({
+          fromLat: String(o.lat), fromLng: String(o.lng),
+          toLat: String(cand.lat), toLng: String(cand.lng), mode: transport,
+        });
+        const r = await fetch(`/api/routes?${qs}`);
+        if (!r.ok) return null;
+        const j = await r.json();
+        return j.found && Number.isFinite(j.durationS) ? (j.durationS as number) : null;
+      } catch { return null; }
+    }));
+    const 구한것 = 시간들.filter((t): t is number => t != null);
+    return 구한것.length ? { ...cand, 합: 구한것.reduce((a, b) => a + b, 0), 답수: 구한것.length } : null;
+  }));
+  const 살아남은 = 평가.filter((x): x is NonNullable<typeof x> => !!x);
+  if (!살아남은.length) return null;
+  살아남은.sort((a, b) => a.합 / a.답수 - b.합 / b.답수);
+  const 최선 = 살아남은[0];
+  return { lat: 최선.lat, lng: 최선.lng, 평균분: Math.round(최선.합 / 최선.답수 / 60) };
+}
+
 /* ⚠ **가운데 둘레 지점 목록(음식점·카페 등)을 없앴다** (2026-08-14) — 맛보기 화면은
    '가운데가 어디로 잡히는지' 만 보여 주면 충분한데, 그 아래 실제 가게·주차장 목록까지
    나오면 마치 지금 뭔가를 고르는 화면처럼 보인다. 그건 로그인해서 모임에 들어간 뒤
@@ -42,6 +105,11 @@ export default function 탐색() {
   const [이동수단, set이동수단] = useState<Transport>('transit');
   const [칸키, set칸키] = useState(0);
   const [알림, set알림] = useState('');
+  /* 가운데를 잡는 기준 — 거리(기본)·시간·AI. AI 는 지금은 안내만 하고 실제로 안 부른다(2026-08-17,
+     Ollama 쪽 설정이 아직 안 맞음 — lib/ai.ts 참고). */
+  const [기준, set기준] = useState<기준값>('거리');
+  const [시간가운데, set시간가운데] = useState<(점 & { 평균분: number }) | null>(null);
+  const [시간상태, set시간상태] = useState<'idle' | '구하는중' | '못구함'>('idle');
 
   /* 새로 단 출발지 칸은 **스스로** 내정보의 기본 출발지·이동 수단을 얹는다(originfield.tsx).
      그건 사람이 고른 것이 아니다 — 칸을 새로 달 때마다 기본값이 또 얹히면
@@ -97,6 +165,43 @@ export default function 탐색() {
         lng: 출발지들.reduce((a, o) => a + o.lng, 0) / 출발지들.length }
     : null;
 
+  /* '시간' 기준을 고르면 다시 잰다 — 출발지·이동수단이 바뀔 때마다, 손을 멈추면(350ms)
+     한 번만 부른다(originfield.tsx 의 이름 찾기와 같은 결). 둘 미만이면 잴 것이 없다. */
+  const 출발지서명 = 출발지들.map((o) => `${o.lat},${o.lng}`).join('|');
+  useEffect(() => {
+    if (기준 !== '시간' || 출발지들.length < 2) { set시간가운데(null); set시간상태('idle'); return; }
+    let 살아있나 = true;
+    set시간상태('구하는중');
+    const t = setTimeout(() => {
+      시간가운데찾기(출발지들, 이동수단).then((결과) => {
+        if (!살아있나) return;
+        if (결과) { set시간가운데(결과); set시간상태('idle'); }
+        else { set시간가운데(null); set시간상태('못구함'); }
+      }).catch(() => { if (살아있나) { set시간가운데(null); set시간상태('못구함'); } });
+    }, 350);
+    return () => { 살아있나 = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [기준, 출발지서명, 이동수단]);
+
+  /* 지도에 실제로 얹을 가운데 — AI 는 아직 실제로 안 부르니 핀을 안 띄운다(아래 안내문이 대신 말한다).
+     시간은 구하는 동안·못 구했을 때 거리 기준으로 잠깐 대신 보여 준다 — 지도가 비어 보이는 것보다는 낫다. */
+  const 지도가운데 = 기준 === 'AI' ? null : 기준 === '시간' && 시간가운데 ? 시간가운데 : 가운데;
+  const 지도가운데라벨 = 기준 === '시간' && 시간가운데 ? '시간상 가운데' : '가운데';
+
+  /* 지도 밑 한 줄 — 기준마다 다른 말을 한다(사용자 요청, 2026-08-17).
+     둘 미만이면 기준과 상관없이 '더 넣어 달라'가 우선이다 — 그 전까지는 어느 기준을 골라도 잴 게 없다. */
+  const 지도밑문구 = 출발지들.length === 0
+    ? '출발지를 2곳 이상 넣으면 가운데와 그 둘레를 보여 드려요.'
+    : 출발지들.length === 1
+      ? '출발지를 하나 더 넣으면 두 곳의 가운데를 잡아 줘요.'
+      : 기준 === '거리' ? 기준설명.거리
+      : 기준 === '시간'
+        ? 시간상태 === '구하는중' ? `${기준설명.시간} 찾는 중…`
+          : 시간상태 === '못구함' ? '지금은 도착 시간을 계산하지 못했어요 — 거리 기준으로 대신 보여 드려요.'
+          : 시간가운데 ? `${기준설명.시간} 평균 ${시간가운데.평균분}분쯤 걸려요.`
+          : 기준설명.시간
+      : `${기준설명.AI} 아직 준비 중이에요 — 곧 붙일게요.`;
+
   /* ── 만들기 폼으로 ───────────────────────────────────────
      **링크**로 둔다. 주소가 있는 자리로 가는 길이라 새 탭·오래 눌러 열기가 되어야 하고,
      자바스크립트가 아직 안 붙은 동안에도 눌리면 만들기로 가야 한다.
@@ -110,10 +215,12 @@ export default function 탐색() {
     실어보내기({ 출발지들, 이동수단 });
   }
 
-  /* 가운데 좌표는 눈으로 못 읽는다(지도 위 핀뿐이다) — 그 셈이 맞는지 시험이 볼 수 있게 적어 둔다 */
+  /* 가운데 좌표는 눈으로 못 읽는다(지도 위 핀뿐이다) — 그 셈이 맞는지 시험이 볼 수 있게 적어 둔다.
+     지금 화면에 실제로 뜬 가운데(기준에 따라 거리·시간이 다를 수 있다)를 적는다 — 시험은
+     이 값으로 '고른 기준이 실제로 지도에 반영됐는지'까지 잴 수 있다. */
   return (
-    <section className={s.칸} data-slot="탐색" data-출발지수={출발지들.length}
-      data-가운데={가운데 ? `${가운데.lat},${가운데.lng}` : ''}>
+    <section className={s.칸} data-slot="탐색" data-출발지수={출발지들.length} data-기준={기준}
+      data-가운데={지도가운데 ? `${지도가운데.lat},${지도가운데.lng}` : ''}>
       {/* 옛 판 홈에는 '가운데 찾기' 라는 제목도 딸린 설명도 없었다.
           큰 검색칸이 "어디에서 출발하시나요?" 라고 스스로 묻는다 — 물음이 곧 안내다.
           홈은 훑는 자리라 칸마다 설명을 붙이면 화면이 글로 덮인다. */}
@@ -143,21 +250,31 @@ export default function 탐색() {
       </p>
       {알림 && <p className="warn" style={{ margin: '0 0 10px', fontSize: 12.5 }}>{알림}</p>}
 
+      {/* 가운데를 잡는 기준 — 거리·시간·AI (사용자 요청, 2026-08-17). 지도 바로 위에 두어
+          '이 지도가 무엇을 기준으로 그려졌는지'가 한눈에 보이게 한다. 출발지가 하나도 없을
+          때도 보여 준다 — 눌러서 무엇을 해 주는 자리인지 미리 알 수 있게(둘레 설명은 아래
+          지도밑문구 가 맡는다). */}
+      <div className={s.기준줄} data-slot="기준">
+        <span className={s.기준이름}>가운데를 잡는 기준</span>
+        <div className="segs">
+          {기준목록.map((k) => (
+            <button key={k.key} type="button" className="seg" aria-pressed={기준 === k.key}
+              onClick={() => set기준(k.key)}>{k.이름}</button>
+          ))}
+        </div>
+      </div>
+
       <div className={s.지도칸}>
         <지도
           출발지들={출발지들.map((o) => ({ 이름: o.name, lat: o.lat, lng: o.lng }))}
-          가운데={가운데} />
+          가운데={지도가운데} 가운데라벨={지도가운데라벨} />
       </div>
 
       {/* 옛 판은 지도 아래에 이 한 줄을 **늘** 뒀다 — 무엇을 하면 무엇이 나오는지 미리 말해 준다.
-          한 곳만 넣은 사람에게는 '한 곳 더' 라고 더 또렷하게 말한다. */}
-      {출발지들.length < 2 && (
-        <p className={s.지도밑}>
-          {출발지들.length === 1
-            ? '출발지를 하나 더 넣으면 두 곳의 가운데를 잡아 줘요.'
-            : '출발지를 2곳 이상 넣으면 가운데와 그 둘레를 보여 드려요.'}
-        </p>
-      )}
+          지금은 기준(거리·시간·AI)에 따라 다른 말을 한다 — 위 지도밑문구 에서 다 정했다.
+          data-slot 은 시험이 붙잡는 자리다 — CSS 모듈이 한글 클래스명을 해시로 바꿔 버려
+          클래스로는 못 찾는다(지도.tsx 와 같은 사정). */}
+      <p className={s.지도밑} data-slot="지도밑">{지도밑문구}</p>
 
       {/* 이동 수단 — 옛 판 홈에는 없던 칸이다(거기서는 내정보에만 있었다).
           우리는 이 값을 만들기 폼으로 실어 보내므로 여기 남긴다. 다만 **지도 아래**로 내렸다:
@@ -178,7 +295,10 @@ export default function 탐색() {
       </Link>
       {출발지들.length > 1 && (
         <p className="mut" style={{ margin: '6px 0 0' }}>
-          폼에는 첫 출발지만 들어가요 — 나머지는 친구들이 들어와서 각자 넣어요.
+          {/* 2026-08-17 — 첫 곳이 늘 방장 것은 아니라는 신고로 만들기 폼에 '바꾸기' 로 고르는
+             길이 생겼다(app/originfield.tsx 의 quickPicks). 여기 안내도 그에 맞춰 고쳤다 —
+             예전엔 "폼에는 첫 출발지만 들어가요" 라고 해서, 나머지를 고를 수 있다는 걸 몰랐다. */}
+          폼에는 첫 출발지로 채워져요 — 바꾸기를 누르면 여기서 잡은 곳 중 고를 수 있어요.
         </p>
       )}
     </section>
