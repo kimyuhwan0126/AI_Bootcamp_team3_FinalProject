@@ -108,7 +108,14 @@ export async function routeTransit(from: RoutePoint, to: RoutePoint): Promise<Ro
   const points: RoutePoint[] = [];
   /* 구간별 안내(2026-08-17, "어떻게 이동하는지 보고 싶다") — 좌표를 잇는 것과 같은 자리에서
      함께 뽑는다. guidance 는 카카오가 이미 사람이 읽는 한국어 문장으로 준다
-     ("2호선 (왕십리 > 성수)" 같은 식) — 여기서 새로 짓지 않는다. */
+     ("2호선 (왕십리 > 성수)" 같은 식) — 여기서 새로 짓지 않는다.
+     ⚠ 일부 구간만 예외 — "무학여고앞무학여고앞정류장까지 도보로 이동"·"금정금정역 환승"
+     처럼 정류장·역 이름을 통째로 두 번 이어 붙여서 준다(실사용 신고, 2026-08-17 —
+     출발·도착 자리가 같아서 그대로 겹친 것으로 보인다). 겹친 이름만 하나로 줄인다 —
+     확인된 두 문장꼴("~정류장까지"·"~역 환승") 바로 앞에서만 지운다. 안 겹치는 문장
+     (지하철·버스 노선명 등)이나 아직 못 본 다른 문장꼴은 손대지 않는다 — 겹치는 자리를
+     더 보면 여기 추가한다. */
+  const 겹친이름줄이기 = (g: string) => g.replace(/^(.+?)\1(?=정류장까지|역 환승)/, '$1');
   const steps: RouteStep[] = [];
   for (const step of route.steps ?? []) {
     for (const p of step?.path?.points ?? []) {
@@ -119,7 +126,7 @@ export async function routeTransit(from: RoutePoint, to: RoutePoint): Promise<Ro
     if (typeof g === 'string' && g.trim()) {
       steps.push({
         type: step.properties.type ?? '',
-        guidance: g,
+        guidance: 겹친이름줄이기(g.trim()),
         distanceM: Number.isFinite(step.properties.distance) ? step.properties.distance : null,
         durationS: Number.isFinite(step.properties.time) ? step.properties.time : null,
       });
