@@ -40,6 +40,24 @@ const toLatLng = (x: number, y: number, z: number) => {
 /* 출발지 상자가 지도의 이만큼을 채우게 맞춘다 — 남는 여백은 이름표 몫이다 (osmmap 과 같은 값) */
 const FIT = 0.72;
 
+/* 가운데(확정된 자리) 핀 — 물방울 그림 + 이름표(2026-08-21).
+   처음엔 `.opin[data-goal]::before`(globals.css, content:attr(data-label))로 얹었는데,
+   실제 카카오 지도(Vercel)에서 이름표가 "가" 한 글자만 핀에 겹쳐 나오는 사고가 났다
+   — 카카오 CustomOverlay 가 이 자리(가운데)만 raw HTML 문자열로 넣는데, 그 오버레이
+   래퍼가 넘치는(::before 로 박스 밖까지 삐져나오는) 그림을 잘라내는 것으로 보인다
+   (OSM 폴백·모임 화면은 각각 진짜 React DOM·JS 로 자식 엘리먼트를 쌓아서 넘칠 일이
+   없었고, 그래서 실제로는 안 걸렸다). 그래서 여기(카카오 raw HTML)만은 이름표·꼬리·
+   핀을 처음부터 겹치지 않는 형제 엘리먼트로 쌓는다 — app/m/[code]/ui.tsx 의
+   목표핀만들기() 와 같은 생각, DOM 대신 문자열로 짠 것만 다르다.
+   ⚠ 그림을 바꾸면 globals.css(.opin[data-goal])·ui.tsx(목표핀만들기)도 같이 고쳐라. */
+const 목표핀그림 = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='40' viewBox='0 0 30 40'><path d='M15 0C6.716 0 0 6.716 0 15c0 11.25 15 25 15 25s15-13.75 15-25C30 6.716 23.284 0 15 0z' fill='%23FF3B4E'/><circle cx='15' cy='15' r='6' fill='white'/></svg>\") no-repeat center/contain";
+const 가운데핀HTML = (라벨: string) => `
+  <div style="position:absolute;left:0;top:0;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;cursor:default" aria-label="${라벨}">
+    <span style="background:#FF3B4E;color:#fff;font-size:12px;font-weight:800;padding:6px 13px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 8px rgba(20,26,40,.28);margin-bottom:2px">${라벨}</span>
+    <span style="width:0;height:0;margin-bottom:3px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #FF3B4E"></span>
+    <span style="width:30px;height:40px;background:${목표핀그림}"></span>
+  </div>`;
+
 export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가운데', 경로들 }: {
   출발지들: 점[];
   가운데: { lat: number; lng: number } | null;
@@ -201,10 +219,10 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       얹기(o, `<span class="opin" style="left:0;top:0;cursor:default">${o.이름}</span>`);
     });
     if (가운데) {
-      /* 물방울 지도 핀으로 그린다(사용자가 준 참고 이미지, 2026-08-18) — 이름표는 핀 위에
-         빨간 알약으로 뜬다(data-label, ⓘ 아이콘 없이 글자만 — 2026-08-21 수정).
-         그림·이름표는 globals.css 의 .opin[data-goal] 이 낸다. */
-      얹기(가운데, `<span class="opin" data-first data-goal style="left:0;top:0" data-label="${가운데라벨}" aria-label="${가운데라벨}"></span>`);
+      /* 물방울 지도 핀 + 이름표(사용자가 준 참고 이미지, 2026-08-18 · 2026-08-21) —
+         `.opin[data-goal]` 을 안 쓰고 가운데핀HTML() 로 직접 짠다(위 주석 — 카카오
+         raw HTML 에서 ::before 가 잘려 나오는 사고 때문). */
+      얹기(가운데, 가운데핀HTML(가운데라벨));
     }
 
     /* 경로선 — 핀보다 먼저 그려 아래 깔린다(모임 화면과 같은 순서) */
