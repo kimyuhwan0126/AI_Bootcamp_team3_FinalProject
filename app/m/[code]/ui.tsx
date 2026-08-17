@@ -679,6 +679,11 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
       fitted.current = true;
       const b = new window.kakao.maps.LatLngBounds();
       onMap.forEach((c) => b.extend(new window.kakao.maps.LatLng(c.lat, c.lng)));
+      /* 결과 화면은 정해진 곳 하나만 담으면 참가자 경로선이 죄다 화면 밖으로 잘린다
+         (실사용 신고 — 카카오 지도로 확인) — 다들 오는 길을 보려는 화면이니 출발지까지
+         같이 담는다. 고르는 중(region·place)에는 손대지 않는다 — 후보 사이를 견주는
+         화면에 출발지가 섞이면 정작 견줄 후보들이 좁아진다. */
+      if (done_) withOrigin.forEach((p) => b.extend(new window.kakao.maps.LatLng(p.lat!, p.lng!)));
       map.current.setBounds(b, 40, 40, 40, 40);
     }
   }, [v, mapReady]);
@@ -1012,6 +1017,9 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                 ? { id: p.id, points: r.points, color: 경로색[p.transport] } : null; })
               .filter((x): x is { id: string; points: { lat: number; lng: number }[]; color: string } => !!x)
               : []}
+            /* 결과 화면 첫 그림에 참가자 경로선이 다 담기게 — 카카오 쪽(위 fitted.current
+               효과)과 같은 뜻. 고르는 중에는 손대지 않는다(그때는 이 값이 false). */
+            fitOrigins={done_}
           />
         )}
         {/* 도구(스피드다이얼)가 펴져 있는 동안은 주 액션을 감춘다 — 안 그러면 다이얼이

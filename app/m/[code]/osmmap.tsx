@@ -59,7 +59,7 @@ const 겹친넓이 = (a: 네모, b: 네모) =>
 
 export default function OsmMap({
   candidates, myVotes, center, canPing, preview, onPick, onToggle, onCluster, cluster = true, origins,
-  region, regionRadiusM, routes,
+  region, regionRadiusM, routes, fitOrigins,
 }: {
   candidates: Candidate[];
   myVotes: string[];
@@ -85,6 +85,11 @@ export default function OsmMap({
   /* 정해진 지점까지 참가자별로 그리는 이동 경로 (2026-08-15) — 대중교통·자차 API 가 준 꺾은선을
      그대로 잇는다. 카카오 쪽(ui.tsx)은 Polyline 을 쓰고 여기는 SVG 로 같은 모양을 낸다. */
   routes?: { id: string; points: { lat: number; lng: number }[]; color: string }[];
+  /* 결과 화면(끝난 모임)인가 — 후보 담기(아래)가 여기에 따라 출발지까지 같이 담을지를 가른다.
+     candidates.length 만으로는 못 가른다: 고르는 중에도 후보가 정확히 하나뿐일 수 있어서,
+     그때 출발지를 섞으면 정작 보려던 후보 하나가 화면에서 좁아진다(실사용 신고 — 카카오
+     지도 쪽에서 먼저 확인된 문제라 여기도 같은 뜻으로 맞춘다). */
+  fitOrigins?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -149,9 +154,12 @@ export default function OsmMap({
       return;
     }
     fitted.current = true;
-    const { 가운데, z: 맞는배율 } = 담는배치(candidates);
+    /* 결과 화면은 정해진 곳 하나(candidates)만 담으면 참가자 경로선이 화면 밖으로 잘린다 —
+       다들 오는 길을 보려는 화면이니 출발지까지 같이 담는다(fitOrigins, 카카오 쪽과 같은 뜻). */
+    const 담을것 = fitOrigins && origins?.length ? [...candidates, ...origins] : candidates;
+    const { 가운데, z: 맞는배율 } = 담는배치(담을것);
     setC(가운데); setZ(맞는배율);
-  }, [candidates, origins, region, center.lat, center.lng]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candidates, origins, region, fitOrigins, center.lat, center.lng]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
