@@ -205,6 +205,35 @@ export default function 탐색() {
   const 지도가운데 = 기준 === 'AI' ? null : 기준 === '시간' && 시간가운데 ? 시간가운데 : 가운데;
   const 지도가운데라벨 = 기준 === '시간' && 시간가운데 ? '시간상 가운데' : '가운데';
 
+  /* 출발지마다 지금 뜬 가운데까지 오는 길 (2026-08-17, 사용자 요청) — 모임 화면과 같은
+     /api/routes 를 쓴다. 지도가운데가 바뀔 때마다(거리↔시간을 오가거나, 시간 계산이 끝나
+     '거리 대신 보여 주던 자리'에서 '진짜 시간상 자리'로 넘어갈 때도) 다시 잰다.
+     AI 는 가운데 자체가 없으니(위) 여기서도 자동으로 빈다. */
+  const [경로들, set경로들] = useState<{ id: string; points: 점[] }[]>([]);
+  useEffect(() => {
+    const 목적지 = 지도가운데;
+    if (!목적지 || !출발지들.length) { set경로들([]); return; }
+    let 살아있나 = true;
+    const t = setTimeout(async () => {
+      const 결과 = await Promise.all(출발지들.map(async (o) => {
+        try {
+          const qs = new URLSearchParams({
+            fromLat: String(o.lat), fromLng: String(o.lng),
+            toLat: String(목적지.lat), toLng: String(목적지.lng), mode: 이동수단,
+          });
+          const r = await fetch(`/api/routes?${qs}`);
+          if (!r.ok) return null;
+          const j = await r.json();
+          return j.found && Array.isArray(j.points) && j.points.length >= 2
+            ? { id: 열쇠(o), points: j.points as 점[] } : null;
+        } catch { return null; }
+      }));
+      if (살아있나) set경로들(결과.filter((x): x is { id: string; points: 점[] } => !!x));
+    }, 350);
+    return () => { 살아있나 = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [지도가운데?.lat, 지도가운데?.lng, 출발지서명, 이동수단]);
+
   /* 지도 밑 한 줄 — 기준마다 다른 말을 한다(사용자 요청, 2026-08-17).
      둘 미만이면 기준과 상관없이 '더 넣어 달라'가 우선이다 — 그 전까지는 어느 기준을 골라도 잴 게 없다. */
   const 지도밑문구 = 출발지들.length === 0
@@ -284,7 +313,7 @@ export default function 탐색() {
       <div className={s.지도칸}>
         <지도
           출발지들={출발지들.map((o) => ({ 이름: o.name, lat: o.lat, lng: o.lng }))}
-          가운데={지도가운데} 가운데라벨={지도가운데라벨} />
+          가운데={지도가운데} 가운데라벨={지도가운데라벨} 경로들={경로들} />
       </div>
 
       {/* 옛 판은 지도 아래에 이 한 줄을 **늘** 뒀다 — 무엇을 하면 무엇이 나오는지 미리 말해 준다.
