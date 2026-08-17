@@ -44,19 +44,39 @@ const FIT = 0.72;
    처음엔 `.opin[data-goal]::before`(globals.css, content:attr(data-label))로 얹었는데,
    실제 카카오 지도(Vercel)에서 이름표가 "가" 한 글자만 핀에 겹쳐 나오는 사고가 났다
    — 카카오 CustomOverlay 가 이 자리(가운데)만 raw HTML 문자열로 넣는데, 그 오버레이
-   래퍼가 넘치는(::before 로 박스 밖까지 삐져나오는) 그림을 잘라내는 것으로 보인다
-   (OSM 폴백·모임 화면은 각각 진짜 React DOM·JS 로 자식 엘리먼트를 쌓아서 넘칠 일이
-   없었고, 그래서 실제로는 안 걸렸다). 그래서 여기(카카오 raw HTML)만은 이름표·꼬리·
-   핀을 처음부터 겹치지 않는 형제 엘리먼트로 쌓는다 — app/m/[code]/ui.tsx 의
-   목표핀만들기() 와 같은 생각, DOM 대신 문자열로 짠 것만 다르다.
+   래퍼가 넘치는(::before 로 박스 밖까지 삐져나오는) 그림을 잘라내는 것으로 보인다.
+   그래서 문자열 대신 이름표·꼬리·핀을 형제 DOM 엘리먼트로 쌓는 안으로 한 번 고쳤는데,
+   **그 문자열 버전에 또 다른 사고가 있었다**(2026-08-22, 실사용 신고) — 물방울 그림
+   (목표핀그림)은 `url("data:...")`(바깥 큰따옴표) 안에 `width='30'`(SVG 속성은
+   홑따옴표)를 함께 쓰는데, 이걸 `style="...background:${목표핀그림}"`(큰따옴표로 감싼
+   HTML 속성) 안에 그대로 넣으면 목표핀그림 속의 큰따옴표가 style 속성을 조기에 끊어
+   버린다 — 브라우저가 나머지(`") no-repeat center/contain">`)를 글자로 읽어 화면에
+   그대로 찍히고, 핀 그림 자체는 안 나온다(신고 스크린샷과 정확히 일치). ui.tsx 의
+   목표핀만들기() 는 처음부터 el.style.cssText 로 **JS 문자열**을 그대로 대입해서
+   (HTML 속성 파싱을 안 거친다) 이 문제가 없었다 — 그래서 여기도 그 방식으로 바꾼다:
+   HTML 문자열이 아니라 document.createElement 로 진짜 엘리먼트를 만든다. 이러면
+   따옴표 충돌도 없고, 나중에 라벨이 실제 지명(임의의 글자)으로 바뀌어도
+   (textContent 라 이스케이프가 필요 없다) 안전하다.
    ⚠ 그림을 바꾸면 globals.css(.opin[data-goal])·ui.tsx(목표핀만들기)도 같이 고쳐라. */
 const 목표핀그림 = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='40' viewBox='0 0 30 40'><path d='M15 0C6.716 0 0 6.716 0 15c0 11.25 15 25 15 25s15-13.75 15-25C30 6.716 23.284 0 15 0z' fill='%23FF3B4E'/><circle cx='15' cy='15' r='6' fill='white'/></svg>\") no-repeat center/contain";
-const 가운데핀HTML = (라벨: string) => `
-  <div style="position:absolute;left:0;top:0;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;cursor:default" aria-label="${라벨}">
-    <span style="background:#FF3B4E;color:#fff;font-size:12px;font-weight:800;padding:6px 13px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 8px rgba(20,26,40,.28);margin-bottom:2px">${라벨}</span>
-    <span style="width:0;height:0;margin-bottom:3px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #FF3B4E"></span>
-    <span style="width:30px;height:40px;background:${목표핀그림}"></span>
-  </div>`;
+function 가운데핀엘리먼트(라벨: string): HTMLDivElement {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:absolute;left:0;top:0;transform:translate(-50%,-100%);'
+    + 'display:flex;flex-direction:column;align-items:center;cursor:default';
+  el.setAttribute('aria-label', 라벨);
+  const label = document.createElement('span');
+  label.textContent = 라벨;
+  label.style.cssText = 'background:#FF3B4E;color:#fff;font-size:12px;font-weight:800;'
+    + 'padding:6px 13px;border-radius:999px;white-space:nowrap;'
+    + 'box-shadow:0 2px 8px rgba(20,26,40,.28);margin-bottom:2px';
+  const tail = document.createElement('span');
+  tail.style.cssText = 'width:0;height:0;margin-bottom:3px;border-left:5px solid transparent;'
+    + 'border-right:5px solid transparent;border-top:6px solid #FF3B4E';
+  const pin = document.createElement('span');
+  pin.style.cssText = `display:block;width:30px;height:40px;background:${목표핀그림}`;
+  el.append(label, tail, pin);
+  return el;
+}
 
 export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가운데', 경로들 }: {
   출발지들: 점[];
@@ -211,6 +231,18 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       ov.setMap(m);
       카카오오버레이.current.push(ov);
     };
+    /* 가운데 핀처럼 글자에 따옴표가 섞여도 안전해야 하는 자리는 문자열 대신 진짜
+       엘리먼트를 얹는다(위 가운데핀엘리먼트 주석 참고) — setContent 는 카카오가
+       String·HTMLElement 를 둘 다 받는다. */
+    const 얹기엘리먼트 = (p: { lat: number; lng: number }, el: HTMLElement) => {
+      const ov = new window.kakao.maps.CustomOverlay({
+        position: new window.kakao.maps.LatLng(p.lat, p.lng),
+        xAnchor: 0, yAnchor: 0, zIndex: 4,
+      });
+      ov.setContent(el);
+      ov.setMap(m);
+      카카오오버레이.current.push(ov);
+    };
 
     if (내자리) {
       얹기(내자리, `<span class="${s.내자리점}" style="left:0;top:0" aria-hidden></span>`);
@@ -220,9 +252,9 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     });
     if (가운데) {
       /* 물방울 지도 핀 + 이름표(사용자가 준 참고 이미지, 2026-08-18 · 2026-08-21) —
-         `.opin[data-goal]` 을 안 쓰고 가운데핀HTML() 로 직접 짠다(위 주석 — 카카오
-         raw HTML 에서 ::before 가 잘려 나오는 사고 때문). */
-      얹기(가운데, 가운데핀HTML(가운데라벨));
+         `.opin[data-goal]` 을 안 쓰고 가운데핀엘리먼트() 로 진짜 엘리먼트를 짠다
+         (위 주석 — 문자열로 짜면 ::before 도, 따옴표 섞인 그림도 차례로 사고가 났다). */
+      얹기엘리먼트(가운데, 가운데핀엘리먼트(가운데라벨));
     }
 
     /* 경로선 — 핀보다 먼저 그려 아래 깔린다(모임 화면과 같은 순서) */
