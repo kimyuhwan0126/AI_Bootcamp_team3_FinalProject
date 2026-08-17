@@ -101,3 +101,36 @@
    .목록칸·.갈래표(둘레 지점 목록)도 오늘 없앴다 — 탐색.tsx 참고.
    갈래 거르개(`.거르개`·`.칩`)는 그보다 먼저 지웠다 — 카테고리를 없앴으므로 쓰는 곳이 없다.
    되살릴 일이 생기면 git 기록이 아니라 사람에게 물어야 한다(사람이 정해 뺀 것들이다). */
+
+/* ── 출발지별 상세 (맨 아래, 2026-08-17) ──────────────────────
+   토글형 — 줄을 누르면 그 줄만 펼쳐진다. 여럿을 한꺼번에 펼쳐도 된다(아코디언처럼
+   하나만 남기고 닫지 않는다) — 몇 명 안 되는 자리라 다 펼쳐 놓고 견줘 보는 쪽이 낫다. */
+.상세칸 { margin: 18px 0 0; }
+.상세이름 {
+  display: block; margin: 0 0 8px;
+  font-size: 12.5px; font-weight: 800; color: var(--ink-2);
+}
+.상세목록 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.상세행 {
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--surface);
+}
+.상세토글 {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: var(--tap); padding: 0 14px; border: 0; background: none; cursor: pointer;
+  font: inherit; text-align: left;
+}
+.상세토글이름 { font-size: 13.5px; font-weight: 800; color: var(--ink); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.상세토글시간 { font-size: 12.5px; font-weight: 800; color: var(--brand); flex: 0 0 auto; }
+.상세화살표 {
+  flex: 0 0 auto; color: var(--ink-3); font-size: 12px;
+  transition: transform .15s ease;
+}
+.상세화살표[data-열림] { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .상세화살표 { transition: none; } }
+.상세내용 { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+.상세수단 { margin: 12px 0 8px; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+/* 구간별 안내 줄 — 지하철·버스·도보 아이콘 + 문장 + (있으면) 몇 분 */
+.단계들 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.단계들 li { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--ink); }
