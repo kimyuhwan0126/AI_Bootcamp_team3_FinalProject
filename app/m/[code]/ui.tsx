@@ -24,11 +24,32 @@ const RADIUS_FALLBACK_M = 700;
 const 경로색: Record<'transit' | 'car', string> = { transit: '#2f6bff', car: '#f59e0b' };
 
 /* 확정된 자리(더는 견줄 대상이 없는 곳)를 그리는 물방울 지도 핀 — 사용자가 준 참고
-   이미지, 2026-08-18. OSM 폴백(osmmap.tsx)·홈 맛보기(탐색/지도.tsx)는 이 그림을
-   globals.css 의 .opin[data-goal] 로 공유하는데, 여기(카카오 핀)만 앵커 방식이 달라서
-   (yAnchor 로 카카오가 스스로 위치를 잡는다 — .opin 의 transform:translate 를 못 쓴다)
-   같은 그림을 문자열로 한 번 더 갖고 있다. ⚠ 모양을 바꾸면 globals.css 도 같이 고쳐라. */
+   이미지, 2026-08-18(핀 모양) · 2026-08-21(핀 위 이름표, ⓘ 아이콘 없이 글자만).
+   OSM 폴백(osmmap.tsx)·홈 맛보기(탐색/지도.tsx)는 이 그림·이름표를 globals.css 의
+   .opin[data-goal] 로 공유하는데, 여기(카카오 핀)만 앵커 방식이 달라서(yAnchor 로
+   카카오가 스스로 위치를 잡는다 — .opin 의 transform:translate 를 못 쓰고, 그래서
+   ::before 로 얹는 이름표도 못 쓴다) 같은 그림·이름표를 DOM 요소로 한 번 더 만든다.
+   ⚠ 모양을 바꾸면 globals.css 도 같이 고쳐라. */
 const 목표핀그림 = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='40' viewBox='0 0 30 40'><path d='M15 0C6.716 0 0 6.716 0 15c0 11.25 15 25 15 25s15-13.75 15-25C30 6.716 23.284 0 15 0z' fill='%23FF3B4E'/><circle cx='15' cy='15' r='6' fill='white'/></svg>\") no-repeat center/contain";
+/* 이름표(핀 위 빨간 알약)+꼬리를 만들어 pin(핀 그림) 앞에 얹는다. yAnchor:1 은 el 의
+   '아래쪽 가운데'를 좌표에 붙이므로, 핀 그림이 맨 나중(맨 아래) 자식이어야
+   핀 끝(물방울 뾰족한 점)이 정확히 좌표에 온다 — 이름표·꼬리는 그 위에 쌓인다. */
+function 목표핀만들기(name: string): HTMLDivElement {
+  const el = document.createElement('div');
+  el.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:default';
+  const label = document.createElement('div');
+  label.textContent = name;
+  label.style.cssText = `background:#FF3B4E;color:#fff;font-size:12px;font-weight:800;
+    padding:6px 13px;border-radius:999px;white-space:nowrap;
+    box-shadow:0 2px 8px rgba(20,26,40,.28);margin-bottom:2px`;
+  const tail = document.createElement('div');
+  tail.style.cssText = `width:0;height:0;margin-bottom:3px;
+    border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #FF3B4E`;
+  const pin = document.createElement('div');
+  pin.style.cssText = `width:30px;height:40px;background:${목표핀그림}`;
+  el.append(label, tail, pin);
+  return el;
+}
 type RouteFetch =
   | { st: 'loading' }
   | { st: 'error' }
@@ -652,14 +673,13 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
         position: new window.kakao.maps.LatLng(c.lat, c.lng), yAnchor: 1,
         zIndex: first ? 9 : mine ? 6 : 4,
       });
-      const el = document.createElement('div');
-      /* 확정된 자리(goal)는 알약이 아니라 물방울 핀 — 더는 견줄 대상이 없으니 이름·표
-         글자를 없앤다(사용자 요청). layout() 이 이 자리(mk.el.dataset.goal)를 보고
-         텍스트를 도로 안 채워 넣는다 — 안 그러면 지도를 움직일 때마다 알약으로 되돌아갔다. */
+      /* 확정된 자리(goal)는 알약이 아니라 물방울 핀 — 더는 견줄 대상이 없으니 표는
+         없애되(사용자 요청) 이름은 핀 위 이름표로 그대로 보여 준다(2026-08-21).
+         layout() 이 이 자리(mk.el.dataset.goal)를 보고 텍스트를 도로 안 채워 넣는다 —
+         안 그러면 지도를 움직일 때마다 알약으로 되돌아갔다. */
       const goal = first && done_;
+      const el = goal ? 목표핀만들기(c.name) : document.createElement('div');
       if (goal) {
-        el.style.cssText = `width:30px;height:40px;background:${목표핀그림};cursor:default`;
-        el.textContent = '';
         el.setAttribute('aria-label', c.name);
         el.dataset.goal = '1';
       } else {
