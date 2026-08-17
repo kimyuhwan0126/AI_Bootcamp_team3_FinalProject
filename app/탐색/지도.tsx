@@ -201,7 +201,9 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       얹기(o, `<span class="opin" style="left:0;top:0;cursor:default">${o.이름}</span>`);
     });
     if (가운데) {
-      얹기(가운데, `<span class="opin" data-first style="left:0;top:0;cursor:default">${가운데라벨}</span>`);
+      /* 물방울 지도 핀으로 그린다(사용자가 준 참고 이미지, 2026-08-18) — 글자는 안 보이고
+         읽어 주는 말(aria-label)로만 남는다. 그림은 globals.css 의 .opin[data-goal] 이 낸다. */
+      얹기(가운데, `<span class="opin" data-first data-goal style="left:0;top:0" aria-label="${가운데라벨}"></span>`);
     }
 
     /* 경로선 — 핀보다 먼저 그려 아래 깔린다(모임 화면과 같은 순서) */
@@ -364,8 +366,8 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
             const q = 자리(가운데);
             if (!q) return null;
             const w = 비켜(q);
-            return <span className="opin" data-first
-              style={{ left: w.x, top: w.y, cursor: 'default' }}>{가운데라벨}</span>;
+            return <span className="opin" data-first data-goal aria-label={가운데라벨}
+              style={{ left: w.x, top: w.y }} />;
           })()}
         </>
       )}
