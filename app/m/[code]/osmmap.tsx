@@ -52,7 +52,9 @@ type 네모 = { l: number; r: number; t: number; b: number };
    이름표를 펼칠지 점으로 묶을지는 다 모아 놓고 표를 보아 가른다 (그릴링 논의67). */
 type 단위 = {
   id: string; sx: number; sy: number; votes: number; 차례: number; 이름: string;
-  꾸밈: { first?: boolean; mine?: boolean }; 글: React.ReactNode; 누름: () => void;
+  /* goal — 더는 견줄 대상이 없는 확정된 자리(2026-08-18). 알약 대신 물방울 핀으로 그리고
+     글자(이름·표)를 없앤다 — .opin[data-goal], globals.css 참고. */
+  꾸밈: { first?: boolean; mine?: boolean; goal?: boolean }; 글: React.ReactNode; 누름: () => void;
 };
 const 겹친넓이 = (a: 네모, b: 네모) =>
   Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t));
@@ -397,7 +399,7 @@ export default function OsmMap({
         const 이음선: React.ReactNode[] = [];
         const 그리기 = (
           id: string, sx: number, sy: number,
-          꾸밈: { first?: boolean; mine?: boolean }, 글: React.ReactNode, 누름: () => void,
+          꾸밈: { first?: boolean; mine?: boolean; goal?: boolean }, 글: React.ReactNode, 누름: () => void,
           읽을말: string,
         ) => {
           잰것.push({ id, sx, sy });
@@ -407,6 +409,7 @@ export default function OsmMap({
             className: 'opin',
             'data-first': 꾸밈.first || undefined,
             'data-mine': 꾸밈.mine || undefined,
+            'data-goal': 꾸밈.goal || undefined,
             /* 핀에는 '가1집 3' 처럼 숫자만 있다 — 읽어 주는 말로는 문장을 준다 (그릴링 논의72) */
             'aria-label': 읽을말,
             style: { left: sx + dx, top: sy + dy, ...(canPing ? null : { cursor: 'default' }) },
@@ -419,14 +422,17 @@ export default function OsmMap({
             );
             그린것.push(<span key={'점' + id} className="odot" style={{ left: sx, top: sy, pointerEvents: 'none' }} />);
           }
+          /* 확정된 자리(goal)는 물방울 핀뿐이다 — 이름·표 글자를 안 그린다. 그림은
+             .opin[data-goal](globals.css)이 내고, 읽어 주는 말은 공통.aria-label 이 맡는다. */
+          const 속 = 꾸밈.goal ? null : 글;
           그린것.push(canPing ? (
             <button key={id} ref={달기(id)} {...공통}
               onPointerUp={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); 누름(); }}>{글}</button>
+              onClick={(e) => { e.stopPropagation(); 누름(); }}>{속}</button>
           ) : (
             /* 못 찍는 사람에게 눌리는 시늉을 하면 안 된다 — 눌러 봐야 403 이다 (그릴링 논의34).
                보는 것은 자유라 확대·축소는 그대로 둔다. */
-            <span key={id} ref={달기(id)} {...공통}>{글}</span>
+            <span key={id} ref={달기(id)} {...공통}>{속}</span>
           ));
         };
 
@@ -470,9 +476,12 @@ export default function OsmMap({
             const sx = p.x - origin.ox, sy = p.y - origin.oy;
             if (!보임(sx, sy)) return;
             const mine = myVotes.includes(k.id);
+            /* fitOrigins 가 곧 '끝난 모임' 신호다(위 prop 설명 참고, 카카오 쪽 done_ 과 같은
+               값) — 끝났으면 표가 0이어도(정하지 않고 끝내기 등) 무조건 확정된 자리다. */
+            const first = fitOrigins ? true : i === 0 && k.votes > 0;
             단위들.push({
               id: k.id, sx, sy, votes: k.votes, 차례: i,
-              이름: k.name, 꾸밈: { first: i === 0 && k.votes > 0, mine },
+              이름: k.name, 꾸밈: { first, mine, goal: fitOrigins && first },
               글: <>{k.name} {k.votes}</>, 누름: () => onToggle(k, mine),
             });
           });
@@ -487,8 +496,11 @@ export default function OsmMap({
             .slice(0, 이름표한도).map((u) => u.id),
         );
         단위들.forEach((u) => {
-          if (이름줄것.has(u.id)) 그리기(u.id, u.sx, u.sy, u.꾸밈, u.글, u.누름, `${u.이름} · ${고른수(u.votes)}`);
-          else 점찍기(u);
+          if (이름줄것.has(u.id)) {
+            /* 확정된 자리는 표가 뜻이 없다("3명이 골랐어요"는 견주던 중에나 쓸모 있는 말이다)
+               — 읽어 주는 말도 이름만 준다. */
+            그리기(u.id, u.sx, u.sy, u.꾸밈, u.글, u.누름, u.꾸밈.goal ? u.이름 : `${u.이름} · ${고른수(u.votes)}`);
+          } else 점찍기(u);
         });
         자리.current = 잰것;
 
