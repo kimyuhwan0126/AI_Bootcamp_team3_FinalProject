@@ -38,9 +38,12 @@ const toLatLng = (x: number, y: number, z: number) => {
 /* 출발지 상자가 지도의 이만큼을 채우게 맞춘다 — 남는 여백은 이름표 몫이다 (osmmap 과 같은 값) */
 const FIT = 0.72;
 
-export default function 지도({ 출발지들, 가운데 }: {
+export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가운데' }: {
   출발지들: 점[];
   가운데: { lat: number; lng: number } | null;
+  /* 기준(거리·시간)에 따라 가운데 핀 이름표를 바꾼다(탐색.tsx, 2026-08-17) — 같은 자리라도
+     '무엇을 기준으로 잡은 자리인지'가 달라지면 핀 글자도 달라져야 헷갈리지 않는다. */
+  가운데라벨?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -190,7 +193,7 @@ export default function 지도({ 출발지들, 가운데 }: {
       얹기(o, `<span class="opin" style="left:0;top:0;cursor:default">${o.이름}</span>`);
     });
     if (가운데) {
-      얹기(가운데, `<span class="opin" data-first style="left:0;top:0;cursor:default">가운데</span>`);
+      얹기(가운데, `<span class="opin" data-first style="left:0;top:0;cursor:default">${가운데라벨}</span>`);
     }
 
     /* 화면을 맞춘다 — 출발지가 있으면 그걸 다 담게, 없으면(내 자리만) 그 자리로 가깝게 */
@@ -204,7 +207,7 @@ export default function 지도({ 출발지들, 가운데 }: {
       m.setLevel(5);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 내자리?.lat, 내자리?.lng]);
+  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng]);
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
@@ -324,7 +327,7 @@ export default function 지도({ 출발지들, 가운데 }: {
             if (!q) return null;
             const w = 비켜(q);
             return <span className="opin" data-first
-              style={{ left: w.x, top: w.y, cursor: 'default' }}>가운데</span>;
+              style={{ left: w.x, top: w.y, cursor: 'default' }}>{가운데라벨}</span>;
           })()}
         </>
       )}
