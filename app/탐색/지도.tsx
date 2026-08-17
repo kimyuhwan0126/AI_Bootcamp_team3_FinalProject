@@ -17,6 +17,8 @@ import s from './탐색.module.css';
 declare global { interface Window { kakao: any } }
 
 export type 점 = { 이름: string; lat: number; lng: number };
+/* 경로선의 꺾인 점은 이름이 없다 — 위 점(핀)과는 다른 물건이라 따로 둔다 */
+type 좌표 = { lat: number; lng: number };
 
 const TILE = 256;
 const toPx = (lat: number, lng: number, z: number) => {
@@ -38,12 +40,17 @@ const toLatLng = (x: number, y: number, z: number) => {
 /* 출발지 상자가 지도의 이만큼을 채우게 맞춘다 — 남는 여백은 이름표 몫이다 (osmmap 과 같은 값) */
 const FIT = 0.72;
 
-export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가운데' }: {
+export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가운데', 경로들 }: {
   출발지들: 점[];
   가운데: { lat: number; lng: number } | null;
   /* 기준(거리·시간)에 따라 가운데 핀 이름표를 바꾼다(탐색.tsx, 2026-08-17) — 같은 자리라도
      '무엇을 기준으로 잡은 자리인지'가 달라지면 핀 글자도 달라져야 헷갈리지 않는다. */
   가운데라벨?: string;
+  /* 출발지마다 가운데까지 오는 길 (2026-08-17) — 모임 화면(app/m/[code])에 이미 있는
+     경로 그리기와 같은 뜻이다(/api/routes, 카카오 대중교통·TMAP). 여기는 이동수단이
+     참가자 전원 하나뿐이라(위 이동칸) 선도 한 가지 색으로 충분하다 — 누구 선인지
+     가를 필요가 없다. */
+  경로들?: { id: string; points: 좌표[] }[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -95,6 +102,7 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
   const 카카오맵칸 = useRef<HTMLDivElement>(null);
   const 카카오맵 = useRef<any>(null);
   const 카카오오버레이 = useRef<any[]>([]);
+  const 카카오경로선 = useRef<any[]>([]);
   const [카카오죽음, set카카오죽음] = useState(false);
   const [카카오준비, set카카오준비] = useState(false);
 
@@ -196,6 +204,19 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       얹기(가운데, `<span class="opin" data-first style="left:0;top:0;cursor:default">${가운데라벨}</span>`);
     }
 
+    /* 경로선 — 핀보다 먼저 그려 아래 깔린다(모임 화면과 같은 순서) */
+    카카오경로선.current.forEach((pl) => pl.setMap(null));
+    카카오경로선.current = [];
+    (경로들 ?? []).forEach((r) => {
+      if (r.points.length < 2) return;
+      const pl = new window.kakao.maps.Polyline({
+        path: r.points.map((p) => new window.kakao.maps.LatLng(p.lat, p.lng)),
+        strokeWeight: 3, strokeColor: '#2f6bff', strokeOpacity: 0.7, strokeStyle: 'solid',
+      });
+      pl.setMap(m);
+      카카오경로선.current.push(pl);
+    });
+
     /* 화면을 맞춘다 — 출발지가 있으면 그걸 다 담게, 없으면(내 자리만) 그 자리로 가깝게 */
     if (출발지들.length) {
       const bounds = new window.kakao.maps.LatLngBounds();
@@ -207,7 +228,7 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       m.setLevel(5);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng]);
+  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng, 경로들]);
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
@@ -287,6 +308,23 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
           <b>지도를 불러오지 못했어요</b>
           <span>잠시 뒤에 다시 열어 보세요</span>
         </div>
+      )}
+
+      {/* 경로선(OSM 폴백) — 핀보다 먼저 그려 아래 깔린다. 카카오 쪽은 위 Polyline 이 맡는다. */}
+      {카카오죽음 && !tileDead && !!경로들?.length && (
+        <svg width={size.w} height={size.h}
+          style={{ position: 'absolute', left: 0, top: 0, zIndex: 2, pointerEvents: 'none' }}>
+          {경로들.map((r) => {
+            if (r.points.length < 2) return null;
+            const 꺾은선 = r.points
+              .map((p) => { const q = toPx(p.lat, p.lng, z); return `${q.x - origin.ox},${q.y - origin.oy}`; })
+              .join(' ');
+            return (
+              <polyline key={r.id} points={꺾은선} fill="none" stroke="#2f6bff"
+                strokeWidth={3} strokeOpacity={0.7} strokeLinecap="round" strokeLinejoin="round" />
+            );
+          })}
+        </svg>
       )}
 
       {/* 그릴 것이 하나도 없을 때만 덮는다 — 지도를 띄워 놓고 어디인지도 모르게 두는 것보다 낫다.
