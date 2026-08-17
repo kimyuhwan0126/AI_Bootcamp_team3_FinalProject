@@ -17,9 +17,21 @@
    ODsay 같은 별도 API 로 보완하는 안을 다시 열 것 — 지금은 굳이 둘을 섞지 않는다. */
 
 export type RoutePoint = { lat: number; lng: number };
+/* 대중교통의 구간별 안내 — "몇 호선 타고 어디서 내리는지" 를 사람이 읽는 문장 그대로 준다
+   (Kakao 응답의 steps[].properties.guidance, 이미 한국어 문장이라 따로 안 다듬는다).
+   자차(TMAP)는 이런 구간별 안내를 안 준다 — steps 를 아예 안 채운다(RouteResult.steps
+   가 undefined 면 '구간별 안내 없음'으로 화면이 읽는다). */
+export type RouteStep = {
+  type: 'SUBWAY' | 'BUS' | 'WALKING' | string;
+  guidance: string;
+  distanceM: number | null;
+  durationS: number | null;
+};
 /* points 가 비어 있을 수 있다(출발지와 도착지가 겹치는 등) — 그때도 거리·시간은 있을 수 있어
    points 만으로 '경로가 없다'를 판정하지 않는다. */
-export type RouteResult = { points: RoutePoint[]; distanceM: number | null; durationS: number | null };
+export type RouteResult = {
+  points: RoutePoint[]; distanceM: number | null; durationS: number | null; steps?: RouteStep[];
+};
 
 /* '못 불러왔다'와 '길이 없다'는 다른 말이다(places.ts 의 PlacesUnavailable 과 같은 결) —
    여기서는 못 불러온 것만 던지고, 길이 정말 없으면(도서·산간 등) null 을 돌려준다. */
@@ -94,16 +106,30 @@ export async function routeTransit(from: RoutePoint, to: RoutePoint): Promise<Ro
   const route = (j?.routes ?? [])[0];
   if (!route) { 캐시에쓰기(key, null); return null; }
   const points: RoutePoint[] = [];
+  /* 구간별 안내(2026-08-17, "어떻게 이동하는지 보고 싶다") — 좌표를 잇는 것과 같은 자리에서
+     함께 뽑는다. guidance 는 카카오가 이미 사람이 읽는 한국어 문장으로 준다
+     ("2호선 (왕십리 > 성수)" 같은 식) — 여기서 새로 짓지 않는다. */
+  const steps: RouteStep[] = [];
   for (const step of route.steps ?? []) {
     for (const p of step?.path?.points ?? []) {
       const lng = Number(p[0]), lat = Number(p[1]);
       if (Number.isFinite(lat) && Number.isFinite(lng)) points.push({ lat, lng });
+    }
+    const g = step?.properties?.guidance;
+    if (typeof g === 'string' && g.trim()) {
+      steps.push({
+        type: step.properties.type ?? '',
+        guidance: g,
+        distanceM: Number.isFinite(step.properties.distance) ? step.properties.distance : null,
+        durationS: Number.isFinite(step.properties.time) ? step.properties.time : null,
+      });
     }
   }
   const v: RouteResult = {
     points,
     distanceM: Number.isFinite(route.properties?.totalDistance) ? route.properties.totalDistance : null,
     durationS: Number.isFinite(route.properties?.totalTime) ? route.properties.totalTime : null,
+    ...(steps.length ? { steps } : {}),
   };
   캐시에쓰기(key, v);
   return v;

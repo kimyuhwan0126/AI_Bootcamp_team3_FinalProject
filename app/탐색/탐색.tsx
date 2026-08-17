@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import OriginField, { type Origin, type Transport } from '../originfield';
 import { 실어보내기, 두고간것읽기, 두고가기 } from '@/lib/넘기기';
+import type { RouteStep } from '@/lib/routes';
 import 지도 from './지도';
 import s from './탐색.module.css';
 
@@ -27,6 +28,10 @@ const 한국안 = (lat: number, lng: number) =>
 /* 같은 곳을 두 번 넣지 않는다. 이름만 보면 '스타벅스'가 하나뿐이 되고,
    좌표만 보면 같은 건물의 다른 출입구가 두 곳이 된다 — 둘을 함께 본다. */
 const 열쇠 = (o: Origin) => `${o.name}@${o.lat.toFixed(5)},${o.lng.toFixed(5)}`;
+
+/* 출발지 하나의 경로 — 지도에 그리는 좌표(points)와, 아래 '출발지별 상세'에 쓰는
+   시간·거리·구간별 안내(steps)를 한 번의 /api/routes 호출로 같이 얻는다(2026-08-17). */
+type 상세경로 = { id: string; points: { lat: number; lng: number }[]; distanceM: number | null; durationS: number | null; steps?: RouteStep[] };
 
 /* ── 가운데를 잡는 기준 (2026-08-17) ──────────────────────────
    '거리'만 있으면 다들 오는 데 걸리는 실제 시간은 다르다는 것을 맛보기 화면에서도
@@ -209,11 +214,14 @@ export default function 탐색() {
      /api/routes 를 쓴다. 지도가운데가 바뀔 때마다(거리↔시간을 오가거나, 시간 계산이 끝나
      '거리 대신 보여 주던 자리'에서 '진짜 시간상 자리'로 넘어갈 때도) 다시 잰다.
      AI 는 가운데 자체가 없으니(위) 여기서도 자동으로 빈다. */
-  const [경로들, set경로들] = useState<{ id: string; points: 점[] }[]>([]);
+  const [경로들, set경로들] = useState<상세경로[]>([]);
+  /* 부르는 중인지 — '출발지별 상세'가 결과 없음과 구하는 중을 다른 말로 보여 준다 */
+  const [경로구하는중, set경로구하는중] = useState(false);
   useEffect(() => {
     const 목적지 = 지도가운데;
-    if (!목적지 || !출발지들.length) { set경로들([]); return; }
+    if (!목적지 || !출발지들.length) { set경로들([]); set경로구하는중(false); return; }
     let 살아있나 = true;
+    set경로구하는중(true);
     const t = setTimeout(async () => {
       const 결과 = await Promise.all(출발지들.map(async (o) => {
         try {
@@ -224,15 +232,28 @@ export default function 탐색() {
           const r = await fetch(`/api/routes?${qs}`);
           if (!r.ok) return null;
           const j = await r.json();
-          return j.found && Array.isArray(j.points) && j.points.length >= 2
-            ? { id: 열쇠(o), points: j.points as 점[] } : null;
+          if (!j.found) return null;
+          return {
+            id: 열쇠(o), points: (Array.isArray(j.points) ? j.points : []) as 점[],
+            distanceM: j.distanceM ?? null, durationS: j.durationS ?? null,
+            steps: Array.isArray(j.steps) ? (j.steps as RouteStep[]) : undefined,
+          } as 상세경로;
         } catch { return null; }
       }));
-      if (살아있나) set경로들(결과.filter((x): x is { id: string; points: 점[] } => !!x));
+      if (살아있나) { set경로들(결과.filter((x): x is 상세경로 => !!x)); set경로구하는중(false); }
     }, 350);
     return () => { 살아있나 = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [지도가운데?.lat, 지도가운데?.lng, 출발지서명, 이동수단]);
+
+  /* '출발지별 상세'에서 지금 펼친 것들 — 토글형이라 여럿을 한꺼번에 펼쳐 볼 수 있다
+     (하나만 펼치는 아코디언이 아니다. 몇 명 안 되는 자리라 다 펼쳐 놓고 견줘 봐도 좋다). */
+  const [펼친출발지, set펼친출발지] = useState<Set<string>>(new Set());
+  const 토글 = (key: string) => set펼친출발지((전) => {
+    const 다음 = new Set(전);
+    if (다음.has(key)) 다음.delete(key); else 다음.add(key);
+    return 다음;
+  });
 
   /* 지도 밑 한 줄 — 기준마다 다른 말을 한다(사용자 요청, 2026-08-17).
      둘 미만이면 기준과 상관없이 '더 넣어 달라'가 우선이다 — 그 전까지는 어느 기준을 골라도 잴 게 없다. */
@@ -346,6 +367,67 @@ export default function 탐색() {
              예전엔 "폼에는 첫 출발지만 들어가요" 라고 해서, 나머지를 고를 수 있다는 걸 몰랐다. */}
           폼에는 첫 출발지로 채워져요 — 바꾸기를 누르면 여기서 잡은 곳 중 고를 수 있어요.
         </p>
+      )}
+
+      {/* 출발지별 상세 — 이동시간·상세 경로(어떻게 이동하는지)·이동 수단을 하나씩 펼쳐 본다
+          (사용자 요청, 2026-08-17). 위 '가운데 둘레 지점 목록을 없앴다'(2026-08-14, 이 위
+          주석)와는 다른 물건이다 — 그건 고를 자리(가게·카페) 목록이라 아직 모임도 없는
+          자리에서 고르는 화면처럼 보이는 게 문제였다. 이건 고르는 게 아니라 '내가 넣은
+          출발지에서 어떻게 오는지'를 보는 것이라, 실제로 가운데가 잡혀 있을 때만 뜻이
+          있다 — AI 기준(가운데가 아직 없다)이거나 출발지가 하나뿐이면 안 보인다. */}
+      {지도가운데 && 출발지들.length >= 2 && (
+        <div className={s.상세칸} data-slot="출발지별상세">
+          <span className={s.상세이름}>출발지별 상세</span>
+          <ul className={s.상세목록}>
+            {출발지들.map((o) => {
+              const key = 열쇠(o);
+              const r = 경로들.find((x) => x.id === key);
+              const 열림 = 펼친출발지.has(key);
+              const 시간표시 = r?.durationS != null ? `${Math.round(r.durationS / 60)}분`
+                : r ? '경로 없음' : 경로구하는중 ? '찾는 중…' : '—';
+              return (
+                <li key={key} className={s.상세행}>
+                  <button type="button" className={s.상세토글} aria-expanded={열림}
+                    onClick={() => 토글(key)}>
+                    <span className={s.상세토글이름}>{o.name}</span>
+                    <span className={s.상세토글시간}>{시간표시}</span>
+                    <span className={s.상세화살표} data-열림={열림 || undefined} aria-hidden>▾</span>
+                  </button>
+                  {열림 && (
+                    <div className={s.상세내용}>
+                      <p className={s.상세수단}>{이동수단 === 'car' ? '자동차로 이동' : '대중교통으로 이동'}</p>
+                      {!r ? (
+                        <p className="mut">{경로구하는중 ? '경로를 찾는 중이에요…' : '경로를 아직 못 찾았어요.'}</p>
+                      ) : r.steps?.length ? (
+                        /* 구간별 안내 — 카카오가 준 문장 그대로("2호선 (왕십리 > 성수)" 같은 식).
+                           자차(TMAP)는 이런 구간이 없다 — steps 가 비어 아래 else 로 빠진다. */
+                        <ol className={s.단계들}>
+                          {r.steps.map((st, i) => (
+                            <li key={i}>
+                              <span aria-hidden>
+                                {st.type === 'SUBWAY' ? '🚇' : st.type === 'BUS' ? '🚌'
+                                  : st.type === 'WALKING' ? '🚶' : '•'}
+                              </span>
+                              <span>{st.guidance}</span>
+                              {st.durationS != null && <span className="mut"> · {Math.round(st.durationS / 60)}분</span>}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : r.durationS != null ? (
+                        <p className="mut">
+                          {r.distanceM != null ? `${(r.distanceM / 1000).toFixed(1)}km · ` : ''}
+                          {Math.round(r.durationS / 60)}분
+                        </p>
+                      ) : (
+                        <p className="mut">여기까지 가는 경로를 찾지 못했어요.</p>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </section>
   );
