@@ -404,12 +404,17 @@ export default function 탐색() {
                         <ol className={s.단계들}>
                           {r.steps.map((st, i) => (
                             <li key={i}>
-                              <span aria-hidden>
+                              <span className={s.단계아이콘} aria-hidden>
                                 {st.type === 'SUBWAY' ? '🚇' : st.type === 'BUS' ? '🚌'
                                   : st.type === 'WALKING' ? '🚶' : '•'}
                               </span>
-                              <span>{st.guidance}</span>
-                              {st.durationS != null && <span className="mut"> · {Math.round(st.durationS / 60)}분</span>}
+                              {/* 문장과 '· N분'을 한 span 에 같이 둔다 — 따로 두면(형제 flex 항목)
+                                  글이 길어 줄바꿈될 때 시간 배지가 뚝 떨어져 나가 보였다(실사용 신고,
+                                  스크린샷) — 같은 글줄 안에 있어야 문장 끝에 자연히 붙어 줄바꿈된다. */}
+                              <span className={s.단계글}>
+                                {st.guidance}
+                                {st.durationS != null && <span className="mut"> · {Math.round(st.durationS / 60)}분</span>}
+                              </span>
                             </li>
                           ))}
                         </ol>

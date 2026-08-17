@@ -131,6 +131,17 @@
 @media (prefers-reduced-motion: reduce) { .상세화살표 { transition: none; } }
 .상세내용 { padding: 0 14px 14px; border-top: 1px solid var(--line); }
 .상세수단 { margin: 12px 0 8px; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
-/* 구간별 안내 줄 — 지하철·버스·도보 아이콘 + 문장 + (있으면) 몇 분 */
-.단계들 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.단계들 li { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--ink); }
+/* 구간별 안내 줄 — 지하철·버스·도보 아이콘 + 문장(+ 있으면 몇 분, 문장과 같은 글줄 안).
+   ⚠ 2026-08-17 뒤처리 — 시간을 문장과 형제 span 으로 따로 뒀더니, 문장이 길어 줄바꿈될 때
+   시간 배지만 뚝 떨어져 다음 줄 맨 앞에 홀로 남았다(스크린샷 신고). 지금은 탐색.tsx 가
+   시간을 문장 span **안에** 이어 붙인다 — 한 글줄이니 자연스레 문장 끝에 붙어 줄바꿈된다.
+   word-break:keep-all 도 같이 줬다 — 한글은 기본이 아무 글자에서나 끊기라(중국어·일본어
+   규칙을 그대로 물려받는다), "인덕원역" 같은 낱말이나 "14분" 같은 숫자+단위가 중간에서
+   잘렸다(같은 신고). */
+.단계들 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.단계들 li {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 13px; line-height: 1.5; color: var(--ink); word-break: keep-all;
+}
+.단계아이콘 { flex: 0 0 auto; width: 18px; text-align: center; line-height: inherit; }
+.단계글 { flex: 1; min-width: 0; }
