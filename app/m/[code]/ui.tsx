@@ -667,8 +667,12 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     /* 찍힌 곳이 화면 밖이면 없는 것과 같다 — 처음 한 번만 후보를 다 담는다.
        매번 맞추면 남이 찍을 때마다 내 지도가 튄다. */
     /* 지점 단계로 넘어오면 지도를 확정된 지역으로 당긴다 (그릴링 논의32) —
-       서울 전체가 보이면 어디서 골라야 할지 알 수 없다. */
-    if (kind === 'place' && region && !placed.current) {
+       서울 전체가 보이면 어디서 골라야 할지 알 수 없다. **끝난 모임(done_)에는 안 쓴다** —
+       여기서 먼저 걸리면 바로 아래(출발지까지 담는 bounds 계산)가 아예 실행되지 않는다.
+       실사용 신고로 확인: 결과 화면을 새로 열면(그 전에 지점 고르는 화면을 거치지 않은 채)
+       이 갈래가 먼저 걸려 정해진 지점 근처로만 바짝 당겨지고, 참가자 출발지·경로선이
+       화면 밖으로 잘렸다. */
+    if (!done_ && kind === 'place' && region && !placed.current) {
       placed.current = true;
       map.current.setCenter(new window.kakao.maps.LatLng(region.lat, region.lng));
       map.current.setLevel(5);
