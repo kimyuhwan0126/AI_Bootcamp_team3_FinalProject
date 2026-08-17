@@ -94,6 +94,11 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
 .dial{position:absolute;right:14px;top:14px;bottom:14px;display:flex;flex-direction:column-reverse;
   align-items:flex-end;justify-content:flex-start;gap:12px;z-index:9;overflow-y:auto;
   overscroll-behavior:contain;scrollbar-width:none;pointer-events:none;
+  /* .acts 의 padding:2px 와 맞춘다 — 저건 없는데 이건 있으면, 오른쪽 끝(right:14px)이
+     같은 값이어도 실제 단추 오른쪽 끝이 2px 어긋난다(실측 · 실사용 신고). 다이얼 항목
+     자체는 초점 테두리가 없어 이 여백이 필요하진 않지만, 두 띠가 한 줄에 나란히 설 때는
+     맞춰야 삐뚤어 보이지 않는다. */
+  padding:2px;
   -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 26px);
   mask-image:linear-gradient(to bottom,transparent 0,#000 26px)}
 .dial::-webkit-scrollbar{display:none}
