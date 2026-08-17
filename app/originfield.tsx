@@ -14,8 +14,12 @@ export type Origin = { name: string; address: string; lat: number; lng: number }
 export type { Transport } from '@/lib/types';
 import type { Transport } from '@/lib/types';
 
+/* 같은 곳인지 견준다 — Origin 에 id 가 없어 이름·좌표로 견준다.
+   좌표는 같은 출처(카카오·Nominatim)에서 그대로 들고 온 값이라 소수점까지 그대로다. */
+const 같은곳 = (a: Origin, b: Origin) => a.name === b.name && a.lat === b.lat && a.lng === b.lng;
+
 export default function OriginField({
-  origin, setOrigin, transport, setTransport, 쓰임 = '모임',
+  origin, setOrigin, transport, setTransport, 쓰임 = '모임', quickPicks,
 }: {
   origin: Origin | null;
   setOrigin: (o: Origin | null) => void;
@@ -28,9 +32,17 @@ export default function OriginField({
                 칸마다 설명이 붙으면 화면이 글로 덮인다. 검색·고르기 알맹이는 셋이 한 벌이다 —
                 갈라 두면 카카오가 죽었을 때 어느 화면은 말하고 어느 화면은 조용해진다. */
   쓰임?: '모임' | '기본값' | '탐색';
+  /* 홈에서 여럿을 잡아 왔을 때(lib/넘기기.ts) 바로 고를 수 있는 목록 (2026-08-17).
+     "첫 곳만 자동으로 들어가고 나머지는 다시 찾아야 한다"는 신고 — 방장이 여러 곳을
+     넣어 봤다면 그중 어느 것이 자기 것인지는 방장만 안다. '바꾸기'를 누르면 빈 검색칸
+     대신 이 목록부터 보여주고, 찾던 곳이 없으면 '직접 입력'으로 넘어간다. */
+  quickPicks?: Origin[];
 }) {
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<(Origin & { id: string })[] | null>(null);
+  /* '바꾸기' 를 눌렀을 때 곧장 빈 검색칸을 보여줄지, quickPicks 목록을 먼저 보여줄지 —
+     목록에서 '직접 입력' 을 고르면 이 값을 꺼서 검색칸으로 넘어간다. */
+  const [고르는중, set고르는중] = useState(false);
   /* 실패를 '없다'고 말하면 안 된다 — 출발지는 필수라 참여가 막히는데
      이유를 모르게 된다 (그릴링 논의43 ②).
      깃발 하나로 두던 것을 문구로 바꿨다: '너무 자주 불렀다'(429 too_many)와
@@ -143,9 +155,14 @@ export default function OriginField({
           {쓰임 === '기본값' ? '기본 출발지'
             : <>출발지 <span style={{ color: 'var(--danger)' }}>*</span></>}
         </label>
-        {origin ? (
+        {origin && !고르는중 ? (
           <>
-          <button className="row" onClick={() => { setOrigin(null); setQ(''); }}>
+          <button className="row" onClick={() => {
+            /* 홈에서 여럿을 잡아 왔으면 빈 검색칸이 아니라 그 목록부터 보여준다 —
+               방장이 이미 찾아 둔 곳을 또 타이핑하게 두지 않는다. */
+            if (quickPicks?.length) set고르는중(true);
+            else { setOrigin(null); setQ(''); }
+          }}>
             <span className="nm">{origin.name}
               {origin.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{origin.address}</span>}
             </span>
@@ -154,6 +171,29 @@ export default function OriginField({
           {/* 왜 이미 채워져 있는지 말해 준다 — 안 그러면 남이 넣어 둔 값처럼 보인다 */}
           {쓰임 === '모임' && 불러왔다 &&
             <p className="mut" style={{ margin: '0 0 7px' }}>내정보에 넣어 둔 기본 출발지예요 — 눌러서 바꿔도 돼요.</p>}
+          </>
+        ) : origin && 고르는중 ? (
+          <>
+            <ul className="rows">
+              {quickPicks!.map((o, i) => (
+                <li key={`${o.name}-${o.lat}-${o.lng}-${i}`}>
+                  <button className="row" aria-pressed={같은곳(o, origin)}
+                    onClick={() => { setOrigin(o); set고르는중(false); }}>
+                    <span className="nm">{o.name}
+                      {o.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{o.address}</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+              <li>
+                <button className="row" onClick={() => { setOrigin(null); setQ(''); set고르는중(false); }}>
+                  <span className="nm">직접 입력</span>
+                  <span className="mut">이름으로 찾기</span>
+                </button>
+              </li>
+            </ul>
+            <button type="button" className="mini" style={{ marginTop: 6 }}
+              onClick={() => set고르는중(false)}>취소</button>
           </>
         ) : (
           <>
