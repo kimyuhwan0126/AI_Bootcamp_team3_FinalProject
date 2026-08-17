@@ -22,6 +22,13 @@ const RADIUS_FALLBACK_M = 700;
    대중교통 길찾기, 자차는 TMAP. 사람마다가 아니라 이동수단마다 색을 가른다 — "이 선은
    대중교통, 저 선은 차" 가 알고 싶은 것이지 누구 선인지는 목록(글)이 이미 말해 준다. */
 const 경로색: Record<'transit' | 'car', string> = { transit: '#2f6bff', car: '#f59e0b' };
+
+/* 확정된 자리(더는 견줄 대상이 없는 곳)를 그리는 물방울 지도 핀 — 사용자가 준 참고
+   이미지, 2026-08-18. OSM 폴백(osmmap.tsx)·홈 맛보기(탐색/지도.tsx)는 이 그림을
+   globals.css 의 .opin[data-goal] 로 공유하는데, 여기(카카오 핀)만 앵커 방식이 달라서
+   (yAnchor 로 카카오가 스스로 위치를 잡는다 — .opin 의 transform:translate 를 못 쓴다)
+   같은 그림을 문자열로 한 번 더 갖고 있다. ⚠ 모양을 바꾸면 globals.css 도 같이 고쳐라. */
+const 목표핀그림 = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='40' viewBox='0 0 30 40'><path d='M15 0C6.716 0 0 6.716 0 15c0 11.25 15 25 15 25s15-13.75 15-25C30 6.716 23.284 0 15 0z' fill='%23FF3B4E'/><circle cx='15' cy='15' r='6' fill='white'/></svg>\") no-repeat center/contain";
 type RouteFetch =
   | { st: 'loading' }
   | { st: 'error' }
@@ -475,6 +482,10 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
        확대해 덩어리가 풀려도 '이 근처 N곳' 과 감춘 핀이 그대로 남아 있었다. */
     marks.current.forEach((mk) => {
       if (mk.el.dataset.cluster) delete mk.el.dataset.cluster;
+      /* 물방울 핀(goal)은 글자가 없다 — 여기서 도로 채워 넣으면 지도를 옮길 때마다
+         알약으로 되돌아간다(실사용 신고). 뭉침 계산에서도 뺀다: 확정된 자리는 늘 하나뿐이라
+         뭉칠 상대가 없다 — 아래 계산에 끼워도 해는 없지만 애초에 지나가는 게 맞다. */
+      if (mk.el.dataset.goal) { if (hiddenIds.current.has(mk.c.id)) mk.ov.setMap(m); return; }
       mk.el.textContent = `${mk.c.name} ${mk.c.votes}`;
       mk.el.setAttribute('aria-label', `${mk.c.name} · ${고른수(mk.c.votes)}`);
       mk.el.style.transform = '';
@@ -642,15 +653,27 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
         zIndex: first ? 9 : mine ? 6 : 4,
       });
       const el = document.createElement('div');
-      el.style.cssText = `background:${first ? '#16307a' : '#fff'};color:${first ? '#fff' : '#171a21'};
-        border:${mine ? `3px solid ${first ? '#8fb4ff' : '#2f6bff'}` : '1px solid #e2e6ee'};
-        border-radius:999px;padding:${first ? '8px 16px' : '4px 10px'};
-        font-size:${first ? '15px' : '11.5px'};font-weight:800;
-        box-shadow:0 2px 8px rgba(20,26,40,.16);white-space:nowrap;
-        cursor:${canPing ? 'pointer' : 'default'}`;
-      /* 핀은 좁아서 숫자만 둔다 — 읽어 주는 말에는 온전한 문장을 넣는다 (논의72) */
-      el.textContent = `${c.name} ${c.votes}`;
-      el.setAttribute('aria-label', `${c.name} · ${고른수(c.votes)}`);
+      /* 확정된 자리(goal)는 알약이 아니라 물방울 핀 — 더는 견줄 대상이 없으니 이름·표
+         글자를 없앤다(사용자 요청). layout() 이 이 자리(mk.el.dataset.goal)를 보고
+         텍스트를 도로 안 채워 넣는다 — 안 그러면 지도를 움직일 때마다 알약으로 되돌아갔다. */
+      const goal = first && done_;
+      if (goal) {
+        el.style.cssText = `width:30px;height:40px;background:${목표핀그림};cursor:default`;
+        el.textContent = '';
+        el.setAttribute('aria-label', c.name);
+        el.dataset.goal = '1';
+      } else {
+        el.style.cssText = `background:${first ? '#16307a' : '#fff'};color:${first ? '#fff' : '#171a21'};
+          border:${mine ? `3px solid ${first ? '#8fb4ff' : '#2f6bff'}` : '1px solid #e2e6ee'};
+          border-radius:999px;padding:${first ? '8px 16px' : '4px 10px'};
+          font-size:${first ? '15px' : '11.5px'};font-weight:800;
+          box-shadow:0 2px 8px rgba(20,26,40,.16);white-space:nowrap;
+          cursor:${canPing ? 'pointer' : 'default'}`;
+        /* 핀은 좁아서 숫자만 둔다 — 읽어 주는 말에는 온전한 문장을 넣는다 (논의72) */
+        el.textContent = `${c.name} ${c.votes}`;
+        el.setAttribute('aria-label', `${c.name} · ${고른수(c.votes)}`);
+        delete el.dataset.goal;
+      }
       delete el.dataset.cluster;
       /* 못 찍는 사람(비참여자·지난 모임)에게는 핀이 읽을 것이지 누를 것이 아니다 —
          전에는 눌려서 '먼저 참여해야 해요' 토스트만 돌아왔다 */
