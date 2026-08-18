@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MeetingView, Action, Kind, Going } from '@/lib/types';
 import OsmMap from './osmmap';
 import { instantToKst, formatKst } from '@/lib/time';
+import type { RouteStep } from '@/lib/routes';
 import TimePicker from '../../timepicker';
 
 declare global { interface Window { kakao: any } }
@@ -53,7 +54,12 @@ function 목표핀만들기(name: string): HTMLDivElement {
 type RouteFetch =
   | { st: 'loading' }
   | { st: 'error' }
-  | { st: 'ok'; points: { lat: number; lng: number }[]; distanceM: number | null; durationS: number | null; found: boolean };
+  | { st: 'ok'; points: { lat: number; lng: number }[]; distanceM: number | null; durationS: number | null; found: boolean;
+      /* 구간별 안내(지하철·버스·도보) — 홈 화면 '출발지별 상세'(app/탐색/탐색.tsx, 2026-08-17)
+         에만 있던 것을 여기도 복구한다(2026-08-23, 사용자 요청). /api/routes 는 처음부터
+         이 값을 내고 있었다 — 여기 fetch 가 안 읽고 버리고 있었을 뿐이다. 자차(TMAP)는
+         이런 구간이 없어 빈 배열/undefined 로 온다. */
+      steps?: RouteStep[] };
 const dist = (a: number, b: number, c: number, d: number) => {
   const R = 6371000, r = Math.PI / 180;
   const dp = (c - a) * r, dl = (d - b) * r;
@@ -423,6 +429,14 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const [copied, setCopied] = useState(false);
   /* 참가자 id → 경로 (2026-08-15). 지점이 정해진 뒤에만 채운다 */
   const [routes, setRoutes] = useState<Record<string, RouteFetch>>({});
+  /* '오는 길' 목록에서 지금 펼쳐 본 사람들 (2026-08-23, 홈 화면 '출발지별 상세'와 같은 결) —
+     토글형이라 여럿을 한꺼번에 펼쳐도 된다(아코디언처럼 하나만 남기고 닫지 않는다). */
+  const [openRoutes, setOpenRoutes] = useState<Set<string>>(new Set());
+  const toggleRoute = (id: string) => setOpenRoutes((전) => {
+    const 다음 = new Set(전);
+    if (다음.has(id)) 다음.delete(id); else 다음.add(id);
+    return 다음;
+  });
 
   /* ── 지도 ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -952,7 +966,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
         .then((res) => (res.ok ? res.json() : Promise.reject(res)))
         .then((j) => {
           if (취소) return;
-          setRoutes((r) => ({ ...r, [p.id]: { st: 'ok', points: j.points ?? [], distanceM: j.distanceM ?? null, durationS: j.durationS ?? null, found: !!j.found } }));
+          setRoutes((r) => ({ ...r, [p.id]: { st: 'ok', points: j.points ?? [], distanceM: j.distanceM ?? null, durationS: j.durationS ?? null, found: !!j.found,
+            steps: Array.isArray(j.steps) ? j.steps : undefined } }));
         })
         .catch(() => { if (!취소) setRoutes((r) => ({ ...r, [p.id]: { st: 'error' } })); });
     });
@@ -1377,7 +1392,11 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
 
         {/* 참가자별 오는 길 (2026-08-15) — 지점이 정해졌을 때만. 지역은 범위일 뿐이라
             도착점이 없어 길찾기를 못 한다("지점이 정해져 있다면"이 사용자 조건이었다).
-            지도 위 선(위 routePolylines·osmmap routes)과 같은 색으로 이동수단을 가른다. */}
+            지도 위 선(위 routePolylines·osmmap routes)과 같은 색으로 이동수단을 가른다.
+            ⚠ 2026-08-23 — 홈 화면 '출발지별 상세'(탐색.tsx)에는 있던 펼치기+구간별 안내가
+            여기는 없었다(요약 한 줄뿐). /api/routes 는 처음부터 steps 를 주고 있었는데
+            이 화면만 안 읽고 버리고 있었다 — 새 API 호출 없이 필드 하나만 더 읽어 복구한다.
+            건마다 눌러서 펼친다(아코디언처럼 하나만 남기고 닫지 않는다, openRoutes). */}
         {done_ && v.meeting.winner_place_id && withOrigin.length > 0 && (
           <>
             <p className="mut" style={{ margin: '10px 0 4px', fontWeight: 800, fontSize: 13 }}>오는 길</p>
@@ -1390,9 +1409,11 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                   : [r.distanceM != null ? `${(r.distanceM / 1000).toFixed(1)}km` : null,
                      r.durationS != null ? `${Math.round(r.durationS / 60)}분` : null]
                       .filter(Boolean).join(' · ') || '경로를 찾았어요';
+                const 열림 = openRoutes.has(p.id);
+                const steps = r?.st === 'ok' ? r.steps : undefined;
                 return (
                   <li key={p.id}>
-                    <div className="row" data-static>
+                    <button type="button" className="row" aria-expanded={열림} onClick={() => toggleRoute(p.id)}>
                       <span className="nm">
                         <span aria-hidden style={{
                           display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
@@ -1403,7 +1424,39 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                           {p.transport === 'car' ? '자차' : '대중교통'} · {말}
                         </span>
                       </span>
-                    </div>
+                      <span className="ct">{열림 ? '접기' : '펼치기'}</span>
+                    </button>
+                    {열림 && (
+                      <div className="orinner">
+                        {steps?.length ? (
+                          /* 구간별 안내 — 카카오가 준 문장 그대로("2호선 (왕십리 > 성수)" 같은 식).
+                             자차(TMAP)는 이런 구간이 없다 — steps 가 비어 아래 else 로 빠진다. */
+                          <ol className="orsteps">
+                            {steps.map((st, i) => (
+                              <li key={i}>
+                                <span className="orstepicon" aria-hidden>
+                                  {st.type === 'SUBWAY' ? '🚇' : st.type === 'BUS' ? '🚌'
+                                    : st.type === 'WALKING' ? '🚶' : '•'}
+                                </span>
+                                {/* 문장과 '· N분'을 한 span 에 같이 둔다 — 따로 두면 문장이 길어
+                                    줄바꿈될 때 시간 배지가 뚝 떨어져 나가 보인다(탐색.tsx 와 같은
+                                    사고를 여기서 미리 피한다). */}
+                                <span className="orsteptext">
+                                  {st.guidance}
+                                  {st.durationS != null && <span className="mut"> · {Math.round(st.durationS / 60)}분</span>}
+                                </span>
+                              </li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <p className="mut">
+                            {!r || r.st === 'loading' ? '경로를 찾는 중이에요…'
+                              : r.st === 'ok' && r.found ? '상세 경로 안내가 없어요 — 자차 이동은 구간을 안 나눠요.'
+                              : '경로를 아직 못 찾았어요.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </li>
                 );
               })}
