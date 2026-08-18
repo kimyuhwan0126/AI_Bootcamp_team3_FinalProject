@@ -311,6 +311,17 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
   font:inherit;font-weight:700;cursor:pointer}
 .seg[aria-pressed="true"]{border-color:var(--brand);background:#f4f7ff;color:var(--brand)}
 
+/* 모임 목적 알약 (2026-08-23 복구, 점검/11_예전판_기록.md §3) — 예전판에 있던
+   "무엇을 하러 모여요?" 다섯 알약(음식점·카페·술집·문화/놀이·야외)이 app-v2 로 새로
+   지으며 빠졌었다. DB 칸(meetings.purpose)·AI 프롬프트(lib/ai.ts)는 이미 이걸 받을
+   준비가 돼 있었는데, 만드는 폼에 고를 곳이 없어 늘 비어 있었다 — 이제 되살린다.
+   다섯 개라 .segs(칸마다 flex:1 로 고정폭)로는 좁은 화면에서 글자가 눌린다 — 대신
+   내용만큼만 차지하고 줄바꿈되는 알약으로 둔다. 눌린 표시는 .seg 와 같은 잣대. */
+.purposes{display:flex;flex-wrap:wrap;gap:6px}
+.purpose{min-height:var(--tap);padding:0 14px;border:1px solid var(--line);border-radius:999px;
+  background:var(--surface);font:inherit;font-weight:700;cursor:pointer}
+.purpose[aria-pressed="true"]{border-color:var(--brand);background:#f4f7ff;color:var(--brand)}
+
 /* 사람 줄의 작은 버튼 (그릴링 논의35 ②) */
 .tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--bg);
   color:var(--ink-2);font-size:11px;font-weight:800;vertical-align:middle}
