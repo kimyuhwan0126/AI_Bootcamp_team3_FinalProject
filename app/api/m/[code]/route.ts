@@ -18,6 +18,13 @@ import { 이동수단 } from '@/lib/이동수단';
 import { 기다릴시간, 틀렸다, 맞혔다 } from '@/lib/pin지연';
 
 export const dynamic = 'force-dynamic';
+/* 이 파일의 다른 갈래(ping·confirm 등)는 눈 깜짝할 새 끝나지만, 'ai' 갈래만은 Ollama
+   응답을 기다린다(lib/ai.ts, primary 최대 35초 + 안 붙으면 fallback 또 35초) —
+   기본 한도(설정을 안 두면 Vercel 이 짧게 자른다, 흔히 10~15초)로는 그 전에 함수가
+   먼저 잘려서 "AI 가 늦되다"가 아니라 "AI 가 늘 죽어 있다"로 보였을 수 있다
+   (실사용 신고로 찾음, 2026-08-22). ai 아닌 갈래는 이 값이 있어도 원래 속도 그대로다
+   — maxDuration 은 **한도**일 뿐, 빨리 끝나면 그대로 빨리 끝난다. */
+export const maxDuration = 75;
 
 const bad = (msg: string, code = 400) => NextResponse.json({ error: msg }, { status: code });
 
