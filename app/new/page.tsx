@@ -23,6 +23,13 @@ const MSG: Record<string, string> = {
 };
 const FAILED = '모임을 만들지 못했어요 — 잠시 뒤 다시 해 주세요';
 
+/* 무엇을 하러 모이나 (2026-08-23 복구, 점검/11_예전판_기록.md §3) — 예전판 만들기 폼에
+   있던 다섯 알약 그대로다. DB 칸(meetings.purpose)·AI 프롬프트(lib/ai.ts 의 "무엇 하러"
+   줄, 지점 추천의 "~에 어울리는 장소")는 이미 이 값을 받게 돼 있었다 — 폼에 고를 곳이
+   없어서 늘 비어 있었을 뿐이다. 자유 글자 칸이 아니라 알약으로 두는 것도 예전판과 같다 —
+   AI 에게 보낼 말이 들쭉날쭉하지 않게(오타·긴 문장 없이) 다섯 낱말 중 하나로 고정한다. */
+const 목적목록 = ['음식점', '카페', '술집', '문화/놀이', '야외'] as const;
+
 export default function New() {
   const r = useRouter();
   /* 홈에서 잡아 온 출발지 (lib/넘기기.ts). 여기서는 **보기만** 한다 —
@@ -32,6 +39,10 @@ export default function New() {
   const [name, setName] = useState('');
   const [host, setHost] = useState('');
   const [scope, setScope] = useState<'region' | 'place'>('place');
+  /* 예전판처럼 "지역까지" 를 고르면 이 칸 자체가 사라진다(아래 렌더) — 장소 종류는
+     지점을 찾을 때나 뜻이 있다. 골라도 되고 안 골라도 된다(선택), 안 고르면 서버에
+     아예 안 보낸다 — AI 프롬프트도 "무엇 하러" 줄을 통째로 뺀다(lib/ai.ts). */
+  const [purpose, setPurpose] = useState<string | null>(null);
   /* 시간은 받되 건너뛸 수 있다 (그릴링 논의70) — "일단 모이긴 모이자" 식 모임이 더 흔하다 */
   const [meetAt, setMeetAt] = useState('');
   /* 방장도 '그 모임의 참가자'다 — 출발지를 똑같이 받는다 (그릴링 논의35 ①).
@@ -64,6 +75,8 @@ export default function New() {
       if (typeof 적던것.host === 'string') setHost(적던것.host);
       if (적던것.scope === 'region' || 적던것.scope === 'place') setScope(적던것.scope);
       if (typeof 적던것.meetAt === 'string') setMeetAt(적던것.meetAt);
+      if (typeof 적던것.purpose === 'string' && 목적목록.includes(적던것.purpose as typeof 목적목록[number]))
+        setPurpose(적던것.purpose);
       /* 담아 둔 값이 옛 'walk' 일 수 있다 — 로그인 다녀오는 사이에 걷기가 대중교통에 합쳐졌으면
          그렇다. 잣대는 `lib/이동수단.ts` 한 곳이라 여기서 목록을 또 적지 않는다. */
       const t = 이동수단(적던것.transport);
@@ -87,7 +100,7 @@ export default function New() {
   /* 로그인하러 떠난다 — 적어 둔 것을 담아 두고 간다. 담지 않으면 돌아왔을 때 빈 폼이고,
      그건 화면이 "적어 두신 것은 그대로 있어요" 라고 해 놓고 어기는 것이다. */
   function 로그인하러() {
-    만들던것담기({ name, host, scope, meetAt, transport, origin });
+    만들던것담기({ name, host, scope, meetAt, transport, origin, purpose });
   }
 
   async function make() {
@@ -96,8 +109,10 @@ export default function New() {
       const res = await fetch('/api/m', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, hostName: host, scope, transport,
-          /* 비운 칸은 아예 안 보낸다 — 빈 문자열도 서버가 '없음'으로 읽지만 뜻이 또렷하다 */
+          /* 비운 칸은 아예 안 보낸다 — 빈 문자열도 서버가 '없음'으로 읽지만 뜻이 또렷하다.
+             지역까지만 정하는 모임은 이 칸 자체가 안 보이니 purpose 는 늘 null 이다. */
           meetAt: meetAt.trim() || undefined,
+          purpose: purpose ?? undefined,
           origin: origin?.name, lat: origin?.lat, lng: origin?.lng }),
       });
       /* 500 은 본문이 비어 온다 — 여기서 json() 이 터지면 화면은 아무 말도 못 하고
@@ -165,11 +180,31 @@ export default function New() {
 
         <div className="fld">
           <label htmlFor="sc">어디까지 정할까요</label>
-          <select id="sc" value={scope} onChange={(e) => setScope(e.target.value as 'region' | 'place')}>
+          <select id="sc" value={scope} onChange={(e) => {
+            const 다음 = e.target.value as 'region' | 'place';
+            setScope(다음);
+            /* 지역까지만 정하면 아래 목적 칸이 통째로 사라진다 — 숨겨진 채로 값만
+               남아 있다가 그대로 보내지면 안 보이는 채 값이 있는 셈이라 헷갈린다. */
+            if (다음 === 'region') setPurpose(null);
+          }}>
             <option value="place">지점까지 — 지역을 정한 뒤 지점까지</option>
             <option value="region">지역까지 — 지역만</option>
           </select>
         </div>
+
+        {/* 무엇을 하러 모이나 — 지점까지 정하는 모임에서만 뜻이 있다(위 scope 참고).
+            안 골라도 그만이다(선택) — 안 고르면 AI 에게도 그 줄을 통째로 안 보낸다(lib/ai.ts). */}
+        {scope === 'place' && (
+          <div className="fld">
+            <label>무엇을 하러 모여요? <span className="mut" style={{ fontWeight: 400 }}>(선택)</span></label>
+            <div className="purposes">
+              {목적목록.map((p) => (
+                <button key={p} type="button" className="purpose" aria-pressed={purpose === p}
+                  onClick={() => setPurpose(purpose === p ? null : p)}>{p}</button>
+              ))}
+            </div>
+          </div>
+        )}
         {err && <p className="err">{err}</p>}
 
         {/* 로그인이 없어서 막힌 자리. 적어 둔 것은 그대로 두고 갈 길만 준다 —
