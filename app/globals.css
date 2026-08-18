@@ -303,6 +303,20 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
    지도에는 같은 자리에 회색 점선 동그라미(.opre)가 뜬다 — 두 곳의 결이 같아야 한 가지 일로 읽힌다. */
 .row[data-preview]{border-style:dashed;border-color:var(--ink-2);background:var(--bg);color:var(--ink-2)}
 .row[data-preview] .nm{font-weight:800;color:var(--ink)}
+
+/* '오는 길' 펼치기(모임 결과 화면, 2026-08-23 — 홈 화면 '출발지별 상세'와 같은 결로
+   복구) — 펼친 자리는 .row 바로 밑에 붙는 별도 상자다. .row 가 이미 자기 테두리·
+   여백을 갖고 있어(위 .row 규칙) 안을 파는 대신 아래에 살짝 겹쳐 붙인다. */
+.orinner{margin:-3px 0 7px;padding:10px 13px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+/* 구간별 안내 줄 — 지하철·버스·도보 아이콘 + 문장(+ 있으면 몇 분, 문장과 같은 글줄 안).
+   시간을 문장과 형제로 두면 줄바꿈될 때 시간 배지만 떨어져 나간다(탐색.tsx 에서 실사용
+   신고로 이미 확인된 사고 — 여기서는 같은 실수를 처음부터 피한다: 한 span 안에 같이 둔다).
+   word-break:keep-all 도 같은 이유 — 한글 기본 줄바꿈 규칙은 "인덕원역" 같은 낱말이나
+   "14분" 같은 숫자+단위를 중간에서 끊는다. */
+.orsteps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.orsteps li{display:flex;align-items:flex-start;gap:6px;font-size:13px;line-height:1.5;color:var(--ink);word-break:keep-all}
+.orstepicon{flex:0 0 auto;width:18px;text-align:center;line-height:inherit}
+.orsteptext{flex:1;min-width:0}
 .row[data-preview] .ct{white-space:nowrap}
 
 /* 이동 수단 고르기 (그릴링 논의35 ①) */
