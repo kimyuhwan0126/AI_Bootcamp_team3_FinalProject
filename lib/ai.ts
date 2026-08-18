@@ -44,12 +44,30 @@ async function 한번물음(url: string, model: string, key: string | undefined,
     const r = await fetch(url.replace(/\/$/, '') + '/chat/completions', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
-      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
-      /* 2026-08-22 — 20초로는 짧았다(실측: glm-5.2:cloud 는 '생각'을 길게 적고 나서
-         답하는 모델이라 실제 응답이 13~30초 넘게 걸리기도 했다 — curl 로 여러 번 재
-         확인). 20초에서 자르면 답이 20초 안에 오고 있었는데도 '못 붙었다'로 처리돼
-         (성공했을 답을) 버리고 fallback 을 또 물어 오히려 더 늦어졌다. 35초로 늘린다. */
-      signal: AbortSignal.timeout(35000),
+      /* reasoning_effort:'none' — 2026-08-22, 응답을 5초 안으로 줄여 달라는 요청으로
+         재봤다. glm-5.2:cloud 는 답하기 전에 풀이 과정을 길게 글로 써 보는 '사고형'
+         모델이라(끄기 전엔 실제로 3000~9000자짜리 reasoning 을 만들고 13~30초+
+         걸렸다) 그 풀이 과정만 끄면 훨씬 빠르다. **아무 파라미터나 먹힌 게 아니다** —
+         `think:false`·`options.think:false`·`thinking:{type:'disabled'}`·
+         `reasoning_effort:'low'` 는 다 무시되거나(여전히 수천 자짜리 reasoning, 15~30초)
+         오히려 더 길어졌다. `reasoning_effort:'none'` 만 reasoning 을 0자로 만들고
+         1.8~2.0초로 끝냈다(curl 로 다섯 번 반복해 재확인, 전부 그 범위 · 매번 JSON
+         파싱 성공). 로컬 fallback 모델(qwen3.5:0.8b)에도 같이 보내지만 그쪽은 이
+         값을 몰라도 그냥 무시할 뿐 에러가 안 난다(실측 확인) — 모델마다 갈라 보낼
+         필요가 없다.
+         ⚠ 공짜는 아니다 — 사고 없이 한 번에 답하다 보니 매번 살짝 다른 동네를 고르고,
+         가끔 가운데에서 더 먼 곳도 나온다(실측: 사당동·노량진동처럼). 좌표 자체의
+         유효성(한국 안인지)은 그대로 검증하니 안전은 그대로고, '가운데와 얼마나
+         가까운가'의 정확도만 조금 흔들린다. */
+      body: JSON.stringify({
+        model, messages: [{ role: 'user', content: prompt }], temperature: 0.3, reasoning_effort: 'none',
+      }),
+      /* 사고를 끄고 나면 정상 응답이 2초 안팎이라(위 주석) 20초도 넉넉하다 — 그래도
+         네트워크 지연·서버 혼잡 같은 다른 이유로 느려질 수 있어 실측치의 10배쯤인
+         20초를 둔다. 예전엔 이 값을 35초까지 늘려야 했지만(사고형 응답이 그만큼
+         걸렸다), 이제 그 사고 자체를 껐으니 다시 줄인다 — primary+fallback 최악의
+         경우도 40초 안팎으로 끝나 maxDuration(75초) 안에 여유 있게 들어온다. */
+      signal: AbortSignal.timeout(20000),
     });
     /* 왜 빈손인지 남긴다 — 401(키 만료)과 '결과 없음'이 로그에서 똑같아
        AI 가 조용히 죽어 있어도 알 길이 없었다. 키는 헤더에만 있고 여기 안 찍힌다. */
