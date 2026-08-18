@@ -61,6 +61,22 @@
 }
 .지도 { border-radius: 16px; }
 
+/* ── AI 추천 (지도 밑, 2026-08-22) ─────────────────────────
+   기준을 AI 로 고르면 지도밑문구 아래에 단추가 하나 더 뜬다 — 값이 드는 opt-in
+   이라(lib/ai.ts 머리말) 기준을 고른 것만으로 자동으로 부르지 않는다. 사람이
+   눌러야 부른다. 받아 온 최대 3곳은 알약처럼 늘어놓고, 고른 하나만 지도 핀이 된다. */
+.AI칸 { margin: 12px 0 0; }
+.AI목록 {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+}
+.AI알 {
+  min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); font-size: 12.5px; font-weight: 800; color: var(--ink-2);
+  cursor: pointer;
+}
+.AI알[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
+
 /* ── 이동 수단 (지도 아래) ─────────────────────────────── */
 .이동칸 { margin: 14px 0 18px; }   /* 아래 만들기 단추와 붙지 않게 */
 .이동이름 {

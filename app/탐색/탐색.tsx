@@ -127,11 +127,18 @@ export default function 탐색() {
   const [이동수단, set이동수단] = useState<Transport>('transit');
   const [칸키, set칸키] = useState(0);
   const [알림, set알림] = useState('');
-  /* 가운데를 잡는 기준 — 거리(기본)·시간·AI. AI 는 지금은 안내만 하고 실제로 안 부른다(2026-08-17,
-     Ollama 쪽 설정이 아직 안 맞음 — lib/ai.ts 참고). */
+  /* 가운데를 잡는 기준 — 거리(기본)·시간·AI. */
   const [기준, set기준] = useState<기준값>('거리');
   const [시간가운데, set시간가운데] = useState<(점 & { 평균분: number }) | null>(null);
   const [시간상태, set시간상태] = useState<'idle' | '구하는중' | '못구함'>('idle');
+
+  /* AI 기준(2026-08-22, 사용자 요청으로 실제로 붙임) — 거리·시간과 달리 **손으로 눌러야**
+     부른다(opt-in, lib/ai.ts 머리말과 같은 이유: 진짜 토큰이 나간다). 기준을 고르거나
+     출발지를 바꾼 것만으로 자동으로 부르면 탭을 오갈 때마다 비용이 든다.
+     picks 는 AI 가 고른 최대 3곳 — 그중 하나(AI고름)를 지도에 얹는다. */
+  const [AI결과, setAI결과] = useState<{ name: string; lat: number; lng: number }[] | null>(null);
+  const [AI상태, setAI상태] = useState<'idle' | '구하는중' | '못구함' | '한도끝'>('idle');
+  const [AI고름, setAI고름] = useState(0);
 
   /* 새로 단 출발지 칸은 **스스로** 내정보의 기본 출발지·이동 수단을 얹는다(originfield.tsx).
      그건 사람이 고른 것이 아니다 — 칸을 새로 달 때마다 기본값이 또 얹히면
@@ -205,20 +212,44 @@ export default function 탐색() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [기준, 출발지서명, 이동수단]);
 
-  /* 지도에 실제로 얹을 가운데 — AI 는 아직 실제로 안 부르니 핀을 안 띄운다(아래 안내문이 대신 말한다).
+  /* 출발지가 바뀌면 그새 받은 AI 추천은 낡은 것이다 — 새 출발지로 다시 눌러야 한다.
+     자동으로 다시 부르지는 않는다(비용, 위 AI결과 주석) — 버튼을 다시 눌러야 하는 게 맞다. */
+  useEffect(() => { setAI결과(null); setAI상태('idle'); setAI고름(0); }, [출발지서명]);
+
+  const AI추천받기 = () => {
+    if (AI상태 === '구하는중' || !출발지들.length) return;
+    setAI상태('구하는중');
+    fetch('/api/home-ai', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ origins: 출발지들.map((o) => ({ name: o.name, lat: o.lat, lng: o.lng })) }),
+    }).then(async (r) => {
+      if (r.status === 429) { setAI상태('한도끝'); setAI결과(null); return; }
+      if (!r.ok) { setAI상태('못구함'); setAI결과(null); return; }
+      const j = await r.json().catch(() => null);
+      const picks = Array.isArray(j?.picks) ? j.picks : [];
+      if (!picks.length) { setAI상태('못구함'); setAI결과(null); return; }
+      setAI고름(0); setAI결과(picks); setAI상태('idle');
+    }).catch(() => { setAI상태('못구함'); setAI결과(null); });
+  };
+
+  /* 지도에 실제로 얹을 가운데. AI 는 사람이 [AI 추천 받기] 를 눌러 받아 온 픽 중 고른
+     하나다(위 AI결과) — 아직 안 눌렀거나 실패했으면 핀이 없다(아래 안내문이 대신 말한다).
      시간은 구하는 동안·못 구했을 때 거리 기준으로 잠깐 대신 보여 준다 — 지도가 비어 보이는 것보다는 낫다. */
-  const 지도가운데 = 기준 === 'AI' ? null : 기준 === '시간' && 시간가운데 ? 시간가운데 : 가운데;
+  const AI가운데 = 기준 === 'AI' ? (AI결과?.[AI고름] ?? null) : null;
+  const 지도가운데 = 기준 === 'AI' ? AI가운데 : 기준 === '시간' && 시간가운데 ? 시간가운데 : 가운데;
 
   /* 핀 이름표는 "가운데"·"시간상 가운데" 같은 우리 말이 아니라 그 자리의 실제 지명을
      보여 준다(2026-08-22, 사용자 요청 — "지역명이든 지점명이든"). 이미 지역 미리보기가
      쓰는 것과 같은 되짚기(/api/geo, app/m/[code]/ui.tsx:583)를 홈에서도 쓴다.
+     AI 는 예외다 — AI 가 이미 그 자리의 이름을 주었다(AI가운데.name), 되짚어 다시 물을
+     까닭이 없다(왕복 하나 아끼는 것 + AI 가 실제로 추천한 이름과 어긋나지 않게).
      점이 바뀌면 옛 이름부터 버린다(먼저 null) — 안 그러면 새 점으로 옮겨가는 잠깐
      동안 예전 지명이 잘못 붙어 있는다. 바다 근처·국외처럼 못 찾는 자리도 있어(503)
      그때는 기본 문구로 돌아간다 — 이름표가 아예 비는 것보다 낫다. */
   const [가운데지명, set가운데지명] = useState<string | null>(null);
   useEffect(() => {
     set가운데지명(null);
-    if (!지도가운데) return;
+    if (!지도가운데 || 기준 === 'AI') return;
     let 살아있나 = true;
     const { lat, lng } = 지도가운데;
     const t = setTimeout(() => {
@@ -228,13 +259,16 @@ export default function 탐색() {
     }, 350);
     return () => { 살아있나 = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [지도가운데?.lat, 지도가운데?.lng]);
-  const 지도가운데라벨 = 가운데지명 ?? (기준 === '시간' && 시간가운데 ? '시간상 가운데' : '가운데');
+  }, [지도가운데?.lat, 지도가운데?.lng, 기준]);
+  const 지도가운데라벨 = 기준 === 'AI'
+    ? (AI가운데?.name ?? 'AI 추천')
+    : 가운데지명 ?? (기준 === '시간' && 시간가운데 ? '시간상 가운데' : '가운데');
 
   /* 출발지마다 지금 뜬 가운데까지 오는 길 (2026-08-17, 사용자 요청) — 모임 화면과 같은
      /api/routes 를 쓴다. 지도가운데가 바뀔 때마다(거리↔시간을 오가거나, 시간 계산이 끝나
-     '거리 대신 보여 주던 자리'에서 '진짜 시간상 자리'로 넘어갈 때도) 다시 잰다.
-     AI 는 가운데 자체가 없으니(위) 여기서도 자동으로 빈다. */
+     '거리 대신 보여 주던 자리'에서 '진짜 시간상 자리'로 넘어갈 때도, AI 추천을 받거나
+     다른 픽으로 바꿀 때도) 다시 잰다. AI 를 아직 안 눌렀으면 가운데 자체가 없으니
+     여기서도 자동으로 빈다. */
   const [경로들, set경로들] = useState<상세경로[]>([]);
   /* 부르는 중인지 — '출발지별 상세'가 결과 없음과 구하는 중을 다른 말로 보여 준다 */
   const [경로구하는중, set경로구하는중] = useState(false);
@@ -288,7 +322,11 @@ export default function 탐색() {
           : 시간상태 === '못구함' ? '지금은 도착 시간을 계산하지 못했어요 — 거리 기준으로 대신 보여 드려요.'
           : 시간가운데 ? `${기준설명.시간} 평균 ${시간가운데.평균분}분쯤 걸려요.`
           : 기준설명.시간
-      : `${기준설명.AI} 아직 준비 중이에요 — 곧 붙일게요.`;
+      : AI상태 === '구하는중' ? `${기준설명.AI} 추천받는 중…`
+      : AI상태 === '한도끝' ? '지금은 너무 여러 번 눌렀어요 — 잠시 뒤에 다시 해 주세요.'
+      : AI상태 === '못구함' ? '지금은 AI 추천을 받을 수 없어요 — 잠시 뒤에 다시 해 주세요.'
+      : AI결과 ? `${기준설명.AI} 아래에서 다른 곳으로 바꿔 볼 수 있어요.`
+      : 기준설명.AI;
 
   /* ── 만들기 폼으로 ───────────────────────────────────────
      **링크**로 둔다. 주소가 있는 자리로 가는 길이라 새 탭·오래 눌러 열기가 되어야 하고,
@@ -364,6 +402,27 @@ export default function 탐색() {
           클래스로는 못 찾는다(지도.tsx 와 같은 사정). */}
       <p className={s.지도밑} data-slot="지도밑">{지도밑문구}</p>
 
+      {/* AI 기준 — 손으로 눌러야 부른다(opt-in, 위 AI결과 주석). 출발지가 둘 이상일 때만
+          뜬다 — 그 전까지는 지도밑문구 가 '더 넣어 달라'를 우선으로 말한다(위 정의). */}
+      {기준 === 'AI' && 출발지들.length >= 2 && (
+        <div className={s.AI칸} data-slot="AI">
+          <button type="button" className="cta sub" disabled={AI상태 === '구하는중'}
+            onClick={AI추천받기}>
+            {AI상태 === '구하는중' ? 'AI에게 묻는 중…' : AI결과 ? 'AI 추천 다시 받기' : 'AI 추천 받기'}
+          </button>
+          {!!AI결과?.length && (
+            <ul className={s.AI목록}>
+              {AI결과.map((p, i) => (
+                <li key={`${p.name}${p.lat}`}>
+                  <button type="button" className={s.AI알} aria-pressed={i === AI고름}
+                    onClick={() => setAI고름(i)}>{p.name}</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* 이동 수단 — 옛 판 홈에는 없던 칸이다(거기서는 내정보에만 있었다).
           우리는 이 값을 만들기 폼으로 실어 보내므로 여기 남긴다. 다만 **지도 아래**로 내렸다:
           위쪽은 검색 → 출발지 → 지도 로 이어지는 옛 판의 흐름을 그대로 두려는 것이다. */}
@@ -395,7 +454,8 @@ export default function 탐색() {
           주석)와는 다른 물건이다 — 그건 고를 자리(가게·카페) 목록이라 아직 모임도 없는
           자리에서 고르는 화면처럼 보이는 게 문제였다. 이건 고르는 게 아니라 '내가 넣은
           출발지에서 어떻게 오는지'를 보는 것이라, 실제로 가운데가 잡혀 있을 때만 뜻이
-          있다 — AI 기준(가운데가 아직 없다)이거나 출발지가 하나뿐이면 안 보인다. */}
+          있다 — 가운데가 아직 없거나(AI 를 아직 안 눌렀을 때 포함) 출발지가 하나뿐이면
+          안 보인다. */}
       {지도가운데 && 출발지들.length >= 2 && (
         <div className={s.상세칸} data-slot="출발지별상세">
           <span className={s.상세이름}>출발지별 상세</span>

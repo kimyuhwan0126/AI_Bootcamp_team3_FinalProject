@@ -18,6 +18,13 @@ import { 이동수단 } from '@/lib/이동수단';
 import { 기다릴시간, 틀렸다, 맞혔다 } from '@/lib/pin지연';
 
 export const dynamic = 'force-dynamic';
+/* 이 파일의 다른 갈래(ping·confirm 등)는 눈 깜짝할 새 끝나지만, 'ai' 갈래만은 Ollama
+   응답을 기다린다(lib/ai.ts, primary 최대 35초 + 안 붙으면 fallback 또 35초) —
+   기본 한도(설정을 안 두면 Vercel 이 짧게 자른다, 흔히 10~15초)로는 그 전에 함수가
+   먼저 잘려서 "AI 가 늦되다"가 아니라 "AI 가 늘 죽어 있다"로 보였을 수 있다
+   (실사용 신고로 찾음, 2026-08-22). ai 아닌 갈래는 이 값이 있어도 원래 속도 그대로다
+   — maxDuration 은 **한도**일 뿐, 빨리 끝나면 그대로 빨리 끝난다. */
+export const maxDuration = 75;
 
 const bad = (msg: string, code = 400) => NextResponse.json({ error: msg }, { status: code });
 
@@ -122,10 +129,62 @@ export async function POST(req: Request, { params }: { params: { code: string } 
   ];
   if (HOST_ONLY.includes(body.action) && !isHost) return bad('forbidden', 403);
 
-  /* 참여 말고는 멤버여야 한다 — '멤버 아님'은 참여 폼으로 (그릴링 Q1=A) */
-  if (body.action !== 'join' && (!me || me.state !== 'active')) return bad('not_member', 403);
+  /* 참여 말고는 멤버여야 한다 — '멤버 아님'은 참여 폼으로 (그릴링 Q1=A).
+     find 도 비껴간다 — 참여 폼이 아직 멤버가 아닌 사람(이제 막 이름+PIN 을 적어 보는
+     사람)을 위해 부르는 것이라, 멤버 검사를 걸면 애초에 부를 수가 없다. */
+  if (body.action !== 'join' && body.action !== 'find' && (!me || me.state !== 'active'))
+    return bad('not_member', 403);
 
   switch (body.action) {
+    /* 이름+PIN 으로 옛 출발지를 미리 불러온다 (2026-08-22, 논의139 — 실사용 신고:
+       재참여자가 쿠키를 잃고 이 화면으로 오면 이름·PIN 을 맞게 적어도 출발지를 매번
+       새로 찾아 눌러야만 참여 단추가 열렸다. 그 자체는 의도(그릴링 논의35①·121 —
+       "이사 간 사람이 옛 집에서 오는 것으로 잡힌다"), 문제는 그 사이 안내가 하나도
+       없어 그냥 막힌 것처럼 보였다는 것이다. 여기서 옛 출발지를 미리 채워 주면
+       그대로 두거나(전과 같은 곳이면) 다시 골라 바꿀 수 있다(이사한 사람) — 둘 다
+       된다. **아무것도 안 바꾼다** — join 은 여전히 예전 그대로 새 출발지를 받는다,
+       이건 그 칸을 미리 채워 주는 것뿐이다. */
+    case 'find': {
+      if (typeof body.name !== 'string') return bad('name_required');
+      const name = body.name.trim();
+      if (!name) return bad('name_required');
+      const pin = (body.pin ?? '').trim();
+      if (!/^\d{4}$/.test(pin)) return bad('pin_required');
+
+      /* PIN 을 넣는 자리는 어디든 같은 잣대로 늦춘다 — join 과 같은 저장소(code+name)를
+         쓰므로 여기서 틀려도, join 에서 틀려도 같이 늦춰진다(따로 우회할 구멍이 없다). */
+      const 기다림 = 기다릴시간(code, name);
+      if (기다림 > 0) {
+        return NextResponse.json(
+          { error: 'pin_too_many', retryAfterMs: 기다림 },
+          { status: 429, headers: { 'retry-after': String(Math.ceil(기다림 / 1000)) } });
+      }
+
+      const prior = await db.findByName(code, name);
+      /* 계정에 이어진 자리는 PIN 으로 안 본다(join 과 같은 규칙, 논의130) — 로그인한
+         사람은 애초에 이 칸(PIN보임)을 안 보므로 여기 올 일이 드물지만, 혹시 몰라 막는다.
+         처음 쓰는 이름도 여기 온다 — 그건 오류가 아니라 '아직 없다' 일 뿐이다, 그대로
+         found:false 로 조용히 넘어간다(참여 폼이 다루던 첫 참여자와 같은 길). */
+      if (!prior || prior.user_id) return NextResponse.json({ found: false });
+      if (!(await db.pinOk(prior.id, hashPin(code, pin)))) {
+        틀렸다(code, name);
+        return bad('pin_wrong', 403);
+      }
+      맞혔다(code, name);
+      if (prior.state === 'pending') return bad('awaiting_approval', 409);
+      /* transport 는 DB 에 옛 값('bus'·'walk' 같은)이 남아 있을 수 있다 — join 이 받는
+         값으로 정리해서 낸다. 모르는 값이면 화면 기본값(대중교통)에 맡긴다. */
+      const 정리된수단 = 이동수단(prior.transport ?? undefined);
+      return NextResponse.json({
+        found: true,
+        state: prior.state as 'active' | 'kicked',
+        origin: prior.origin_name != null && prior.lat != null && prior.lng != null
+          ? { name: prior.origin_name, lat: prior.lat, lng: prior.lng }
+          : null,
+        transport: 정리된수단 && 정리된수단 !== '잘못됨' ? 정리된수단 : undefined,
+      });
+    }
+
     case 'join': {
       /* 이미 이 모임 사람이면 또 들어올 수 없다. 멤버 검사는 join 을 비껴가서
          이름만 바꿔 반복하면 한 브라우저로 참가자·표를 늘릴 수 있었다(재현됨).
