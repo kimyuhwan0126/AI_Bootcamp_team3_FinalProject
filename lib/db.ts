@@ -369,11 +369,17 @@ export async function join(code: string, o: {
 /** 이 모임에 이 이름이 이미 있나 — 있으면 상태까지.
     이름 하나로 셋이 갈린다 (논의121): 강퇴됐으면 승인 대기로, 승인 대기면 그대로,
     멀쩡한 멤버면 PIN 으로 그 자리를 돌려준다. 강퇴자만 보던 때의 이름(findKicked)은
-    이제 하는 일과 어긋난다 — 쓰는 쪽이 '강퇴자만 찾는 함수'로 읽고 지나쳤다. */
+    이제 하는 일과 어긋난다 — 쓰는 쪽이 '강퇴자만 찾는 함수'로 읽고 지나쳤다.
+    ⚠ 출발지 칸(origin_name·lat·lng·transport)도 같이 낸다(2026-08-22, 논의139) —
+    'find' 갈래(재참여자가 이름+PIN 으로 옛 출발지를 미리 받아 오는 길)가 이 값을
+    그대로 되돌려 준다. join 갈래는 여전히 이 값을 안 쓴다(늘 새 출발지를 받는다,
+    위 setOrigin 호출부 주석) — 그저 여기서 한 번 더 불러오는 것뿐이라 뜻이 안 바뀐다. */
 export async function findByName(code: string, name: string) {
   const r = (await sql`
-    select id, state, name, user_id from participants where code = ${code} and name = ${name} limit 1
-  `) as { id: string; state: string; name: string; user_id: string | null }[];
+    select id, state, name, user_id, origin_name, lat, lng, transport
+      from participants where code = ${code} and name = ${name} limit 1
+  `) as { id: string; state: string; name: string; user_id: string | null;
+    origin_name: string | null; lat: number | null; lng: number | null; transport: string | null }[];
   return r[0] ?? null;
 }
 

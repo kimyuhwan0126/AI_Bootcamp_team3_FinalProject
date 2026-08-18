@@ -91,6 +91,10 @@ export type MeetingView = {
 /* 변경은 전부 이 하나로 들어온다. 기능이 늘면 여기 한 줄만 는다. */
 export type Action =
   | { action: 'join'; name: string; pin?: string; origin?: string; lat?: number; lng?: number; transport?: Transport }
+  /* 이름+PIN 만으로 **미리** 옛 출발지를 불러온다(2026-08-22, 논의139) — join 은 그대로
+     쓰되, 참여 폼이 이름+PIN 을 다 채운 순간 이걸 먼저 불러 출발지 칸을 채워 준다.
+     아무것도 안 바꾸지 않는다(읽기 전용) — 그래서 join 앞의 멤버 검사도 비껴간다. */
+  | { action: 'find'; name: string; pin: string }
   | { action: 'ping'; kind: Kind; refId: string; name: string; lat: number; lng: number; address?: string }
   | { action: 'unping'; candidateId: string }
   /* 옛 `vote` 는 없앴다 (논의98) — 지점도 핑=투표라(논의26 ①) 화면이 한 번도 안 부르는데

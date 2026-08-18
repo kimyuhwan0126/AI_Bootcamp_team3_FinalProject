@@ -27,7 +27,16 @@ const FAILED = '참여하지 못했어요 — 잠시 뒤 다시 해 주세요';
 
 /* 출발지는 반드시 받는다 (그릴링 논의35 ①).
    모이머는 '여러 사람이 어디서 오는가'로 가운데를 찾는 앱이다 —
-   그게 없으면 그냥 지도에 표를 찍는 앱이 된다. */
+   그게 없으면 그냥 지도에 표를 찍는 앱이 된다.
+
+   ⚠ 2026-08-22(논의139, 실사용 신고) — 칸 차례를 이름→출발지→PIN 에서
+   이름→PIN→출발지 로 바꿨다. PIN 을 먼저 받으면 그 사람이 **옛 참여자인지**를
+   출발지를 묻기 **전에** 알 수 있다 — 옛 참여자면 지난 출발지를 미리 불러와
+   채워 준다(아래 `찾아보기`). 그대로 두면 예전 자리로 곧장 돌아가고, 이사했으면
+   다시 검색해서 바꾸면 된다. 예전엔 이름+PIN 을 맞게 적어도 출발지를 매번 새로
+   찾아야만 참여 단추가 열려서 "왜 막혔지"로 보였다 — 원인은 그대로 두되(옛
+   출발지를 그냥 자동으로 믿으면 "이사 간 사람이 옛 집에서 오는 것으로 잡힌다",
+   논의35·121) 안내와 자동 채움으로 그 벽을 없앤다. */
 export default function JoinForm({ code, name }: { code: string; name: string }) {
   const r = useRouter();
   const [nm, setNm] = useState('');
@@ -58,6 +67,39 @@ export default function JoinForm({ code, name }: { code: string; name: string })
       .then((s) => set로그인했나(!!s?.user))
       .catch(() => set로그인했나(false));
   }, []);
+
+  /* 이름+PIN 이 다 채워지면 옛 자리를 미리 찾아본다('find', 읽기 전용).
+     처음 쓰는 이름·PIN 이면 서버가 조용히 found:false 를 준다 — 그건 오류가 아니라
+     "당신은 새 참여자예요" 라는 뜻이라 아무 말도 안 한다. PIN 이 남의 것과
+     부딪히면(name_taken 이 될 자리) 여기서 먼저 알려 줘 출발지를 채우기 전에
+     고치게 한다 — submit 때 가서야 아는 것보다 낫다. */
+  const [찾기상태, set찾기상태] = useState<'idle' | '찾는중' | '찾음' | 'pin_wrong' | 'pin_too_many'>('idle');
+  useEffect(() => {
+    if (!PIN보임 || !nm.trim() || pin.length !== 4) { set찾기상태('idle'); return; }
+    let 살아있나 = true;
+    set찾기상태('찾는중');
+    const t = setTimeout(() => {
+      fetch(`/api/m/${code}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'find', name: nm.trim(), pin }),
+      }).then(async (res) => {
+        if (!살아있나) return;
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          set찾기상태(j.error === 'pin_too_many' ? 'pin_too_many' : j.error === 'pin_wrong' ? 'pin_wrong' : 'idle');
+          return;
+        }
+        if (!j.found) { set찾기상태('idle'); return; }
+        /* 지난 출발지를 그대로 채운다 — address 는 서버가 안 갖고 있어(이름·좌표만
+           저장한다) 빈 채로 둔다, OriginField 는 있을 때만 보여 준다. */
+        if (j.origin) setOrigin({ name: j.origin.name, address: '', lat: j.origin.lat, lng: j.origin.lng });
+        if (j.transport) setTransport(j.transport);
+        set찾기상태('찾음');
+      }).catch(() => { if (살아있나) set찾기상태('idle'); });
+    }, 350);
+    return () => { 살아있나 = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, nm, pin, PIN보임]);
 
   async function submit() {
     setBusy(true); setErr('');
@@ -102,10 +144,9 @@ export default function JoinForm({ code, name }: { code: string; name: string })
                  placeholder="다른 사람이 알아볼 이름" />
         </div>
 
-        <OriginField origin={origin} setOrigin={setOrigin}
-          transport={transport} setTransport={setTransport} />
-
-        {/* 로그인한 사람에게는 안 그린다 (논의130) — 계정이 신원이다 */}
+        {/* 로그인한 사람에게는 안 그린다 (논의130) — 계정이 신원이다.
+            ⚠ 출발지보다 먼저 온다(2026-08-22, 논의139) — 옛 참여자인지를 먼저 알아야
+            출발지를 미리 채워 줄 수 있다. */}
         {PIN보임 && (
         <div className="fld">
           <label htmlFor="pin">개인 PIN <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -118,6 +159,21 @@ export default function JoinForm({ code, name }: { code: string; name: string })
             이 4자리가 <b>당신을 알아보는 표시</b>입니다.
             폰을 바꾸거나 다른 브라우저로 열어도 <b>이름과 이 숫자</b>면 내 자리로 돌아와요.
           </p>
+          {/* 찾아보기 결과 — 논의139. '찾는중'은 깜빡임을 줄이려 아주 짧으면 안 보여도 그만이라
+              일부러 문구를 안 두지 않는다(느린 회선에서는 그 잠깐도 사람이 본다). */}
+          {찾기상태 === '찾는중' && <p className="mut" style={{ margin: '6px 0 0' }}>확인하는 중…</p>}
+          {찾기상태 === '찾음' && (
+            <p className="mut" style={{ margin: '6px 0 0', color: 'var(--brand)' }}>
+              ✓ 전에 참여한 자리를 찾았어요 — 아래 출발지를 지난번 그대로 채워 뒀어요.
+              그대로 두거나, 바뀌었으면 다시 검색해서 바꿔 주세요.
+            </p>
+          )}
+          {찾기상태 === 'pin_wrong' && (
+            <p className="err" style={{ margin: '6px 0 0' }}>{MSG.pin_wrong}</p>
+          )}
+          {찾기상태 === 'pin_too_many' && (
+            <p className="err" style={{ margin: '6px 0 0' }}>{MSG.pin_too_many}</p>
+          )}
         </div>
         )}
 
@@ -129,9 +185,15 @@ export default function JoinForm({ code, name }: { code: string; name: string })
           </p>
         )}
 
+        <OriginField origin={origin} setOrigin={setOrigin}
+          transport={transport} setTransport={setTransport} />
+
         {err && <p className="err">{err}</p>}
         <button className="cta" onClick={submit}
-          disabled={busy || !nm.trim() || (PIN보임 && pin.length !== 4) || !origin}>참여하기</button>
+          disabled={busy || !nm.trim() || (PIN보임 && pin.length !== 4) || !origin
+            /* 찾아보기가 이미 이 PIN 이 틀렸다고/너무 잦다고 말했으면 눌러 봐야 서버가
+               같은 말을 반복할 뿐이다 — 미리 막는다(출발지가 우연히 채워져 있던 경우 대비). */
+            || 찾기상태 === 'pin_wrong' || 찾기상태 === 'pin_too_many'}>참여하기</button>
       </div>
     </div>
   );
