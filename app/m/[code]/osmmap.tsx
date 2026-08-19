@@ -61,16 +61,13 @@ const 겹친넓이 = (a: 네모, b: 네모) =>
   Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t));
 
 export default function OsmMap({
-  candidates, myVotes, center, canPing, preview, onPick, onToggle, onCluster, cluster = true, origins,
+  candidates, myVotes, center, canPing, onPick, onToggle, onCluster, cluster = true, origins,
   region, regionRadiusM, routes, fitOrigins,
 }: {
   candidates: Candidate[];
   myVotes: string[];
   center: { lat: number; lng: number };
   canPing: boolean;
-  /* 아직 후보가 아닌 자리 (그릴링 논의81). 무엇을 고른 셈인지는 시트가 말하고(이름은 거기 있다),
-     지도는 '그게 어디인지'만 회색으로 짚어 준다 — 좌표를 아는 쪽이 여기다. */
-  preview?: { lat: number; lng: number } | null;
   onPick: (lat: number, lng: number) => void;
   onToggle: (c: Candidate, mine: boolean) => void;
   onCluster: (ids: string[]) => void;
@@ -217,8 +214,8 @@ export default function OsmMap({
     const ll = toLatLng(origin.ox + (e.clientX - r.left), origin.oy + (e.clientY - r.top), z);
     /* 많이 축소하면 지도 밖(= 지구 밖) 좌표가 나온다 — 서버에 보내 봐야 400 이다 */
     if (Math.abs(ll.lat) > 85 || Math.abs(ll.lng) > 180) return;
-    /* 누른 자리를 위로 알리기만 한다. 이것이 곧 후보가 되지는 않는다 —
-       미리보기로 세워 두고 한 번 더 묻는 일은 화면(ui.tsx)이 한다 (그릴링 논의81). */
+    /* 누른 자리를 위로 알린다 — 지역이면 그 자리가 곧 후보, 지점이면 화면(ui.tsx)이
+       주변 목록을 띄운다. 여기서는 드래그와 탭만 가려낸다(위 d.moved). */
     onPick(ll.lat, ll.lng);
   }, [canPing, tileDead, onPick, origin.ox, origin.oy, z]);
 
@@ -519,13 +516,6 @@ export default function OsmMap({
             {그린것}
           </>
         );
-      })()}
-
-      {preview && !tileDead && (() => {
-        /* 좌표에서 매번 다시 잰다 — 끌거나 확대해도 고른 자리에 그대로 붙어 있어야 한다.
-           누르는 자리는 아니다(pointer-events 없음) — 굳히는 단추는 시트에 있다 (그릴링 논의81). */
-        const p = toPx(preview.lat, preview.lng, z);
-        return <span className="opre" style={{ left: p.x - origin.ox, top: p.y - origin.oy }} />;
       })()}
 
       {/* 참가자들의 출발지 — 후보와 헷갈리면 안 되니 누를 수 없고(pointer-events 없음) 옅게 그린다.

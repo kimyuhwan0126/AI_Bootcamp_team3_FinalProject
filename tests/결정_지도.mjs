@@ -126,7 +126,7 @@ async function 지점모임(이름, n, 표더줄곳 = 한도) {
   return { code, 방장, 구경꾼, 곳, 표많은곳 };
 }
 
-/** 지역 단계 모임 — 지도를 눌러 후보를 만드는 길(논의81)을 재는 데 쓴다 */
+/** 지역 단계 모임 — 지도를 눌러 후보를 만드는 길(누르면 곧바로 후보+표)을 재는 데 쓴다 */
 async function 지역모임(이름) {
   const 방장 = person();
   await 방장로그인(방장);
@@ -161,7 +161,7 @@ const 재기 = () => {
       ...상자(n), text: (n.getAttribute('aria-label') ?? '').trim(),
     })),
     점: document.querySelectorAll('.odot').length,
-    /* 미리보기 — 지도에 짚는 자리(.opre)와 시트에 서는 줄(.row[data-preview]) 둘로 나뉜다 (논의81) */
+    /* 미리보기(.opre · .row[data-preview])는 되돌린 뒤로 더는 안 그려진다 — 안 남았는지 재는 용도로만 쓴다 */
     미리: (() => { const p = document.querySelector('.opre'); return p ? 상자(p) : null; })(),
     미리줄: [...document.querySelectorAll('.row[data-preview]')].map((n) => n.textContent.trim()),
   };
@@ -263,114 +263,64 @@ try {
     await ctx.close();
   }
 
-  /* ── 논의81 : 지도를 누르면 미리보기가 먼저 ─────────────
-     자리를 갈랐다: 지도는 누른 자리를 위로 알리고(onPick) 회색으로 짚어 준다(.opre),
-     '여기로 할까요?' 를 세우고 굳히는 일은 화면(ui.tsx)이 한다. 여기서는 지도 몫만 못 박는다. */
-  console.log('\n[논의81] 지도를 누르면 미리보기가 먼저 뜬다');
+  /* ── 지도 클릭 = 곧바로 후보+표 (2026-08-24, 사용자 요청 — "지도클릭시 후보*투표
+     핑 띄워지도록 돌려줘") ───────────────────────────────────────────────
+     전에는 지도를 눌러도 곧바로 후보가 안 되고 미리보기(논의81)로 먼저 뜬 뒤 한 번
+     더 눌러야 후보가 됐다. "행동이 늘어나 귀찮다"는 판단으로 원래 설계(누른 자리가
+     곧 후보+표)로 되돌렸다 — 이 시험은 그걸 재고, .opre·[data-preview] 가 더는
+     안 그려진다는 것도 함께 잰다. */
+  console.log('\n[지도 클릭] 지도를 누르면 곧바로 후보+표가 된다');
   {
-    const M = await 지역모임('지도결정 미리보기');
+    const M = await 지역모임('지도결정 클릭');
     const { ctx, page } = await 열기(browser, M.code, M.방장.jar);
+    /* 누른 자리에 따라 다른 지역을 주도록 흉내 낸다 — '다른 곳을 누르면 또 후보가 된다'를 잴 수 있다 */
+    let 번호 = 0;
+    await page.route('**/api/geo**', (route) => {
+      번호++;
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ code: `클릭지역${번호}`, name: `클릭지역${번호}` }) });
+    });
     const 셈 = async () => (await M.방장.get(`/api/m/${M.code}`)).json.candidates.length;
     const 표합 = async () => (await M.방장.get(`/api/m/${M.code}`)).json.candidates.reduce((a, c) => a + c.votes, 0);
     const 전 = await 셈(), 표전 = await 표합();
 
     await 중심찍기(page, 40, -50);
-    await page.waitForTimeout(1600);
+    let 후 = 전, 표후 = 표전;
+    for (let i = 0; i < 15 && 후 === 전; i++) { await page.waitForTimeout(300); 후 = await 셈(); 표후 = await 표합(); }
+    ok('지도를 한 번 누르면 곧바로 후보가 생긴다(되묻지 않는다)', 후 === 전 + 1, `후보 ${전}→${후}`);
+    ok('그 후보에 누른 사람의 표도 곧바로 붙는다', 표후 === 표전 + 1, `표 ${표전}→${표후}`);
+
     const r1 = await page.evaluate(재기);
-    ok('지도를 한 번 눌러서는 후보가 안 생긴다', (await 셈()) === 전 && (await 표합()) === 표전,
-      `후보 ${전}→${await 셈()} · 표 ${표전}→${await 표합()}`);
-    ok('누른 자리가 미리보기로 선다', r1.미리줄.length === 1, r1.미리줄.join(' / ') || '없음');
-    ok('미리보기 줄에 굳히는 말이 있다', (r1.미리줄[0] ?? '').includes('여기로 할까요'), r1.미리줄[0] ?? '없음');
+    ok('"미리보기" 지도 표시(.opre)는 더는 없다', !r1.미리, JSON.stringify(r1.미리));
+    ok('"미리보기" 시트 줄([data-preview])도 더는 없다', r1.미리줄.length === 0, r1.미리줄.join(' / '));
 
     await 중심찍기(page, -70, 70);
-    await page.waitForTimeout(1600);
-    const r2 = await page.evaluate(재기);
-    ok('다른 곳을 눌러도 미리보기는 늘 하나뿐이다', r2.미리줄.length === 1, r2.미리줄.join(' / ') || '없음');
-    ok('옮겨도 후보는 아직 안 생긴다', (await 셈()) === 전 && (await 표합()) === 표전,
-      `후보 ${전}→${await 셈()} · 표 ${표전}→${await 표합()}`);
-
-    await page.click('.row[data-preview]');
-    let 후 = 전, 표후 = 표전;
-    for (let i = 0; i < 20 && 후 === 전 && 표후 === 표전; i++) {
-      await page.waitForTimeout(400); 후 = await 셈(); 표후 = await 표합();
-    }
-    const 쪽지 = await page.evaluate(() => document.querySelector('.toast')?.textContent ?? '');
-    /* 누른 자리가 이미 후보인 동이면 후보가 아니라 표가 는다 — 둘 중 하나면 굳은 것이다 */
-    ok('한 번 더 눌러야 그제서야 표가 된다', 후 === 전 + 1 || 표후 === 표전 + 1,
-      `후보 ${전}→${후} · 표 ${표전}→${표후}${쪽지 ? ` · 쪽지 "${쪽지}"` : ''}`);
-    /* 서버가 먼저 바뀌고 화면이 뒤따른다 — 사라질 때까지 잠깐 기다려 준다 */
-    let 남은줄 = 1;
-    for (let i = 0; i < 10 && 남은줄; i++) {
-      await page.waitForTimeout(400);
-      남은줄 = await page.evaluate(() => document.querySelectorAll('.row[data-preview]').length);
-    }
-    ok('굳히고 나면 미리보기 줄이 사라진다', 남은줄 === 0, `${남은줄}줄`);
+    let 후2 = 후, 표후2 = 표후;
+    for (let i = 0; i < 15 && 후2 === 후; i++) { await page.waitForTimeout(300); 후2 = await 셈(); 표후2 = await 표합(); }
+    ok('다른 곳을 누르면 그것도 곧바로 후보+표가 된다', 후2 === 후 + 1 && 표후2 === 표후 + 1,
+      `후보 ${후}→${후2} · 표 ${표후}→${표후2}`);
     await ctx.close();
   }
   {
-    /* 못 찍는 사람은 누를 수 없다 — 눌러 봐야 403 이다 (논의34) */
-    const M = await 지역모임('지도결정 미리보기 구경꾼');
+    /* 못 찍는 사람은 누를 수 없다 — 눌러 봐야 403 이다 (논의34), 후보도 안 생긴다 */
+    const M = await 지역모임('지도결정 구경꾼');
     const { ctx, page } = await 열기(browser, M.code, null);
+    const 전 = (await M.방장.get(`/api/m/${M.code}`)).json.candidates.length;
     await 중심찍기(page);
     await page.waitForTimeout(1200);
-    const r = await page.evaluate(재기);
-    ok('못 찍는 사람에게는 미리보기가 안 선다', r.미리줄.length === 0 && !r.미리, r.미리줄.join(' / ') || '없음');
+    const 후 = (await M.방장.get(`/api/m/${M.code}`)).json.candidates.length;
+    ok('못 찍는 사람이 눌러도 후보가 안 생긴다', 후 === 전, `${전}→${후}`);
     await ctx.close();
   }
   {
     /* 타일이 죽으면 어디를 누른 것인지 아무도 모른다 (논의43 ①) */
-    const M = await 지역모임('지도결정 미리보기 타일죽음');
+    const M = await 지역모임('지도결정 타일죽음');
     const { ctx, page } = await 열기(browser, M.code, M.방장.jar, { 타일없이: true });
+    const 전 = (await M.방장.get(`/api/m/${M.code}`)).json.candidates.length;
     await 중심찍기(page);
     await page.waitForTimeout(1200);
-    const r = await page.evaluate(재기);
-    ok('타일이 죽으면 누른 자리를 알리지도 않는다', r.미리줄.length === 0 && !r.미리);
-    await ctx.close();
-  }
-  {
-    /* 지도가 그릴 자리 표시의 모양 — 아직 아무것도 아니라는 것이 색만 봐도 보여야 한다.
-       ui.tsx 가 OsmMap 에 preview 를 넘기면 이 모양이 그대로 뜬다 (넘기는 것에 적어 두었다). */
-    const M = await 지역모임('지도결정 미리보기 모양');
-    const { ctx, page } = await 열기(browser, M.code, M.방장.jar);
-    const s = await page.evaluate(() => {
-      const osm = document.querySelector('.osm');
-      const r = osm.getBoundingClientRect();
-      const d = document.createElement('span');
-      d.className = 'opre';
-      d.style.left = '120px'; d.style.top = '90px';
-      d.style.animation = 'none';        /* 뜨는 시늉이 첫 프레임을 0.7배로 줄인다 — 재는 동안은 끈다 */
-      osm.appendChild(d);
-      const g = getComputedStyle(d);
-      const b = d.getBoundingClientRect();
-      const 맞은것 = document.elementFromPoint(r.left + 120, r.top + 90);
-      const 값 = { 테두리: g.borderTopStyle, 색: g.borderTopColor, 손: g.pointerEvents, 층: Number(g.zIndex),
-        w: b.width, h: b.height, 가운데: Math.round(b.left - r.left + b.width / 2),
-        맞은것: 맞은것 ? `${맞은것.tagName}.${맞은것.className}` : 'none' };
-      d.remove();
-      /* 시트의 미리보기 줄도 후보 줄과 달라 보여야 한다 */
-      const 줄 = document.createElement('button');
-      줄.className = 'row'; 줄.setAttribute('data-preview', '');
-      document.querySelector('.sheet').appendChild(줄);
-      const g2 = getComputedStyle(줄);
-      const 보통 = document.createElement('button'); 보통.className = 'row';
-      document.querySelector('.sheet').appendChild(보통);
-      const g3 = getComputedStyle(보통);
-      값.줄테두리 = g2.borderTopStyle; 값.줄바탕 = g2.backgroundColor; 값.보통바탕 = g3.backgroundColor;
-      값.줄높이 = 줄.getBoundingClientRect().height;
-      줄.remove(); 보통.remove();
-      return 값;
-    });
-    적기(`.opre ${s.w}×${s.h} ${s.테두리} ${s.색} · z${s.층} · 줄 ${s.줄테두리} ${s.줄바탕}`);
-    ok('미리보기 표시는 점선이다', s.테두리 === 'dashed', s.테두리);
-    ok('미리보기 표시는 핀만 하다', s.w >= 20 && s.w <= 40 && Math.abs(s.w - s.h) < 1, `${s.w}×${s.h}`);
-    ok('미리보기 표시는 회색이다', s.색 === 'rgb(91, 100, 114)', s.색);
-    ok('미리보기 표시는 찍은 자리 한가운데에 온다', Math.abs(s.가운데 - 120) < 1, `${s.가운데}px`);
-    ok('미리보기 표시가 지도 누르기를 막지 않는다', s.손 === 'none' && !s.맞은것.includes('opre'),
-      `${s.손} · ${s.맞은것}`);
-    ok('미리보기 표시는 핀보다 아래에 안 깔린다', s.층 >= 5, `z${s.층}`);
-    ok('미리보기 줄은 후보 줄과 달라 보인다', s.줄테두리 === 'dashed' && s.줄바탕 !== s.보통바탕,
-      `${s.줄테두리} · ${s.줄바탕} vs ${s.보통바탕}`);
-    ok('미리보기 줄도 손가락 자리 48px 을 지킨다', s.줄높이 >= 48, `${s.줄높이}px`);
+    const 후 = (await M.방장.get(`/api/m/${M.code}`)).json.candidates.length;
+    ok('타일이 죽으면 눌러도 후보가 안 생긴다', 후 === 전, `${전}→${후}`);
     await ctx.close();
   }
 
