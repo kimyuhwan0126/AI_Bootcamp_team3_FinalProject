@@ -13,11 +13,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Origin } from '../originfield';
 import { 장소찾기, 최소글자, type 찾은곳 } from '@/lib/장소찾기';
+import { 출발지색고르기 } from './핀그림';
 import s from './홈.module.css';
 
-/* 출발지 칩 색 — 목업 `M.COLORS`(core.js 1415). 파랑이 없다: `--brand` 와 헷갈리면
-   '내가 넣은 곳'과 '이 화면이 잡아 준 곳'이 같아 보인다. */
-export const 출발지색 = ['#e8590c', '#0d9488', '#9333ea', '#e11d48', '#b45309', '#0f766e'];
+/* 칩 색은 `./핀그림.ts` 에 있다 — 지도 핀과 **같은 색**이어야 '이 칩이 저 핀'이 읽힌다.
+   전에는 여기 있었는데 지도가 같은 표를 필요로 하면서 한 곳으로 모았다. */
 
 const 돋보기 = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -27,7 +27,7 @@ const 돋보기 = (
 );
 
 export default function 윗칸({
-  출발지들, 고름, 빼기, 초점, 칩누름,
+  출발지들, 고름, 빼기, 초점, 칩누름, 열린칩 = -1,
   기준, 기준바꾸기, 안내,
 }: {
   출발지들: Origin[];
@@ -35,7 +35,10 @@ export default function 윗칸({
   빼기: (i: number) => void;
   /* 지금 눈이 가 있는 칩 — 지도가 그 자리로 가 있다는 표시다 */
   초점: number;
+  /* 거듭 누르면 3단으로 돈다(지도 이동 → 시트 열기 → 시트 내리기). 셸이 그 단계를 쥔다. */
   칩누름: (i: number) => void;
+  /* 지금 시트가 보여 주고 있는 출발지. 칩에 '열려 있다'고 표시한다. */
+  열린칩?: number;
   기준: '거리' | 'AI';
   기준바꾸기: () => void;
   안내: string | null;
@@ -129,8 +132,12 @@ export default function 윗칸({
         <div className={s.출발지줄} data-slot="출발지슬라이더" aria-label="출발지 목록, 옆으로 밀어서 확인">
           {출발지들.map((o, i) => (
             <div key={`${o.name}${o.lat}`} className={s.출발지칩} data-slot="출발지칩" data-번호={i + 1}
-              style={{ ['--c' as string]: 출발지색[i % 출발지색.length] }}>
+              style={{ ['--c' as string]: 출발지색고르기(i) }}>
+              {/* `aria-pressed` 는 '지도가 이 자리를 보고 있다', `aria-expanded` 는
+                  '이 출발지 시트가 열려 있다' — 두 상태가 다르므로 따로 말한다.
+                  칩을 거듭 누르면 셸이 3단으로 돌린다. */}
               <button type="button" className={s.칩속} aria-pressed={i === 초점}
+                aria-expanded={i === 열린칩}
                 onClick={() => 칩누름(i)}>
                 <span className={s.번호} aria-hidden>{i + 1}</span>
                 <span className={s.이름}>{o.name}</span>

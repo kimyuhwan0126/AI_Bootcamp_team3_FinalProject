@@ -83,12 +83,22 @@ export function use시트(펼칠수있나: boolean) {
      (목업 placeLocate 1721–1740). 끄는 동안 매 프레임 돈다 — 여기서 레이아웃을 읽지 말고
      이미 잰 값만 쓴다. */
   const 배치 = useCallback(() => {
-    const 시트 = 시트칸.current;
-    if (!시트) return;
+    const 시트 = 시트칸.current, 셸 = 셸칸.current;
+    if (!시트 || !셸) return;
     const 탭바 = 탭바높이();
     /* 시트가 화면 안으로 들어온 높이. 숨김이면 0 이하가 된다. */
     const 보이는높이 = 시트.offsetHeight - 치우침.current;
-    const 바닥 = 보이는높이 <= 0 ? 탭바 + 30 : 탭바 + 보이는높이 + 12;
+    let 바닥 = 보이는높이 <= 0 ? 탭바 + 30 : 탭바 + 보이는높이 + 12;
+
+    /* ⚠ 위로 넘치지 않게 막는다. 시트를 '가득'까지 올리면 이 셈이 단추를 화면 꼭대기까지
+       밀어 올려 **검색바를 덮는다**(실측 스크린샷으로 확인). 목업은 이 한도가 없는데,
+       거기서는 시트를 크게 올리는 화면이 상단을 함께 숨겨서 부딪힐 일이 없었다.
+       우리는 출발지 시트일 때 상단을 그대로 두므로(다른 출발지를 이어서 보려면 칩이 보여야
+       한다) 여기서 막아야 한다. 넘칠 만큼 올라가면 그냥 더 안 올린다 —
+       그때는 지도가 아니라 시트를 보는 중이라 단추가 조금 가려도 괜찮다. */
+    const 윗칸 = 셸.querySelector<HTMLElement>('[data-slot="윗칸"]');
+    const 위한도 = 셸.clientHeight - (윗칸?.offsetHeight ?? 0) - 단추지름 - 12;
+    바닥 = Math.min(바닥, Math.max(탭바 + 30, 위한도));
 
     if (현위치칸.current) 현위치칸.current.style.bottom = `${바닥}px`;
     let 쌓기 = 바닥 + 단추지름 + 단추틈;

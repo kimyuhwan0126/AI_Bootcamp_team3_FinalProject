@@ -19,12 +19,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Origin, Transport } from '../originfield';
 import { 실어보내기, 두고간것읽기, 두고가기 } from '@/lib/넘기기';
 import { 열쇠, 가운데 as 가운데셈, 더할수있나 } from '@/lib/출발지';
+import { 출발지색고르기 } from './핀그림';
 import type { RouteStep } from '@/lib/routes';
 import { use시트 } from './시트끌기';
 import 지도 from './지도';
 import 윗칸 from './윗칸';
 import 떠있는단추 from './떠있는단추';
 import 시트내용가운데, { type 상세경로 } from './시트내용_가운데';
+import 시트내용출발지 from './시트내용_출발지';
 import s from './홈.module.css';
 
 type 모드 = 'browse' | 'clean' | '상세';
@@ -39,6 +41,13 @@ export default function 홈() {
   const [기준, set기준] = useState<'거리' | 'AI'>('거리');
   const [모드, set모드] = useState<모드>('browse');
   const [초점, set초점] = useState(0);
+  /* 칩 3단 탭 (목업 chipTap 3603–3623) — 같은 칩을 거듭 누르면 한 단씩 나아간다.
+       1 지도만 그 자리로 · 2 시트 열림 · 3 시트만 내려감
+     다른 칩을 누르면 1단으로 되돌아간다. `누른칩` 이 -1 이면 아직 아무 칩도 안 눌렀다. */
+  const [누른칩, set누른칩] = useState(-1);
+  const [탭단계, set탭단계] = useState(0);
+  /* 시트가 무엇을 보여 주는가 — 가운데인가, 어느 출발지인가 */
+  const [고른것, set고른것] = useState<{ 갈래: '가운데' } | { 갈래: '출발지'; i: number }>({ 갈래: '가운데' });
   const [쪽지, set쪽지] = useState<string | null>(null);
   const [맞춤, set맞춤] = useState<'없음' | '첫곳' | '전체'>('없음');
 
@@ -81,6 +90,14 @@ export default function 홈() {
     set알림('');
     바꾸기(출발지들.filter((_, k) => k !== i));
     set초점((v) => Math.max(0, Math.min(v, 출발지들.length - 2)));
+    /* 보고 있던 출발지를 뺐으면 시트가 없는 사람을 가리키게 된다 — 가운데로 되돌린다.
+       뒤엣것을 뺐으면 번호가 하나씩 당겨지므로 그것도 맞춰 준다. */
+    set고른것((전) => {
+      if (전.갈래 !== '출발지') return 전;
+      if (전.i === i) return { 갈래: '가운데' };
+      return 전.i > i ? { 갈래: '출발지', i: 전.i - 1 } : 전;
+    });
+    set누른칩(-1); set탭단계(0);
   }, [출발지들, 바꾸기]);
 
   /* ── 가운데 ─────────────────────────────────────────────
@@ -237,12 +254,56 @@ export default function 홈() {
   }, []);
 
   /* 말풍선을 누르면 상세로 — 시트를 어디에 세울지는 위 효과가 맡는다 */
-  const 가운데누름 = useCallback(() => set모드('상세'), []);
+  const 가운데누름 = useCallback(() => {
+    set고른것({ 갈래: '가운데' });
+    set누른칩(-1); set탭단계(0);
+    set모드('상세');
+  }, []);
 
+  /* 출발지 시트에서 '‹ 뒤로' — 가운데로 돌아간다 */
+  const 뒤로 = useCallback(() => {
+    set고른것({ 갈래: '가운데' });
+    set누른칩(-1); set탭단계(0);
+  }, []);
+
+  /* 칩을 누를 때. 같은 칩이면 한 단 나아가고, 다른 칩이면 1단으로 되돌아간다. */
   const 칩누름 = useCallback((i: number) => {
     set초점(i);
     set맞춤('없음');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (누른칩 !== i) {
+      /* 1단 — 지도만 그 자리로 옮긴다. 시트는 안 건드린다. */
+      set누른칩(i); set탭단계(1);
+      set고른것({ 갈래: '가운데' });
+      set모드('browse');
+      return;
+    }
+    if (탭단계 === 1) {
+      /* 2단 — 그 출발지 시트를 연다 */
+      set탭단계(2);
+      set고른것({ 갈래: '출발지', i });
+      set모드('상세');
+      return;
+    }
+    if (탭단계 === 2) {
+      /* 3단 — 시트만 내린다. 초점은 그 자리에 남는다(지도는 안 움직인다). */
+      set탭단계(3);
+      set고른것({ 갈래: '가운데' });
+      set모드('browse');
+      return;
+    }
+    /* 3단 다음은 다시 2단 — 두 자리를 오간다 */
+    set탭단계(2);
+    set고른것({ 갈래: '출발지', i });
+    set모드('상세');
+  }, [누른칩, 탭단계]);
+
+  /* 지도의 핀을 바로 눌렀을 때 — 칩 순환 단계도 맞춰 둔다.
+     안 맞추면 그 다음 칩 탭이 '시트 내리기'가 아니라 '처음부터'가 된다. */
+  const 출발지핀누름 = useCallback((i: number) => {
+    set초점(i); set맞춤('없음');
+    set누른칩(i); set탭단계(2);
+    set고른것({ 갈래: '출발지', i });
+    set모드('상세');
   }, []);
 
   /* 범위 맞추기 — 두 단계로 돈다. 첫 번째는 눈이 가 있는 출발지와 가운데, 두 번째는 전체. */
@@ -276,6 +337,17 @@ export default function 홈() {
      둘 이상 넣어 가운데가 잡히면 그 줄은 물러난다(시트가 같은 말을 더 자세히 한다). */
   const 윗안내 = 출발지들.length < 2 ? 안내 : (알림 || null);
 
+  /* 지금 고른 출발지의 경로와 '이 사람이 가장 오래 걸리는가'.
+     시트 요약 줄과 출발지 시트가 함께 쓴다. */
+  const 고른경로 = 고른것.갈래 === '출발지' && 출발지들[고른것.i]
+    ? (경로들.find((r) => r.id === 열쇠(출발지들[고른것.i])) ?? null)
+    : null;
+  const 가장오래인가 = (() => {
+    if (고른경로?.durationS == null) return false;
+    const 잰것 = 경로들.map((r) => r.durationS).filter((v): v is number => v != null);
+    return 잰것.length > 1 && 고른경로.durationS === Math.max(...잰것);
+  })();
+
   const 토글 = useCallback((k: string) => set펼친것((전) => {
     const 다음 = new Set(전);
     if (다음.has(k)) 다음.delete(k); else 다음.add(k);
@@ -293,11 +365,12 @@ export default function 홈() {
       <지도
         출발지들={지도점들.map((o) => ({ 이름: o.name, lat: o.lat, lng: o.lng }))}
         가운데={지도가운데} 가운데라벨={가운데라벨} 경로들={경로들}
-        여백={여백} 가운데누름={가운데누름} 지도누름={지도누름} />
+        여백={여백} 고른출발지={고른것.갈래 === '출발지' ? 고른것.i : -1}
+        출발지누름={출발지핀누름} 가운데누름={가운데누름} 지도누름={지도누름} />
 
       {준비 && (
         <윗칸 출발지들={출발지들} 고름={고름} 빼기={빼기}
-          초점={초점} 칩누름={칩누름}
+          초점={초점} 칩누름={칩누름} 열린칩={고른것.갈래 === '출발지' ? 고른것.i : -1}
           기준={기준} 기준바꾸기={() => set기준((v) => (v === '거리' ? 'AI' : '거리'))}
           안내={윗안내} />
       )}
@@ -322,25 +395,50 @@ export default function 홈() {
           </span>
         </button>
 
+        {/* 시트를 끝까지 내려도 이 줄은 남는다 — '지금 무엇을 보고 있는지'가 안 사라진다 */}
         <div ref={시트.요약칸} className={s.시트요약} data-slot="시트요약">
-          <span className={s.그림} data-민낯 aria-hidden>중</span>
-          <span className={s.이름}>{가운데라벨}</span>
-          <span className={s.오른쪽}>
-            <span className={s.큰값}>{출발지들.length}곳</span>
-            <span className={s.잔값}>{기준 === 'AI' ? 'AI 추천' : '거리 기준'}</span>
-          </span>
+          {고른것.갈래 === '출발지' && 출발지들[고른것.i] ? (
+            <>
+              <span className={s.그림} style={{ ['--c' as string]: 출발지색고르기(고른것.i) }}
+                aria-hidden>{고른것.i + 1}</span>
+              <span className={s.이름}>{출발지들[고른것.i].name}</span>
+              <span className={s.오른쪽}>
+                <span className={s.큰값}>{고른경로?.durationS != null
+                  ? `${Math.round(고른경로.durationS / 60)}분` : '—'}</span>
+                <span className={s.잔값}>{가운데라벨}까지</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={s.그림} data-민낯 aria-hidden>중</span>
+              <span className={s.이름}>{가운데라벨}</span>
+              <span className={s.오른쪽}>
+                <span className={s.큰값}>{출발지들.length}곳</span>
+                <span className={s.잔값}>{기준 === 'AI' ? 'AI 추천' : '거리 기준'}</span>
+              </span>
+            </>
+          )}
         </div>
 
         <div ref={시트.본문칸} id="시트본문" className={s.시트본문} data-slot="시트본문"
           onPointerDown={시트.본문내림} onPointerMove={시트.본문이동}
           onPointerUp={시트.본문올림} onPointerCancel={시트.본문올림}>
-          <시트내용가운데
-            출발지들={출발지들} 가운데라벨={가운데라벨} 기준={기준} 안내={안내}
-            AI결과={AI결과} AI고름={AI고름} AI고르기={setAI고름}
-            이동수단={이동수단} 이동수단정하기={set이동수단}
-            경로들={경로들} 경로구하는중={경로구하는중}
-            열쇠로={열쇠} 펼친것={펼친것} 토글={토글}
-            짐싣기={() => 실어보내기({ 출발지들, 이동수단 })} />
+          {고른것.갈래 === '출발지' && 출발지들[고른것.i] ? (
+            <시트내용출발지
+              출발지={출발지들[고른것.i]} 번호={고른것.i} 가운데라벨={가운데라벨}
+              이동수단={이동수단} 경로={고른경로} 경로구하는중={경로구하는중}
+              가장오래={가장오래인가} 뒤로={뒤로}
+              지도에서보기={() => { set초점(고른것.i); set맞춤('첫곳'); set모드('browse'); }}
+              삭제={() => 빼기(고른것.i)} 뺄수있나={출발지들.length > 1} />
+          ) : (
+            <시트내용가운데
+              출발지들={출발지들} 가운데라벨={가운데라벨} 기준={기준} 안내={안내}
+              AI결과={AI결과} AI고름={AI고름} AI고르기={setAI고름}
+              이동수단={이동수단} 이동수단정하기={set이동수단}
+              경로들={경로들} 경로구하는중={경로구하는중}
+              열쇠로={열쇠} 펼친것={펼친것} 토글={토글}
+              짐싣기={() => 실어보내기({ 출발지들, 이동수단 })} />
+          )}
         </div>
       </div>
     </div>

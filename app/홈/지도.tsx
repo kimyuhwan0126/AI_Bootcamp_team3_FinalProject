@@ -15,11 +15,17 @@
         ⚠ 전역 `.opin[data-goal]` 은 **그대로 둔다** — `app/m/[code]/ui.tsx` 가 같은 그림을
         쓴다(globals.css:225 의 경고). 홈만 새 모양을 쓴다.
 
-   ⚠ 출발지 핀을 **끄는 것은 아직 안 된다.** 목업은 카카오 `Marker({draggable:true})` 에
-   번호 물방울 SVG 를 얹는데, 그건 C단계 몫이다. 지금은 지금 판과 같은 이름표(`.opin`)다. */
+   ⚠ 출발지 핀을 **끄는 기능은 안 만든다**(2026-08-19 사람이 정했다). 목업은 카카오
+   `Marker({draggable:true})` 로 끌 수 있게 하고 놓을 때마다 지명을 되짚고 가운데를 다시
+   셌지만, 그 셋을 다 뺐다. 핀은 **그리기만 한다.**
+   덕분에 '끄는 동안 호출이 폭주하는' 위험도 함께 사라졌다(`/api/home-ai` 는 분당 5번이다).
+
+   핀 그림은 `./핀그림.ts` 에 있다 — 모양·색·뜨는 높이를 고치려면 그 파일 맨 위만 보면 된다.
+   카카오와 OSM 이 **같은 SVG** 를 쓴다: 갈라 두면 같은 출발지가 두 지도에서 다르게 보인다. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './홈.module.css';
 import { 가운데표식만들기 } from './표식';
+import { 핀주소, 핀밀기, 출발지색고르기 } from './핀그림';
 import { TILE, toPx, toLatLng, 여백맞추기, type 여백 as 여백꼴 } from '@/lib/지도셈';
 
 declare global { interface Window { kakao: any } }
@@ -40,7 +46,7 @@ const FIT = 0.72;
    그 그림이 필요한 곳은 `app/m/[code]/ui.tsx` 와 `globals.css` 두 곳뿐이고 거기는 그대로다. */
 
 export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가운데', 경로들,
-  여백, 가운데누름, 지도누름 }: {
+  여백, 고른출발지 = -1, 출발지누름, 가운데누름, 지도누름 }: {
   출발지들: 점[];
   가운데: { lat: number; lng: number } | null;
   /* 기준(거리·시간)에 따라 가운데 핀 이름표를 바꾼다(탐색.tsx, 2026-08-17) — 같은 자리라도
@@ -54,6 +60,12 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
   /* 네 변이 각각 몇 픽셀씩 **가려지는가** — 셸이 재서 준다(윗칸 높이 · 시트가 올라온 높이 ·
      탭바). 안 주면 사방을 예전처럼 균등하게 비운다. */
   여백?: 여백꼴;
+  /* 지금 고른 출발지 번호(0부터). 그 핀만 살짝 떠오르고 위로 올라온다.
+     -1 이면 고른 것이 없다. 목업은 끌 때 뜨게 했지만 우리는 드래그가 없어
+     '고름'이 그 자리를 대신한다(목업 raiseFocusedPin 3374–3380 과 같은 뜻). */
+  고른출발지?: number;
+  /* 출발지 핀을 누르면 — 그 출발지 시트를 연다 */
+  출발지누름?: (i: number) => void;
   /* 가운데 말풍선을 누르면 — 시트를 연다 */
   가운데누름?: () => void;
   /* 지도 빈 곳을 누르면 — browse ⇄ clean 을 오간다 */
@@ -227,10 +239,10 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     /* 가운데 핀처럼 글자에 따옴표가 섞여도 안전해야 하는 자리는 문자열 대신 진짜
        엘리먼트를 얹는다(위 가운데핀엘리먼트 주석 참고) — setContent 는 카카오가
        String·HTMLElement 를 둘 다 받는다. */
-    const 얹기엘리먼트 = (p: { lat: number; lng: number }, el: HTMLElement) => {
+    const 얹기엘리먼트 = (p: { lat: number; lng: number }, el: HTMLElement, 층 = 4) => {
       const ov = new window.kakao.maps.CustomOverlay({
         position: new window.kakao.maps.LatLng(p.lat, p.lng),
-        xAnchor: 0, yAnchor: 0, zIndex: 4,
+        xAnchor: 0, yAnchor: 0, zIndex: 층,
       });
       ov.setContent(el);
       ov.setMap(m);
@@ -240,8 +252,26 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     if (내자리) {
       얹기(내자리, `<span class="${s.내자리점}" style="left:0;top:0" aria-hidden></span>`);
     }
-    출발지들.forEach((o) => {
-      얹기(o, `<span class="opin" style="left:0;top:0;cursor:default">${o.이름}</span>`);
+    출발지들.forEach((o, i) => {
+      /* 번호 물방울. 고른 것 하나만 떠오르고 위로 올라온다.
+         `얹기` 는 zIndex 4 로 고정이라 여기서는 못 올린다 — 아래 `얹기엘리먼트` 로
+         zIndex 를 따로 주는 갈래를 쓴다. */
+      const 고름 = i === 고른출발지;
+      const 그림 = document.createElement('img');
+      그림.src = 핀주소({ 번호: i + 1, 색: 출발지색고르기(i), 뜬정도: 고름 ? 1 : 0 });
+      그림.alt = '';
+      그림.setAttribute('aria-hidden', 'true');
+      그림.draggable = false;
+      const 칸 = document.createElement('button');
+      칸.type = 'button';
+      칸.className = s.출발지핀;
+      칸.setAttribute('data-slot', '출발지핀');
+      칸.setAttribute('data-번호', String(i + 1));
+      칸.setAttribute('aria-label', `출발지 ${i + 1} ${o.이름}`);
+      칸.style.cssText = `position:absolute;left:0;top:0;transform:translate(${핀밀기.x}px,${핀밀기.y}px)`;
+      칸.appendChild(그림);
+      if (출발지누름) 칸.addEventListener('click', (e) => { e.stopPropagation(); 출발지누름(i); });
+      얹기엘리먼트(o, 칸, 고름 ? 12 : 7);
     });
     if (가운데) {
       /* 목업의 말풍선(말풍선 + 줄기 + 점). 진짜 엘리먼트로 짓는다 —
@@ -278,7 +308,7 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       m.setLevel(5);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng, 경로들, 여백서명, 가운데누름]);
+  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng, 경로들, 여백서명, 가운데누름, 고른출발지, 출발지누름]);
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
@@ -328,12 +358,10 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     const x = q.x - origin.ox, y = q.y - origin.oy;
     return x >= -40 && x <= size.w + 40 && y >= -40 && y <= size.h + 40 ? { x, y } : null;
   };
-  /* 왼쪽 위는 확대·축소 단추 자리다(globals.css 의 .ozoom — 12px 부터 84px 까지).
-     이름표는 찍은 자리의 왼쪽 위로 펼쳐지므로 그 언저리에 앉으면 단추를 덮는다.
-     모임 화면 지도처럼 제대로 푸는 물건(osmmap.tsx 의 이름표 자리잡기)은 여기에 과하다 —
-     덮이는 자리 하나만 아래로 비켜세운다. 덮인 단추는 아예 못 눌리지만 이름표는 조금 밀려도 읽힌다. */
-  const 비켜 = (q: { x: number; y: number }) =>
-    q.x < 175 && q.y < 120 ? { x: q.x, y: 120 } : q;
+  /* 예전에는 여기 `비켜()` 가 있었다 — 왼쪽 위 확대·축소 단추(`.ozoom`)를 이름표가 덮어서,
+     그 언저리에 앉는 것 하나를 아래로 밀어냈다. **이제 필요 없다**: 지도가 화면을 꽉 채우면서
+     그 단추를 홈 안에서만 아래로 내렸고(홈.module.css 의 `.셸 :global(.ozoom)`),
+     출발지도 이름표가 아니라 번호 물방울이 됐다. 근거가 없어진 규칙은 남기지 않는다. */
 
   return (
     /* 전역 `.osm`(globals.css:196)이 `position:absolute; inset:0` 을 준다 —
@@ -417,18 +445,27 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
           {출발지들.map((o, i) => {
             const q = 자리(o);
             if (!q) return null;
-            const w = 비켜(q);
-            return <span key={`출발${i}${o.lat}`} className="opin"
-              style={{ left: w.x, top: w.y, cursor: 'default' }}>{o.이름}</span>;
+            const 고름 = i === 고른출발지;
+            /* 카카오 쪽과 **같은 SVG** 다(핀그림.ts) — 두 지도가 같아 보여야 한다 */
+            return (
+              <button key={`출발${i}${o.lat}`} type="button" className={s.출발지핀}
+                data-slot="출발지핀" data-번호={i + 1}
+                aria-label={`출발지 ${i + 1} ${o.이름}`}
+                style={{ left: q.x, top: q.y, zIndex: 고름 ? 12 : 7,
+                  transform: `translate(${핀밀기.x}px, ${핀밀기.y}px)` }}
+                onClick={(e) => { e.stopPropagation(); 출발지누름?.(i); }}>
+                <img src={핀주소({ 번호: i + 1, 색: 출발지색고르기(i), 뜬정도: 고름 ? 1 : 0 })}
+                  alt="" draggable={false} aria-hidden />
+              </button>
+            );
           })}
           {가운데 && (() => {
             const q = 자리(가운데);
             if (!q) return null;
-            const w = 비켜(q);
             /* 카카오 쪽과 **같은 엘리먼트**를 붙인다(표식.ts) — 두 지도가 갈라지지 않게.
                React 가 만드는 대신 ref 로 넣는 까닭도 거기 적혀 있다. */
             return (
-              <span key="가운데" style={{ position: 'absolute', left: w.x, top: w.y }}
+              <span key="가운데" style={{ position: 'absolute', left: q.x, top: q.y }}
                 ref={(el) => {
                   if (!el) return;
                   el.replaceChildren(가운데표식만들기(s, { 라벨: 가운데라벨, 누름: 가운데누름 }));

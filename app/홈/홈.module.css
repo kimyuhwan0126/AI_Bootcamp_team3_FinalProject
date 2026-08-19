@@ -599,6 +599,26 @@
   box-shadow: 0 0 0 8px rgba(47, 107, 255, .22), 0 6px 18px rgba(47, 107, 255, .45);
 }
 
+/* 출발지 핀 — 번호 물방울. 그림 자체는 `핀그림.ts` 가 SVG 로 짓는다.
+   여기서는 '누를 수 있는 상자'만 만든다.
+   ⚠ `transform` 은 여기 두지 않는다 — 핀 끝이 좌표에 닿게 미는 값은 `핀밀기`(핀그림.ts)가
+   쥐고 있고, 카카오와 OSM 둘 다 인라인으로 그 값을 쓴다. CSS 에도 두면 두 곳이 다투게 된다. */
+.출발지핀 {
+  all: unset;
+  position: absolute;
+  display: block;
+  cursor: pointer;
+  /* 물방울은 34×48 이라 손가락 기준(48)에 가로가 14px 모자란다 — 가로만 넓힌다.
+     세로는 이미 48이고, 더 넓히면 위아래 핀이 서로를 먹는다. */
+}
+.출발지핀::before {
+  content: ''; position: absolute; left: 50%; top: 0;
+  width: var(--tap); height: 100%;
+  transform: translateX(-50%);
+}
+.출발지핀 img { display: block; }
+.출발지핀:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
+
 /* 장소 핀 — 탐색 모드에서만 지도에 올라온다(E단계) */
 .장소표식 {
   transform: translate(-50%, -50%);
