@@ -1,0 +1,646 @@
+/* ============================================================
+   홈 셸 — 목업 ①(탐색) 화면의 껍데기.
+
+   목업 `모이머 한화면.html` 의 `moimer-shell.css`(111–447)를 옮긴 것이다.
+   폰 껍데기(.iphone · .display · .statusbar · .island · .homebar · .sidenote)는
+   안 가져왔다 — 저건 목업이 스스로를 폰처럼 보이게 하려고 두른 무대다.
+
+   ⚠ **왜 전역(globals.css)이 아니라 모듈인가**
+   목업의 이름과 우리 이름이 정면으로 부딪힌다. 특히 `.sheet` 는 여섯 화면이 쓴다
+   (app/page.tsx · new/page.tsx · not-found.tsx · join/[code]/form.tsx ·
+    m/[code]/ui.tsx 세 곳). 목업 것은 `transform` 으로 지도 위를 덮는 물건이고
+   우리 것은 `max-height:56dvh` 로 위의 `.map`(flex:1)을 줄이는 물건이라 같이 못 산다.
+   `.tabbar`(fixed vs absolute) · `.note`(반지름 10/--bg vs 12/--surface-2) ·
+   `.badge`(브랜드 알약 vs 아바타) 도 마찬가지다.
+   모듈로 두면 이름이 해시되어 **충돌 자체가 구조적으로 불가능하다.**
+
+   ⚠ **토큰을 `:root` 가 아니라 뿌리 클래스(.셸)에 얹는 까닭**
+   사람이 "토큰은 홈에만 한정" 이라고 정했다. 모임·모임목록·내정보·만들기는
+   오늘과 똑같이 보여야 한다. 여기 얹으면 홈 안에서만 새 값이 살고 밖은
+   `globals.css :root` 그대로다. 카카오 CustomOverlay 도 지도 상자 **안**에
+   붙으므로 상속이 닿는다(app/탐색/지도.tsx:257 이 이미 `s.내자리점` 을 오버레이
+   문자열에 실어 보내는 선례를 만들어 뒀다).
+
+   목업 이름 → 여기 이름 (집안 규칙상 모듈 클래스는 한글이다. 목업과 견주려면 이 표를 본다)
+     .device      → .셸          .top        → .윗칸        .searchwrap → .검색칸
+     .searchbar   → .검색바      .wordmark   → .워드마크    .searchpanel→ .검색패널
+     .sp-head/.sp-row/.sp-empty  → .패널머리 / .패널줄 / .패널빔
+     .oslider/.ocard             → .출발지줄 / .출발지칩
+     .sortrow/.sortbtn           → .기준줄 / .기준단추
+     .cslider/.ccard             → .갈래줄 / .갈래칩        (E단계에서 쓴다)
+     .locate/.explore            → .현위치 / .탐색단추
+     .focus-toast → .쪽지        .sheet      → .시트        .handle     → .손잡이
+     .sheet-mini  → .시트요약    .sheet-body → .시트본문
+     .ov-mid/.ov-poi             → .가운데표식 / .장소표식
+     .eyebrow/.headline/.subline → .눈썹 / .큰글 / .작은글
+     .divider/.section-click     → .가름줄 / .칸이름
+     .kv/.kv-row  → .값들 / .값줄
+
+   층(z-index) — 셸 **안**의 사다리다. 셸 자신은 z-index:0 이라 이 숫자들이 밖으로 안 샌다.
+     지도 0 · 윗칸 6 · 현위치/탐색/쪽지 7 · 시트 8
+   전역 `.tabbar` 는 10 이라 셸(0) 위에 그대로 뜬다 — 시트가 탭바 **밑으로** 깔리는 것이
+   목업과 같은 뜻이고, 그만큼 잘리는 양을 `--시트잘림` 이 메운다(아래 .시트본문).
+   ============================================================ */
+
+.셸 {
+  /* 토큰 — 목업 `:root`(43–64)에서 가져왔다. globals.css 의 :root 는 안 건드린다. */
+  --brand: #2f6bff;
+  --brand-dark: #1e4fd8;
+  --danger: #e11d48;
+  --ink: #14182b;
+  --ink-2: #4a5169;
+  /* ⚠ 목업 값은 #858ba3 인데 **안 쓴다.** 흰 바탕 3.38:1 · 연회색 3.15:1 로
+     작은 글자 기준(4.5:1)에 못 미친다 — 이 저장소가 그릴링 논의30 ③ 에서 일부러
+     고쳐 놓은 자리다(globals.css:2 주석). 목업의 색조(H 228°)는 그대로 두고
+     그 기준을 넘는 가장 밝은 값으로 낮췄다: 흰 4.87:1 · 연회색 4.54:1.
+     지금 전역 값(#656b7d)보다는 4%p 밝아 목업 쪽으로 다가간다.
+     이 색을 다시 밝히려면 .작은글 · .패널줄 주소 · .손잡이 힌트 · .출발지칩 꼬리표를
+     먼저 재 봐라 — 전부 11~12.5px 이다. */
+  --ink-3: #6a708c;
+  --line: #e4e8f2;
+  --surface: #ffffff;
+  --surface-2: #f5f7fb;
+  --shadow-sm: 0 1px 3px rgba(20, 24, 43, .08), 0 1px 2px rgba(20, 24, 43, .04);
+  --shadow-md: 0 4px 16px rgba(20, 24, 43, .1);
+  --shadow-lg: 0 -6px 28px rgba(20, 24, 43, .16);
+  --ease: cubic-bezier(.32, .72, 0, 1);
+  --ok: #2e7d32;
+  --warn: #e5a400;
+  --warn-bg: #fff8e6;
+  --warn-ink: #8a6d00;
+  --ai: #6c5ce7;
+  --ai-bg: #f1edff;
+
+  /* 목업은 폰 껍데기 안이라 상태바가 늘 56px 이었다. 우리는 진짜 브라우저다 —
+     노치가 있으면 그만큼, 없으면 최소값만 띄운다(app/layout.tsx 의 viewportFit:cover 가
+     이 env() 를 살린다. 그게 없으면 늘 0 이다 — globals.css:131 이 적어 둔 사정). */
+  --윗여백: calc(env(safe-area-inset-top, 0px) + 10px);
+  --아래여백: env(safe-area-inset-bottom, 0px);
+
+  /* 시트가 탭바 밑으로 내려간 만큼. 시트끌기.ts 가 매 스냅마다 갱신한다. */
+  --시트잘림: 39px;
+
+  /* ⚠ `--tap`(48px)과 `--tabbar-h`(58px)는 **여기서 안 정한다** — globals.css :root
+     의 것을 그대로 물려받는다. 손가락 자리와 탭바 높이는 홈만의 잣대가 아니라
+     앱 전체의 약속이고, 여기 베껴 두면 한쪽만 고치는 날이 온다.
+     (목업은 탭바가 60+22px 이었지만 우리 탭바는 전역 것을 그대로 쓴다.) */
+
+  position: fixed;
+  inset: 0;
+  /* `.wrap`(globals.css:18)과 같은 폭으로 가운데 맞춘다. 폰보다 넓은 창에서
+     화면 끝까지 늘어나면 본문과 따로 노는 띠가 된다.
+     ⚠ 탭바처럼 `transform:translateX(-50%)` 로 가운데를 맞추지 **않는다** —
+     transform 은 그 안의 `position:fixed` 자손을 가둔다(홈머리말.module.css 가
+     backdrop-filter 로 같은 사고를 겪고 경고를 남겨 뒀다). inset:0 이 left·right 를
+     0 으로 두므로 max-width + margin auto 만으로 가운데가 잡힌다. */
+  max-width: 430px;
+  margin-inline: auto;
+  /* 0 을 줘 쌓임 맥락을 여기서 닫는다 — 안쪽 6·7·8 이 밖으로 안 새고,
+     전역 탭바(10)는 셸(0) 위에 그대로 뜬다. */
+  z-index: 0;
+  overflow: hidden;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+        "Pretendard", "Malgun Gothic", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- 지도 ---------- */
+/* 여기에 `.지도칸` 을 따로 두지 않는다 — 전역 `.osm`(globals.css:196)이 이미
+   `position:absolute; inset:0` 이라, 지도 컴포넌트가 셸 안에 그대로 깔린다.
+   카드였을 때는 340px 짜리 상자가 자리를 잡아 줬지만(app/탐색/탐색.module.css 의 `.지도칸`)
+   지금은 셸 자신이 그 노릇을 한다 — 이 화면의 주인공이 지도라는 뜻이 얼개에 들어 있다. */
+
+/* ---------- 윗칸: 검색바 + 출발지 슬라이더 + 기준 단추 ---------- */
+.윗칸 {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  z-index: 6;
+  padding: calc(var(--윗여백) + 4px) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  /* ⚠ 이 줄이 없으면 줄과 줄 **사이** 빈 자리가 지도 탭을 통째로 삼킨다.
+     띠는 부품을 얹어 두는 자리일 뿐이고 빈 곳은 지도가 받아야 한다
+     (globals.css:59–62 의 `.acts` 가 같은 사고를 겪고 남긴 교훈). */
+  pointer-events: none;
+  transition: transform .3s var(--ease), opacity .22s ease;
+}
+.윗칸 > * { pointer-events: auto; }
+
+/* 지도를 한 번 탭하면 위로 밀려 사라진다(clean 모드) */
+.셸[data-모드="clean"] .윗칸,
+.셸[data-모드="가운데상세"] .윗칸 {
+  transform: translateY(-130%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.검색칸 { position: relative; margin: 0 12px; z-index: 2; }
+.검색바 {
+  display: flex; align-items: center; gap: 10px;
+  min-height: var(--tap);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 0 14px;
+  box-shadow: var(--shadow-md);
+}
+.검색바 svg { flex: none; color: var(--ink-3); }
+.검색바 input {
+  flex: 1; min-width: 0;
+  border: 0; outline: 0; background: none;
+  font: inherit; font-size: 15px; color: var(--ink);
+}
+.검색바 input::placeholder { color: var(--ink-3); }
+.검색바 input:focus-visible { outline: none; }
+.검색칸:focus-within .검색바 { box-shadow: var(--shadow-md), 0 0 0 3px rgba(47, 107, 255, .14); }
+
+/* 로고는 이름이지 글이 아니다 — 옛 머리말(app/홈머리말.tsx)의 워드마크가 여기로 들어왔다.
+   장식이라 손이 안 닿는다. */
+.워드마크 {
+  flex: none;
+  font-weight: 900; font-size: 15px; letter-spacing: .04em;
+  color: var(--ink);
+  opacity: .32;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ---------- 검색 패널 (D단계에서 최근 검색이 붙는다) ---------- */
+.검색패널 {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 0;
+}
+.패널머리 {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 14px 8px;
+  font-size: 11.5px; font-weight: 800; color: var(--ink-3);
+}
+.패널머리 button {
+  all: unset; cursor: pointer;
+  position: relative;
+  font-size: 11.5px; font-weight: 700; color: var(--ink-3);
+  padding: 4px 2px;
+}
+.패널머리 button:hover { color: var(--danger); }
+/* 손가락 자리는 48px (논의54) — 보이는 크기는 그대로 두고 닿는 곳만 넓힌다 */
+.패널머리 button::before {
+  content: ''; position: absolute; left: -6px; right: -6px; top: 50%;
+  height: var(--tap); transform: translateY(-50%);
+}
+.패널줄 {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; text-align: left;
+  background: none; border: 0; padding: 9px 14px;
+  cursor: pointer; font: inherit; color: inherit;
+  min-height: var(--tap);
+}
+.패널줄:hover { background: var(--surface-2); }
+.패널줄:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.패널줄 .그림 {
+  flex: none;
+  width: 30px; height: 30px; border-radius: 9px;
+  background: var(--surface-2);
+  display: grid; place-items: center;
+  font-size: 13px; color: var(--ink-3);
+}
+.패널줄 .가운데 { min-width: 0; }
+.패널줄 .이름 {
+  display: block; font-size: 14px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.패널줄 .주소 {
+  display: block; font-size: 11.5px; color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.패널줄 .꼬리 {
+  margin-left: auto; flex: none;
+  font-size: 12px; font-weight: 800; color: var(--brand);
+}
+.패널빔 {
+  padding: 14px;
+  font-size: 12.5px; color: var(--ink-3); text-align: center;
+  line-height: 1.6;
+}
+
+/* ---------- 출발지 슬라이더 ---------- */
+.출발지줄 {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  /* 휠 반응이 굼뜨지 않도록 smooth 는 쓰지 않는다(목업 주석 그대로) */
+  scroll-snap-type: x proximity;
+  padding: 2px 12px 4px;
+  scrollbar-width: none; -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+.출발지줄::-webkit-scrollbar { display: none; }
+/* 칩 하나는 상자 + 그 안의 단추 **둘**이다 — 몸통(`.칩속`)과 ✕(`.칩빼기`).
+   목업은 몸통 하나뿐이었지만 우리는 ✕ 를 남긴다(아래 `.칩빼기` 주석). */
+.출발지칩 {
+  flex: none; scroll-snap-align: center;
+  display: flex; align-items: center;
+  min-height: 40px;
+  padding: 0 4px 0 6px;
+  background: var(--surface);
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+/* 지금 눈이 가 있는 칩 — 지도가 그 자리로 가 있다는 표시다.
+   `aria-pressed` 는 안쪽 단추에 붙으므로 상자는 `:has()` 로 따라간다. */
+.출발지칩:has(.칩속[aria-pressed="true"]) {
+  box-shadow: 0 0 0 2px var(--c) inset, var(--shadow-md);
+}
+
+.칩속 {
+  all: unset;
+  position: relative;
+  display: flex; align-items: center; gap: 7px;
+  min-width: 0;
+  cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 700; color: var(--ink);
+}
+/* 보이는 높이는 40px 이라 손가락 기준(48)에 8px 모자란다 — 위아래로만 넓힌다.
+   가로는 안 넓힌다: 칩끼리 8px 틈이라 넓히면 옆 칩이, 안에서는 ✕ 가 대신 눌린다. */
+.칩속::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: var(--tap); transform: translateY(-50%);
+}
+.칩속:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 20px; }
+
+.번호 {
+  flex: none;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--c); color: #fff;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 800;
+}
+.출발지칩 .이름 {
+  max-width: 9.5em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 칩 안의 ✕ — 목업에는 없다. 우리는 남긴다: 삭제를 시트 안으로만 옮기면
+   키보드만 쓰는 사람은 '칩 누르기 → 시트 열기 → 삭제' 로 세 번을 눌러야 한다.
+   지금 판(탐색.module.css 의 .알약 button)이 한 번에 되던 것을 잃지 않는다. */
+.칩빼기 {
+  all: unset;
+  position: relative; flex: none;
+  width: 26px; height: 30px; border-radius: 999px;
+  display: grid; place-items: center;
+  color: var(--ink-3); font-size: 13px; font-weight: 800; line-height: 1;
+  cursor: pointer;
+}
+.칩빼기:hover { color: var(--danger); }
+.칩빼기::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--tap); height: var(--tap); transform: translate(-50%, -50%);
+}
+.칩빼기:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* ---------- 중간지점 기준 (거리 / AI) ---------- */
+/* 목업은 여기가 거리순/시간순이었다. 우리 값은 **거리 / AI** 다 —
+   시간 기준은 2026-08-23 에 사람이 정해 뺐고, app/탐색/탐색.tsx:36–42 가
+   "되살릴 일이 생기면 사람에게 먼저 물어야 한다" 고 적어 뒀다. */
+.기준줄 { display: flex; justify-content: flex-end; padding: 0 12px; }
+.기준단추 {
+  position: relative;
+  display: inline-flex; align-items: center;
+  min-height: 32px; padding: 0 13px;
+  background: var(--surface);
+  border: 0; border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  font: inherit; font-size: 12px; font-weight: 800; color: var(--ink-2);
+  cursor: pointer; white-space: nowrap;
+}
+.기준단추[data-기준="AI"] { color: var(--ai); }
+/* 32px 이라 손가락 기준에 한참 모자라다 — 위아래로 넓힌다 */
+.기준단추::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: var(--tap); transform: translateY(-50%);
+}
+.기준단추:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* 출발지가 둘 미만일 때 '무엇을 하면 무엇이 나오는지' 를 말하는 줄.
+   browse 모드에서는 시트가 화면 밖이라, 처음 온 사람에게 말을 거는 것은 이 줄뿐이다
+   (지금 판의 `지도밑문구` 가 하던 일 — app/탐색/탐색.tsx:244). */
+.안내줄 {
+  margin: 0 12px;
+  padding: 9px 13px;
+  background: rgba(255, 255, 255, .92);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+  line-height: 1.5; text-align: center;
+}
+
+/* ---------- 갈래줄 (E단계 — 주변 탐색) ---------- */
+/* 두 줄을 함께 두면 지도 위 상시 UI 가 너무 많아진다 — 탐색 모드에서는
+   출발지 줄과 기준 단추가 숨고 이 줄이 그 자리를 대신한다. */
+.셸[data-탐색="on"] .출발지줄,
+.셸[data-탐색="on"] .기준줄 { display: none; }
+.셸[data-탐색="off"] .갈래줄 { display: none; }
+
+.갈래줄 {
+  display: flex; gap: 7px;
+  overflow-x: auto;
+  padding: 2px 12px 4px;
+  scrollbar-width: none; -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+.갈래줄::-webkit-scrollbar { display: none; }
+.갈래칩 {
+  position: relative;
+  flex: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  min-height: 38px; padding: 0 14px;
+  background: var(--surface);
+  border: 0; border-radius: 19px;
+  box-shadow: var(--shadow-sm);
+  font: inherit; font-size: 12.5px; font-weight: 700; color: var(--ink-2);
+  white-space: nowrap; cursor: pointer;
+}
+.갈래칩::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: var(--tap); transform: translateY(-50%);
+}
+.갈래칩[aria-pressed="true"] { background: var(--brand); color: #fff; box-shadow: var(--shadow-md); }
+.갈래칩:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* 확대·축소 단추(전역 `.ozoom`)는 OSM 폴백에서만 뜬다. 카드였을 때는 지도 상자 안
+   왼쪽 위(12,12)라 아무것도 안 덮었는데, 지도가 화면을 꽉 채우면서 **검색바와 첫 출발지
+   칩 위로 올라왔다**(실측 스크린샷으로 확인 — `−` 단추가 1번 칩의 번호 배지를 가렸다).
+   전역 규칙은 안 건드린다: 같은 클래스를 `app/m/[code]/osmmap.tsx` 가 쓰는데 거기는
+   지도가 여전히 칸 하나라 지금 자리가 맞다. 홈 안에서만 아래로 내린다.
+   190px 은 시트가 '미니'로 서 있을 때 그 위에 서는 자리다 — 시트를 더 올리면 가려지지만
+   그때는 지도가 아니라 시트를 보는 중이라 괜찮다. */
+.셸 :global(.ozoom) { top: auto; bottom: 190px; left: 12px; }
+
+/* ---------- 떠 있는 둥근 단추 ---------- */
+/* ⚠ `bottom` 을 CSS 에 쓰지 않는다 — 시트끌기.ts 의 `배치()` 가 시트 높이에 맞춰
+   매 프레임 넣는다. 여기 값을 두면 두 곳이 같은 것을 다투게 된다. */
+.현위치, .탐색단추 {
+  position: absolute; right: 14px; z-index: 7;
+  width: 46px; height: 46px; border-radius: 50%;
+  background: var(--surface); border: 0;
+  box-shadow: var(--shadow-md), 0 0 0 1px rgba(20, 24, 43, .04);
+  display: grid; place-items: center;
+  color: var(--ink-2); cursor: pointer;
+  transition: bottom .3s var(--ease), color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+/* 46px 이라 손가락 기준에 2px 모자란다 — 투명하게만 넓힌다 */
+.현위치::before, .탐색단추::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--tap); height: var(--tap); border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.현위치:hover, .탐색단추:hover { color: var(--ink); }
+.현위치:active, .탐색단추:active { box-shadow: var(--shadow-sm); }
+.현위치:focus-visible, .탐색단추:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.현위치[data-맞춤="첫곳"], .현위치[data-맞춤="전체"] { color: var(--brand); }
+/* 전체 범위 모드에서는 바깥 링을 하나 더 둘러 상태를 구분한다 —
+   아이콘 색만으로는 두 단계를 못 가른다. */
+.현위치[data-맞춤="전체"]::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 2px solid rgba(47, 107, 255, .45);
+}
+.탐색단추[aria-pressed="true"] { background: var(--brand); color: #fff; }
+
+/* 어떤 범위로 맞췄는지 잠깐 알려 주는 쪽지. 목업에서는 이것이 전역 토스트 노릇도 한다. */
+.쪽지 {
+  position: absolute; right: 14px; z-index: 7;
+  background: rgba(20, 24, 43, .86); color: #fff;
+  padding: 7px 12px; border-radius: 11px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+  max-width: calc(100% - 28px);
+  overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease, bottom .3s var(--ease);
+}
+.쪽지[data-보임="예"] { opacity: 1; transform: translateY(0); }
+
+/* ---------- 바텀시트 ---------- */
+/* ⚠ 이 상자를 `display:none` 으로 감추지 마라. 목업의 layout() 은 높이가 100px 미만이면
+   32ms 마다 자신을 다시 예약해 타이머가 영영 돈다(목업 screens.css 470–471).
+   우리는 ResizeObserver 를 쓰지만 규칙은 같다 — '숨김'은 화면 밖으로 미는 스냅이지
+   안 그리는 것이 아니다. */
+.시트 {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 86%;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column;
+  z-index: 8;
+}
+.시트[data-움직임="예"] { transition: transform .32s var(--ease); }
+
+.손잡이 {
+  all: unset;
+  display: block; width: 100%;
+  padding: 10px 0 6px;
+  text-align: center;
+  cursor: grab;
+  /* 브라우저가 세로 스크롤로 먼저 채가면 손잡이 드래그가 안 잡힌다 */
+  touch-action: none;
+  flex: none;
+}
+.손잡이:active { cursor: grabbing; }
+.손잡이:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; border-radius: 20px 20px 0 0; }
+.손잡이 .집게 {
+  display: block; width: 40px; height: 4px; border-radius: 99px;
+  background: #d3d8e6; margin: 0 auto 6px;
+}
+.손잡이 .힌트 { font-size: 11px; color: var(--ink-3); font-weight: 600; }
+
+/* 시트를 끝까지 내려도 이 줄은 남는다 — '지금 무엇을 보고 있는지' 가 안 사라진다 */
+.시트요약 {
+  flex: none;
+  display: flex; align-items: center; gap: 11px;
+  padding: 2px 16px 14px;
+  min-height: 46px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2px;
+}
+.시트요약 .그림 {
+  flex: none;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--c, var(--surface-2)); color: #fff;
+  display: grid; place-items: center;
+  font-size: 13px; font-weight: 800;
+}
+.시트요약 .그림[data-민낯] { background: var(--surface-2); color: var(--ink-2); }
+.시트요약 .이름 {
+  font-size: 15px; font-weight: 800;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.시트요약 .오른쪽 {
+  margin-left: auto; flex: none; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.시트요약 .큰값 { display: block; font-size: 14px; font-weight: 800; }
+.시트요약 .잔값 { font-size: 11.5px; color: var(--ink-3); }
+
+/* 시트 밑단은 스냅한 만큼 탭바 밑으로 내려가 가려진다 — 그 양(--시트잘림, 시트끌기.ts 가
+   갱신)만큼 아래 여백을 더 줘야 마지막 글자가 중간에서 안 잘린다. */
+.시트본문 {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 4px 16px calc(20px + var(--시트잘림));
+  scroll-padding-bottom: calc(20px + var(--시트잘림));
+}
+
+/* ---------- 시트 안 공용 부품 ---------- */
+.눈썹 {
+  margin: 0 0 4px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; color: var(--brand);
+}
+.눈썹 .뒤로 {
+  all: unset; cursor: pointer;
+  position: relative;
+  color: var(--ink-3); font-weight: 800; padding: 0 4px;
+}
+.눈썹 .뒤로::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--tap); height: var(--tap); transform: translate(-50%, -50%);
+}
+.눈썹 .뒤로:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
+.큰글 {
+  margin: 0 0 4px;
+  font-size: 19px; font-weight: 800; line-height: 1.3;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  word-break: keep-all;
+}
+.작은글 {
+  margin: 0 0 12px;
+  font-size: 13px; color: var(--ink-2); line-height: 1.55;
+  word-break: keep-all;
+}
+.작은글 b { color: var(--ink); }
+
+/* 전역 `.cta`(globals.css:38)를 그대로 쓴다 — `a.cta` 가운데맞춤과 초점 테가 이미 있다.
+   모듈에는 목업의 보조 단추와 나란히 세우는 줄만 더한다. */
+.단추줄 { display: flex; gap: 8px; }
+.단추줄 > * { flex: 1; }
+.보조 {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.보조:hover { background: #eceff6; }
+
+/* 16px 여백을 뚫고 끝까지 가는 가름줄 */
+.가름줄 { height: 1px; background: var(--line); margin: 15px -16px; }
+.칸이름 { font-size: 13px; font-weight: 800; margin: 0 0 10px; }
+
+.값들 { display: flex; flex-direction: column; gap: 9px; }
+.값줄 { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.값줄 .키 { color: var(--ink-2); }
+.값줄 .값 { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* 목업의 `.note`. 전역 `.note`(globals.css:32)와 값이 다르다(반지름 10/--bg vs 12/--surface-2)
+   — 전역을 안 건드리기로 했으니 여기 따로 둔다. */
+.귀띔 {
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 12.5px; color: var(--ink-2); line-height: 1.6;
+  word-break: keep-all;
+}
+.귀띔 b { color: var(--ink); }
+
+/* ---------- 지도 표식 ---------- */
+/* 카카오 CustomOverlay 와 OSM 폴백이 **같은 클래스**를 쓴다 — 갈라 두면 같은 자리가
+   두 지도에서 다르게 보인다. 오버레이는 지도 상자 안에 붙으므로 위 토큰이 상속된다.
+   ⚠ 전역 `.opin[data-goal]`(빨간 물방울)은 그대로 둔다 — app/m/[code]/ui.tsx 가
+   같은 그림을 쓴다(globals.css:225 경고). 홈만 이 말풍선을 쓴다. */
+.가운데표식 {
+  transform: translate(-50%, -100%);
+  cursor: pointer;
+  text-align: center;
+}
+.가운데표식 .말풍선 {
+  display: inline-block;
+  background: var(--brand); color: #fff;
+  padding: 7px 12px;
+  border-radius: 14px 14px 14px 4px;
+  font-size: 12.5px; font-weight: 800; white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(47, 107, 255, .45);
+}
+.가운데표식 .줄기 { width: 2px; height: 13px; background: var(--brand); margin: 0 auto; }
+.가운데표식 .점 {
+  position: relative;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--brand); border: 3px solid #fff;
+  margin: 0 auto;
+  box-shadow: 0 2px 6px rgba(20, 24, 43, .35);
+}
+/* 점 자체는 14px 이라 그대로는 못 누른다. 목업은 -15px 로 44px 을 만들었는데
+   그러면 손가락 기준(48)에 4px 모자란다 — -17px 로 48px 을 채워 예외 목록에 안 넣는다. */
+.가운데표식 .점::after {
+  content: ''; position: absolute; inset: -17px; border-radius: 50%;
+}
+.가운데표식[data-고름="예"] .말풍선 {
+  box-shadow: 0 0 0 8px rgba(47, 107, 255, .22), 0 6px 18px rgba(47, 107, 255, .45);
+}
+
+/* 장소 핀 — 탐색 모드에서만 지도에 올라온다(E단계) */
+.장소표식 {
+  transform: translate(-50%, -50%);
+  width: 34px; height: 34px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--ink-3);
+  display: grid; place-items: center;
+  font-size: 16px; cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.장소표식[data-고름="예"] {
+  border-color: var(--brand); background: var(--brand);
+  box-shadow: 0 0 0 7px rgba(47, 107, 255, .2);
+}
+
+/* 지금 있는 자리. 출발지 핀과 **한눈에 갈라져야** 한다 — 저건 내가 넣은 곳이고
+   이건 내가 서 있는 곳이다(지금 판 탐색.module.css 의 .내자리점 을 그대로 옮겼다). */
+.내자리점 {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--brand); border: 2.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(20, 26, 40, .18), 0 2px 6px rgba(20, 26, 40, .28);
+  pointer-events: none;
+}
+.내자리점::after {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%;
+  border: 2px solid var(--brand);
+  animation: 숨결 2.4s ease-out 3;   /* 세 번만 — 지도 위에서 계속 뛰면 읽기를 방해한다 */
+  opacity: 0;
+}
+@keyframes 숨결 {
+  0%   { transform: scale(.7); opacity: .85; }
+  70%  { transform: scale(2.1); opacity: 0; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+/* ---------- 움직임을 싫어하는 사람에게 ---------- */
+/* 집안 규칙 — globals.css 전체가 애니메이션마다 이 덮개를 두고 있다 */
+@media (prefers-reduced-motion: reduce) {
+  .윗칸, .시트[data-움직임="예"], .현위치, .탐색단추, .쪽지 {
+    transition: none;
+  }
+  .출발지줄, .갈래줄 { scroll-behavior: auto; }
+  .내자리점::after { animation: none; opacity: .55; transform: scale(1.4); }
+}
