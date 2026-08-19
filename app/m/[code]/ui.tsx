@@ -232,10 +232,6 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const [settings, setSettings] = useState(false);
   const [sName, setSName] = useState('');
   const [sAt, setSAt] = useState('');
-  /* 지도를 누르면 곧바로 후보가 되지 않는다 — 먼저 미리보기 (논의81 · 120).
-     한 번 더 눌러야 후보가 된다. 다른 곳을 누르면 미리보기가 그리로 옮겨간다. */
-  const [preview, setPreview] = useState<
-    { kind: Kind; refId: string; name: string; lat: number; lng: number; address?: string } | null>(null);
   /* 시트는 손잡이로 키우고 줄인다 (논의82) — 손잡이는 맨 윗줄과 요약 줄 둘 다.
      세 자리로 **정착**한다: mini(요약 줄만 남기고 지도를 거의 다 보여 준다) · default(기본) · big.
      ⚠ 2026-08-15 — mini 가 여기 없었다. 예전판(v8)엔 '지도 전체화면 보기' 라는 이름으로 있던
@@ -270,8 +266,6 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
   const closeSheets = useCallback(() => {
     setNear(null); setClusterIds(null); setTieOpen(false);
     setSettings(false); setMoved(null); setRewound(null);
-    /* 미리보기도 시트와 같이 닫는다 (논의81) — 단계가 지난 뒤에 눌리면 wrong_stage 만 돌아온다 */
-    setPreview(null);
   }, []);
   /* Esc 로도 닫힌다 — 바깥 클릭만 되면 키보드만 쓰는 사람은 시트에 갇힌다 */
   useEffect(() => {
@@ -590,8 +584,9 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
 
   /* 지도를 눌렀을 때. 지역이면 그 자리의 지역, 지점이면 주변 지점 목록 (그릴링 논의32).
      확정된 지역 밖은 받지 않는다 — 지역을 정한 뜻이 없어진다.
-     누른 것만으로는 후보가 되지 않는다 (논의81) — 미리보기를 띄우고 한 번 더 눌러야 후보다.
-     미리보기가 떠 있는데 다른 곳을 누르면 그리로 옮겨간다(setPreview 가 덮어쓴다). */
+     지역은 누른 자리가 곧 표다 — 되묻지 않는다(원래 설계, 잠깐 미리보기로 갔다가
+     "행동이 늘어나 귀찮다"는 실사용 판단으로 되돌렸다). 지점은 한 좌표에 여러 곳이
+     있을 수 있어 주변 목록을 먼저 보여 주고, 그 목록에서 고르면 그게 곧 표다. */
   const pickAt = useCallback(async (lat: number, lng: number) => {
     if (kindRef.current === 'region') {
       const r = await fetch(`/api/geo?lat=${lat}&lng=${lng}`).catch(() => null);
@@ -599,7 +594,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
       if (!r?.ok) { flash('여긴 고를 수 없어요 — 지역 안을 눌러 주세요'); return; }
       const g = await r.json().catch(() => null);
       if (!g) { flash(FAILED); return; }
-      setPreview({ kind: 'region', refId: g.code, name: g.name, lat, lng });
+      await send({ action: 'ping', kind: 'region', refId: g.code, name: g.name, lat, lng });
       return;
     }
     const w = winRef.current;
@@ -620,7 +615,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     }
     if (!j) { setNear(null); flash(FAILED); return; }
     setNear({ loading: false, at: { lat, lng }, list: j.places ?? [] });
-  }, [flash, say, closeSheets]);
+  }, [flash, say, closeSheets, send]);
   const pickRef = useRef(pickAt); pickRef.current = pickAt;
   const winRef = useRef(region); winRef.current = region;
   const radiusRef = useRef(v.meeting.radius_m); radiusRef.current = v.meeting.radius_m;
@@ -658,15 +653,15 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qPlace, stage, done_, region?.id]);
 
-  /* 검색 결과를 고르면 지도 탭과 같은 길(미리보기)로 합류한다 — 한 번 더 눌러야 후보가 된다.
-     반경 검사도 지도 탭과 같다(pickAt) — 바깥 API 가 반경을 못 지켜도 여기서 한 번 더 막는다. */
-  const 지점검색고르기 = (p: { id: string; name: string; address: string; lat: number; lng: number }) => {
+  /* 검색 결과를 고르면 그게 곧 표다 — 반경 검사는 지도 탭과 같다(pickAt).
+     바깥 API 가 반경을 못 지켜도 여기서 한 번 더 막는다. */
+  const 지점검색고르기 = async (p: { id: string; name: string; address: string; lat: number; lng: number }) => {
     if (region && dist(p.lat, p.lng, region.lat, region.lng) > (radiusRef.current || RADIUS_FALLBACK_M)) {
       flash(`${region.name} 안에서 골라 주세요`);
       return;
     }
-    setPreview({ kind: 'place', refId: p.id, name: p.name, lat: p.lat, lng: p.lng, address: p.address });
     setQPlace(''); setPlaceHits(null);
+    await send({ action: 'ping', kind: 'place', refId: p.id, name: p.name, lat: p.lat, lng: p.lng, address: p.address });
   };
 
   /* 콜백이 낡은 값을 잡지 않게 — 지도 리스너는 한 번만 달기 때문 */
@@ -898,14 +893,6 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
     await reload();
   };
 
-  /* 미리보기를 한 번 더 누르면 그때 후보가 된다 (논의81 · 120) */
-  const 후보로 = async () => {
-    if (!preview) return;
-    const p = preview;
-    if (await send({ action: 'ping', kind: p.kind, refId: p.refId, name: p.name,
-      lat: p.lat, lng: p.lng, address: p.address })) setPreview(null);
-  };
-
   /* AI 가 올린 곳은 0표여도 안 사라진다 (논의53) — 한 번에 치우는 길이 있어야 한다 (논의94) */
   const ai후보수 = v.candidates.filter((c) => c.kind === kind && c.by_ai && c.votes === 0).length;
 
@@ -1062,8 +1049,6 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             center={region && kind === 'place' ? { lat: region.lat, lng: region.lng }
               : midpoint ?? { lat: 37.5665, lng: 126.978 }}
             canPing={canPing}
-            /* 미리보기가 지도에 안 보이면 시트에 이름만 뜨고 '어디인지'를 알 수 없다 (논의81) */
-            preview={preview}
             onPick={(lat, lng) => pickAt(lat, lng)}
             onToggle={(c, mine) => toggle(c.id, mine)}
             onCluster={(ids) => { closeSheets(); setClusterIds(ids); }}
@@ -1111,7 +1096,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                 방장도 그 모임의 참가자다 — 방장만 안내가 없으면 자기 선택을 잊는다. */}
             {canPing && !myCount && (
               <button className="fab primary"
-                onClick={() => flash('지도를 누르면 미리보기가 떠요 — 한 번 더 누르면 후보가 돼요')}>
+                onClick={() => flash(kind === 'region'
+                  ? '지도를 누르면 곧바로 후보가 돼요' : '지도를 누르면 그 근처 지점이 떠요')}>
                 {kind === 'region' ? '지역 고르기' : '지점 고르기'}
               </button>
             )}
@@ -1346,30 +1332,13 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
           </div>
         )}
 
-        {/* 미리보기 — 한 번 더 눌러야 후보가 된다 (논의81 · 120) */}
-        {preview && canPing && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button className="row" data-preview disabled={busy} onClick={후보로}
-              aria-label={`미리보기 ${preview.name} — 다시 누르면 후보가 돼요`}>
-              <span className="nm">미리보기 · {preview.name}
-                <span className="mut" style={{ display: 'block', fontWeight: 600 }}>
-                  미리보기를 다시 누르면 후보가 돼요
-                </span>
-              </span>
-              <span className="ct">여기로 할까요?</span>
-            </button>
-            <button className="mini" style={{ marginBottom: 7, flex: '0 0 auto' }}
-              onClick={() => setPreview(null)}>취소</button>
-          </div>
-        )}
-
         {stage === 'region' && !done_ && (
-          <p className="note">지도를 누르면 그 자리의 <b>지역</b>이 미리보기로 떠요 — 한 번 더 누르면 후보가 됩니다.
+          <p className="note">지도를 누르면 그 자리의 <b>지역</b>이 곧바로 후보가 돼요.
             여러 곳을 골라도 되고, 같은 곳을 다시 누르면 취소돼요.
             <b> 가장 많은 사람이 고른 지역</b>으로 정해집니다.</p>
         )}
         {stage === 'place' && !done_ && (
-          <p className="note">지도를 누르면 <b>그 근처 지점</b>이 뜨고, 고르면 미리보기가 됩니다 — 한 번 더 눌러야 후보예요.
+          <p className="note">지도를 누르면 <b>그 근처 지점</b>이 뜨고, 고르면 곧바로 후보가 됩니다.
             {region && <> <b>{region.name}</b> 안에서 골라 주세요.</>} 여러 곳을 골라도 되고,
             같은 곳을 다시 누르면 취소돼요. <b>가장 많은 사람이 고른 지점</b>으로 정해집니다.</p>
         )}
@@ -1642,12 +1611,12 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             <ul className="rows">
               {near.list.map((pl) => (
                 <li key={pl.id}>
-                  {/* 고르면 곧바로 후보가 되지 않는다 (논의81) — 미리보기로 두고 한 번 더 묻는다 */}
+                  {/* 고르면 그게 곧 표다 — 되묻지 않는다 */}
                   <button className="row" aria-busy={busy || undefined}
                     onClick={() => {
                       if (busy) return;
                       setNear(null);
-                      setPreview({ kind: 'place', refId: pl.id, name: pl.name,
+                      void send({ action: 'ping', kind: 'place', refId: pl.id, name: pl.name,
                         lat: pl.lat, lng: pl.lng, address: pl.address });
                     }}>
                     <span className="nm">{pl.name}

@@ -42,7 +42,7 @@ async function 될때까지(fn, ms = 10000, 간격 = 250) {
 }
 
 /* 다른 갈래가 파일을 고치면 개발 서버가 다시 굽고 화면이 통째로 새로 열린다 —
-   화면만 아는 것(미리보기·손잡이)은 그때 사라진다. 손짓을 다시 해 본다. */
+   화면만 아는 것(손잡이 등)은 그때 사라진다. 손짓을 다시 해 본다. */
 async function 다시해도(손짓, 확인, 번 = 6) {
   for (let i = 0; i < 번; i++) {
     try { await 손짓(); } catch { /* 새로 열리는 중이면 다음 판에 */ }
@@ -207,18 +207,24 @@ async function 낱말훑기(page, 어디) {
     걸린것.join(',') + ' / ' + t.replace(/\s+/g, ' ').slice(0, 160));
 }
 
-/* ── 논의81 · 120 미리보기 ─────────────────────────────── */
-async function 미리보기시험() {
-  console.log('\n[미리보기] 논의81 · 120');
-  const { code, cookie: 방장 } = await 새모임('미리보기 시험', 'place');
+/* ── 지도 클릭 = 곧바로 후보+투표 (2026-08-24, 사용자 요청 — "지도클릭시 후보*투표
+   핑 띄워지도록 돌려줘") ──────────────────────────────────────────────────
+   전에는 지도를 눌러도 곧바로 후보가 안 되고 미리보기(논의81 · 120)로 먼저 뜬 뒤
+   한 번 더 눌러야 후보가 됐다. "행동이 늘어나 귀찮다"는 판단으로 원래 설계
+   (지도를 누르면 그 자리가 곧 후보+표)로 되돌렸다 — 이 시험도 그걸 잰다. */
+async function 지도클릭시험() {
+  console.log('\n[지도 클릭] 누르면 곧바로 후보+표');
+  const { code, cookie: 방장 } = await 새모임('지도클릭 시험', 'place');
   await 참여(code, '영희');
 
-  /* 지역 찾기는 흉내 낸다 — 누른 자리에 따라 다른 이름을 줘 '미리보기가 옮겨간다'를 잴 수 있다 */
+  /* 지역 찾기는 흉내 낸다 — 부를 때마다 다른 이름을 줘 '두 곳이 따로 후보가 된다'를 잴 수 있다.
+     참가자가 둘이라 지도 첫 자리가 fitBounds 로 잡혀 화면 위/아래가 어느 위도로 갈리는지
+     안 붙박이니, 누른 좌표가 아니라 '몇 번째로 부른 요청인가'로 가른다. */
+  let 부른횟수 = 0;
   const page = await 열기(code, 방장, async (p) => {
     await p.route('**/api/geo**', (route) => {
-      const u = new URL(route.request().url());
-      const 위 = Number(u.searchParams.get('lat'));
-      const 북쪽 = 위 > 37.5665;
+      부른횟수++;
+      const 북쪽 = 부른횟수 === 1;
       return route.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ code: 북쪽 ? 'rN' : 'rS', name: 북쪽 ? '북녘지역' : '남녘지역' }) });
     });
@@ -229,28 +235,23 @@ async function 미리보기시험() {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 + dy);
   };
 
-  const 떴다 = await 다시해도(() => 지도누르기(-60),                /* 위쪽 = 북녘 */
-    async () => (await page.$('[data-preview]')) !== null);
-  ok('논의81 지도를 누르면 곧바로 후보가 아니라 미리보기가 뜬다', 떴다);
-  ok('논의120 그 표시를 "미리보기" 라 부른다',
-    떴다 && (await 글있나(page, '미리보기')) && (await 글있나(page, '미리보기를 다시 누르면 후보가 돼요')));
-  const 후보0 = (await 보기(code, 방장)).candidates.length;
-  ok('논의81 미리보기만으로는 후보가 생기지 않는다', 후보0 === 0, `후보 ${후보0}곳`);
+  /* 참가자가 둘이라 지도가 두 출발지를 다 담게 처음 자리를 잡는다(fitBounds) — 위/아래가
+     정확히 어느 위도로 갈리는지는 그래서 안 붙박인다. '누른 자리 하나 = 후보 하나' 만 잰다. */
+  const 생겼다1 = await 다시해도(() => 지도누르기(-60),
+    async () => (await 보기(code, 방장)).candidates.length === 1);
+  ok('지도를 누르면 곧바로 후보가 된다(되묻지 않는다)', 생겼다1);
+  const c1 = (await 보기(code, 방장)).candidates[0];
+  ok('그 후보는 누른 자리 중 하나다', c1?.name === '북녘지역' || c1?.name === '남녘지역', c1?.name);
+  ok('후보에는 누른 사람의 표가 곧바로 붙는다', c1?.votes === 1, c1?.votes);
+  ok('"미리보기" 표시는 이제 없다', (await page.$('[data-preview]')) === null);
+  ok('"미리보기" 라는 말이 화면에 없다', !(await 글있나(page, '미리보기')));
 
-  const 옮겼다 = await 다시해도(() => 지도누르기(60),                /* 아래쪽 = 남녘 */
-    async () => (await page.textContent('[data-preview]')).includes('남녘지역'));
-  ok('논의81 미리보기가 떠 있을 때 다른 곳을 누르면 그리로 옮겨간다', 옮겼다);
-  ok('논의81 옮겨가도 후보는 아직 없다', (await 보기(code, 방장)).candidates.length === 0);
-
-  const 생겼다 = await 다시해도(async () => {
-    if (!(await page.$('[data-preview]'))) await 지도누르기(60);
-    await page.click('[data-preview]');
-  }, async () => (await 보기(code, 방장)).candidates.length === 1);
-  ok('논의81 미리보기를 한 번 더 누르면 그때 후보가 된다', 생겼다);
-  const c = (await 보기(code, 방장)).candidates[0];
-  ok('논의81 후보가 된 곳은 마지막으로 누른 자리다', c?.name === '남녘지역', c?.name);
-  ok('논의81 후보가 되면 미리보기는 사라진다',
-    await 될때까지(async () => (await page.$('[data-preview]')) === null, 6000));
+  const 생겼다2 = await 다시해도(() => 지도누르기(60),
+    async () => (await 보기(code, 방장)).candidates.length === 2);
+  ok('다른 곳을 또 누르면 그것도 곧바로 후보가 된다(지역은 여러 곳 가능)', 생겼다2);
+  const v2 = await 보기(code, 방장);
+  ok('두 후보 다 그대로 남고 서로 다른 자리다', v2.candidates.length === 2
+    && v2.candidates[0].name !== v2.candidates[1].name, v2.candidates.map((c) => c.name).join(','));
 
   await 낱말훑기(page, '지역 단계');
   return { code, 방장, page };
@@ -717,7 +718,7 @@ async function 넘겨받은것시험() {
 /* ── 돌리기 ─────────────────────────────────────────────── */
 try {
   ok('방장이 로그인된다 (논의123 — 모임 만들기가 로그인 필수)', await 로그인(계정, '시험결정'));
-  const { code, 방장, page } = await 미리보기시험();
+  const { code, 방장, page } = await 지도클릭시험();
   await page.close();
   await 손잡이시험(code, 방장);
   await 되돌리기시험();
