@@ -78,6 +78,7 @@ const KIND_LABEL: Record<Kind, string> = { region: '지역', place: '지점' };
 /* 몇 사람이 골랐는지 (논의72) — 좁은 자리를 뺀 모든 곳이 이 한 문장을 쓴다 */
 /* 두 곳에서 쓰는 문구는 lib/말.ts 한 곳에 둔다 — 지도(osmmap)도 같은 말을 쓴다 */
 import { 고른수, 아직 } from '@/lib/말';
+import { 가장가까운 } from '@/lib/시트스냅';
 
 /* 신호등은 셋 (논의116) — 시간이 정해지면 켜지고, 다시 눌러 바꾼다 (논의115).
    값은 서버가 가진다(participants.going) — 이 기기에만 남기면 남이 못 보고,
@@ -1262,16 +1263,15 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
               setSheetStage((s) => (s === 'default' ? 'big' : 'default'));
               return;
             }
-            /* 끌었으면 손을 뗀 그 순간의 높이에서 가장 가까운 정착 자리로 스냅한다 */
+            /* 끌었으면 손을 뗀 그 순간의 높이에서 가장 가까운 정착 자리로 스냅한다.
+               고르는 셈은 `lib/시트스냅.ts` 에 있다 — 홈 시트도 같은 셈을 쓴다.
+               ⚠ 나머지는 안 합친다. 그 파일 머리말에 까닭을 적어 뒀다. */
             const cur = dragH ?? d.startH;
+            /* 차례가 곧 동점 우선순위다 — 앞엣것이 이긴다(`가장가까운` 주석).
+               예전 반복문도 mini 를 먼저 훑어 같은 거리면 mini 가 남았다. 그대로 둔다. */
             const 자리들: 시트단계[] = ['mini', 'default', 'big'];
-            let 가장가까운: 시트단계 = 'default', 최소거리 = Infinity;
-            for (const 자리 of 자리들) {
-              const 거리 = Math.abs(cur - 시트픽셀(자리));
-              if (거리 < 최소거리) { 최소거리 = 거리; 가장가까운 = 자리; }
-            }
             setDragH(null);
-            setSheetStage(가장가까운);
+            setSheetStage(가장가까운(cur, 자리들, 시트픽셀));
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {

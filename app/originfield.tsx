@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { 기본값읽기 } from '@/lib/기본값';
 import 찾기 from './출발지찾기.module.css';
+import { 장소찾기, 최소글자 } from '@/lib/장소찾기';
 
 export type Origin = { name: string; address: string; lat: number; lng: number };
 /* 이동 수단 타입은 **`lib/types.ts` 하나뿐**이다. 전에는 여기에도 똑같은 것이 적혀 있어서,
@@ -69,29 +70,18 @@ export default function OriginField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* 봉투의 `retryable` 이 '기다리면 되는가'를 말한다 — 화면이 상태 코드를 다시 해석하지 않는다.
-     오늘치를 다 쓴 카카오 몫(quota_kakao)은 429 여도 기다려서 될 일이 아니다. */
-  const 못찾은말 = (j: { error?: string; retryable?: boolean } | null) =>
-    j?.error === 'too_many' ? '너무 자주 불러서 잠깐 쉬는 중이에요 — 잠시 뒤에 다시 해 주세요'
-    : j?.retryable ? '지금은 장소를 찾을 수 없어요 — 잠시 뒤에 다시 해 주세요'
-    : '지금은 장소를 찾을 수 없어요';
-
-  /* 타이핑마다 부르지 않는다 — 손을 멈추면 찾는다 */
+  /* 타이핑마다 부르지 않는다 — 손을 멈추면 찾는다.
+     실제로 부르는 일과 '못 찾았을 때 무슨 말을 할지'는 `lib/장소찾기.ts` 가 안다 —
+     홈 셸도 제 검색 패널에서 같은 함수를 쓴다. 갈라 두면 카카오가 죽었을 때
+     어느 화면은 말하고 어느 화면은 조용해진다(이 파일 머리말의 규칙). */
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
     const s = q.trim();
-    if (origin || s.length < 2) { setHits(null); return; }
+    if (origin || s.length < 최소글자) { setHits(null); return; }
     timer.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/places/search?q=${encodeURIComponent(s)}`);
-        if (!res.ok) {
-          set문제(못찾은말(await res.json().catch(() => null)));
-          setHits(null); return;
-        }
-        set문제(null);
-        setHits((await res.json()).places ?? []);
-      /* 대답조차 못 받은 것은 망이 끊긴 쪽이다 — 그건 다시 해 보면 된다 */
-      } catch { set문제(못찾은말({ retryable: true })); setHits(null); }
+      const { 곳들, 문제 } = await 장소찾기(s);
+      set문제(문제);
+      setHits(곳들);
     }, 350);
     return () => { if (timer.current) clearTimeout(timer.current); };
   }, [q, origin]);
@@ -102,9 +92,9 @@ export default function OriginField({
      어느 화면은 말하고 어느 화면은 조용해진다. */
   const 찾은목록 = (
     <>
-      {문제 && q.trim().length >= 2 &&
+      {문제 && q.trim().length >= 최소글자 &&
         <p className="warn" style={{ margin: '6px 0 0', fontSize: 12.5 }}>{문제}</p>}
-      {!문제 && hits && !hits.length && q.trim().length >= 2 &&
+      {!문제 && hits && !hits.length && q.trim().length >= 최소글자 &&
         <p className="mut" style={{ margin: '6px 0 0' }}>찾는 곳이 없어요 — 가까운 역 이름으로 해보세요.</p>}
       <ul className="rows" style={{ marginTop: 6 }}>
         {(hits ?? []).slice(0, 6).map((h) => (

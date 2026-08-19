@@ -13,6 +13,7 @@
    타일 셈(toPx·toLatLng)은 OSM 폴백에서만 쓴다. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './탐색.module.css';
+import { TILE, toPx, toLatLng, 여백맞추기 } from '@/lib/지도셈';
 
 declare global { interface Window { kakao: any } }
 
@@ -20,24 +21,12 @@ export type 점 = { 이름: string; lat: number; lng: number };
 /* 경로선의 꺾인 점은 이름이 없다 — 위 점(핀)과는 다른 물건이라 따로 둔다 */
 type 좌표 = { lat: number; lng: number };
 
-const TILE = 256;
-const toPx = (lat: number, lng: number, z: number) => {
-  const n = 2 ** z * TILE;
-  return {
-    x: ((lng + 180) / 360) * n,
-    y: ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * n,
-  };
-};
-const toLatLng = (x: number, y: number, z: number) => {
-  const n = 2 ** z * TILE;
-  const k = Math.PI - (2 * Math.PI * y) / n;
-  return {
-    lng: (x / n) * 360 - 180,
-    lat: (180 / Math.PI) * Math.atan(0.5 * (Math.exp(k) - Math.exp(-k))),
-  };
-};
+/* 타일 셈(toPx·toLatLng)과 '이 점들이 다 보이게 맞추기'는 `lib/지도셈.ts` 에 있다 —
+   카카오와 OSM 폴백이 **같은 셈**을 써야 같은 출발지가 같은 자리에 찍힌다.
+   화면 없이 잴 수 있는 순수 함수라 시험도 거기 붙는다. */
 
-/* 출발지 상자가 지도의 이만큼을 채우게 맞춘다 — 남는 여백은 이름표 몫이다 (osmmap 과 같은 값) */
+/* 출발지 상자가 지도의 이만큼을 채우게 맞춘다 — 남는 여백은 이름표 몫이다 (osmmap 과 같은 값).
+   `여백맞추기` 는 네 변을 따로 받으므로, 예전의 사방 균등 여백을 픽셀로 환산해 넘긴다. */
 const FIT = 0.72;
 
 /* 가운데(확정된 자리) 핀 — 물방울 그림 + 이름표(2026-08-21).
@@ -201,19 +190,15 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
   useEffect(() => {
     if (!카카오죽음 || !출발지들.length) return;
     const 점들 = 가운데 ? [...출발지들, 가운데] : 출발지들;
-    const la = 점들.map((o) => o.lat), ln = 점들.map((o) => o.lng);
-    const 상자가운데 = {
-      lat: (Math.min(...la) + Math.max(...la)) / 2,
-      lng: (Math.min(...ln) + Math.max(...ln)) / 2,
-    };
-    setC(상자가운데);
-    /* 한 곳뿐이거나 다 붙어 있으면 상자가 0이라 배율이 끝까지 튄다 — 지역만큼은 남긴다 */
-    const 반y = Math.max((Math.max(...la) - Math.min(...la)) / 2, 0.004);
-    const 반x = Math.max((Math.max(...ln) - Math.min(...ln)) / 2, 0.004);
-    const 위 = toPx(상자가운데.lat + 반y, 상자가운데.lng - 반x, 0);
-    const 아래 = toPx(상자가운데.lat - 반y, 상자가운데.lng + 반x, 0);
-    const 맞는배율 = Math.log2(Math.min((size.w * FIT) / (아래.x - 위.x), (size.h * FIT) / (아래.y - 위.y)));
-    setZ(Math.max(4, Math.min(17, 맞는배율)));
+    /* 사방을 똑같이 비운다 — 여기 지도는 아직 카드 하나라 위아래를 다르게 덮는 것이 없다.
+       (1 - FIT)/2 씩이 예전의 균등 여백과 같은 양이다. */
+    const 빈쪽 = (1 - FIT) / 2;
+    const 맞춤 = 여백맞추기(점들, { 폭: size.w, 높이: size.h }, {
+      위: size.h * 빈쪽, 아래: size.h * 빈쪽, 좌: size.w * 빈쪽, 우: size.w * 빈쪽,
+    });
+    if (!맞춤) return;
+    setC(맞춤.가운데);
+    setZ(맞춤.배율);
     /* 서명 하나로 출발지 바뀜을 본다 — 배열을 그대로 두면 그릴 때마다 새 배열이라 늘 다시 맞춘다.
        가운데는 좌표 값으로 본다(객체 참조로 보면 매 그리기마다 새 객체라 늘 다시 맞춘다 —
        지도가 사람 손을 뺏듯 자꾸 튄다). */

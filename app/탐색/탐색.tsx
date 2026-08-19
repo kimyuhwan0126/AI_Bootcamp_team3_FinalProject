@@ -12,22 +12,15 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import OriginField, { type Origin, type Transport } from '../originfield';
 import { 실어보내기, 두고간것읽기, 두고가기 } from '@/lib/넘기기';
+import { 열쇠, 가운데 as 가운데셈, 더할수있나 } from '@/lib/출발지';
 import type { RouteStep } from '@/lib/routes';
 import 지도 from './지도';
 import s from './탐색.module.css';
 
-/* 예전판과 같은 한도 — 모임 정원도 8이다 */
-const 최대 = 8;
-
-/* 한국 밖은 안 받는다 (논의55·60). 판정하는 상자는 `lib/geo.ts` 의 `한국안` 이지만
-   그 파일은 불러오는 순간 DB 연결을 만들어 브라우저에서는 못 쓴다 — 같은 상자를 여기 한 번 더 적는다.
-   (옮기자는 이야기는 보고에 적었다.) */
-const 한국안 = (lat: number, lng: number) =>
-  lat >= 33 && lat <= 38.7 && lng >= 124.5 && lng <= 132;
-
-/* 같은 곳을 두 번 넣지 않는다. 이름만 보면 '스타벅스'가 하나뿐이 되고,
-   좌표만 보면 같은 건물의 다른 출입구가 두 곳이 된다 — 둘을 함께 본다. */
-const 열쇠 = (o: Origin) => `${o.name}@${o.lat.toFixed(5)},${o.lng.toFixed(5)}`;
+/* 한도(8곳) · 같은 곳인가(`열쇠`) · 한국 상자는 이제 `lib/출발지.ts` 에 있다.
+   전에는 여기 손으로 적혀 있었다 — `lib/geo.ts` 의 `한국안` 을 못 쓰는 사정(그 파일은
+   불러오는 순간 DB 연결을 만든다) 때문이었는데, 그 상자를 `lib/한국상자.ts` 로 내려
+   브라우저도 부를 수 있게 했다(논의55·60의 그 상자 그대로다). */
 
 /* 출발지 하나의 경로 — 지도에 그리는 좌표(points)와, 아래 '출발지별 상세'에 쓰는
    시간·거리·구간별 안내(steps)를 한 번의 /api/routes 호출로 같이 얻는다(2026-08-17). */
@@ -108,9 +101,10 @@ export default function 탐색() {
   const 고름 = (o: Origin | null) => {
     if (!o) return;
     if (자동출발지무시.current) return;
-    if (!한국안(o.lat, o.lng)) { set알림('한국 안에서만 가운데를 잡아 줘요'); 칸비우기(); return; }
-    if (출발지들.length >= 최대) { set알림(`출발지는 ${최대}곳까지 넣을 수 있어요`); 칸비우기(); return; }
-    if (출발지들.some((p) => 열쇠(p) === 열쇠(o))) { set알림('이미 넣은 출발지예요'); 칸비우기(); return; }
+    /* 한국 밖 · 8곳 넘음 · 이미 넣은 곳 — 셋을 가르는 잣대는 `lib/출발지.ts` 하나다.
+       홈 셸이 새로 생겨도 같은 말을 하게 하려면 문구까지 거기 있어야 한다. */
+    const 안되는말 = 더할수있나(출발지들, o);
+    if (안되는말) { set알림(안되는말); 칸비우기(); return; }
     set알림('');
     바꾸기([...출발지들, o]);
     칸비우기();
@@ -127,11 +121,9 @@ export default function 탐색() {
   };
 
   /* 모두의 출발지 가운데 — `app/m/[code]/ui.tsx:302` 와 **같은 셈**이다.
-     두 화면이 다른 가운데를 말하면 홈에서 본 자리와 모임에서 여는 자리가 어긋난다. */
-  const 가운데 = 출발지들.length
-    ? { lat: 출발지들.reduce((a, o) => a + o.lat, 0) / 출발지들.length,
-        lng: 출발지들.reduce((a, o) => a + o.lng, 0) / 출발지들.length }
-    : null;
+     두 화면이 다른 가운데를 말하면 홈에서 본 자리와 모임에서 여는 자리가 어긋난다.
+     그래서 셈 자체는 `lib/출발지.ts` 로 옮겼다 — 베껴 두면 언젠가 한쪽만 고친다. */
+  const 가운데 = 가운데셈(출발지들);
 
   /* AI 기준을 켜 두면 출발지가 바뀔 때마다 자동으로 다시 묻는다(2026-08-23, 사용자
      요청 — "출발지관련 정보가 변경될때마다 중간지점이 업데이트"). 이동수단은 여기
@@ -295,7 +287,7 @@ export default function 탐색() {
         </ul>
       )}
       {/* 출발지 수 안내는 늘 떠 있지 않는다(2026-08-23, 사용자 요청) — 8곳 넘게 넣으려 할
-          때만 `알림`이 그 사실을 말한다(위 `고름` 함수: 출발지들.length >= 최대 갈래).
+          때만 `알림`이 그 사실을 말한다(위 `고름` 함수 → `lib/출발지.ts` 의 `더할수있나`).
           평소엔 알약 줄(바로 위)이 몇 곳 넣었는지 눈으로 보여 주니 굳이 숫자를 또 안 적는다. */}
       {알림 && <p className="warn" style={{ margin: '0 0 10px', fontSize: 12.5 }}>{알림}</p>}
 

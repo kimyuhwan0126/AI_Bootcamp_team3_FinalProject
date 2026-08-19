@@ -6,7 +6,8 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types tests/지도셈.mjs tests/시트스냅.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
