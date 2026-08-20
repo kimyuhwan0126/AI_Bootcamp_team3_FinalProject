@@ -79,9 +79,25 @@
   --shadow-2:0 4px 16px rgba(23,23,28,.10);
   --shadow-3:0 -6px 28px rgba(23,23,28,.16);
 
-  /* 움직임의 결 — 처음에 빠르고 끝에서 부드럽게 멎는다. 홈이 목업에서 가져와 쓰던
-     곡선을 그대로 앱 전체로 올린 것이다. */
+  /* ── 움직임 ──────────────────────────────────────────────────
+     결은 하나다 — 처음에 빠르고 끝에서 부드럽게 멎는다. 홈이 목업에서 가져와 쓰던
+     곡선을 그대로 앱 전체로 올렸다.
+
+     시간은 세 단이다. 노션 UIUX_독학가이드 07장의 애니메이션 3원칙(의미 있는 움직임만 ·
+     짧게 200~300ms · 끌 수 있게)을 그대로 못박은 것이다.
+       press  손이 닿는 순간의 반응. 0.1초 법칙(닐슨) 안이라 '즉각'으로 읽힌다
+       state  색·테두리가 바뀌는 것
+       move   자리를 옮기는 것 — 시트 · 탭바 · 패널 · 모달
+     `--press-scale` 은 눌린 것이 줄어드는 비율이다. 더 줄이면 장난스러워지고,
+     덜 줄이면 눌린 줄을 모른다.
+
+     '끌 수 있게'는 이 파일 맨 끝의 `prefers-reduced-motion` 한 블록이 맡는다. */
   --ease-out:cubic-bezier(.32,.72,0,1);
+  --dur-press:120ms; --dur-state:200ms; --dur-move:300ms;
+  --press-scale:.97;
+  /* 눌린 주 단추가 한 단 진해진다 — 색이 안 바뀌면 큰 단추는 눌린 티가 잘 안 난다.
+     흰 글자를 얹으면 6.63:1 이라 눌린 동안에도 글자가 읽힌다. */
+  --brand-strong:#1e4fd8;
 
   --tap:48px;
   /* 아래 탭바 높이 — 본문 아래 여백도 이 값을 쓴다. 한 곳만 고치면 둘이 같이 따라온다 */
@@ -130,8 +146,7 @@ button{font:inherit}
 .sheet{border-top:1px solid var(--line);background:var(--surface);max-height:56dvh;overflow-y:auto;padding:14px 16px 18px;
   /* 손 뗀 뒤 정착 자리로 스냅할 때만 이 이동이 눈에 보인다 — 끄는 동안은 ui.tsx 가
      인라인 style 로 transition:none 을 덮어써서 손가락과 어긋나지 않게 즉시 반응한다. */
-  transition:max-height .22s var(--ease-out)}
-@media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+  transition:max-height var(--dur-state) var(--ease-out)}
 .note{background:var(--surface-2);border-radius:var(--r-2);padding:10px 12px;font-size:13px;color:var(--ink-2);margin:10px 0}
 .warn{color:var(--danger);font-weight:700}
 .row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:var(--r-2);padding:11px 13px;margin-bottom:7px;min-height:var(--tap);background:var(--surface);width:100%;text-align:left;cursor:pointer}
@@ -252,9 +267,8 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
    ⚠ `translateX(-50%)` 를 **반드시 같이 쓴다.** 탭바는 transform 으로 가운데를 맞춘다
    (위 `.tabbar`) — `translateY(100%)` 만 주면 폰보다 넓은 창에서 가운데가 풀려 왼쪽으로 쏠린다.
    방아쇠는 홈 셸이 당긴다: `document.body` 에 `data-홈모드` 를 적는다(app/홈/홈.tsx). */
-.tabbar{transition:transform .3s var(--ease-out)}
+.tabbar{transition:transform var(--dur-move) var(--ease-out)}
 body[data-홈모드="숨김"] .tabbar{transform:translateX(-50%) translateY(100%)}
-@media (prefers-reduced-motion:reduce){.tabbar{transition:none}}
 
 /* 지금 있는 곳 — 색만으로 말하지 않는다. 글자도 같이 진해진다 */
 .tab[aria-current="page"]{color:var(--brand-ink);font-weight:700}
@@ -298,16 +312,15 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 /* 오류는 화면 위에 잠시 (그릴링 논의26 ③) — 시트 아래에 두면 후보에 밀려 안 보였다 */
 .toast{position:fixed;left:50%;transform:translateX(-50%);top:64px;z-index:30;max-width:min(92vw,460px);
   background:#2a2a30;color:#fff;border-radius:var(--r-2);padding:11px 15px;font-size:13.5px;font-weight:700;
-  box-shadow:var(--shadow-2);animation:toastin .16s ease-out}
+  box-shadow:var(--shadow-2);animation:toastin var(--dur-state) var(--ease-out)}
 /* 시트가 올라오면 쪽지도 그 위로 내려온다 (그릴링 논의108) — 손이 있는 곳과 답이 있는 곳을 맞춘다.
    전에는 방금 누른 곳에서 419px 떨어진 데 떠서 못 보고 지나쳤다.
    방아쇠는 ui.tsx 가 당긴다: 시트가 올라와 있는 동안 .toast 에 data-sheet 를 달아라.
    시트 높이를 --sheet-h 로 같이 주면 딱 그 위에 붙고, 안 주면 시트의 최대 높이(56dvh)로 잡는다 —
    .sheet 의 max-height 가 56dvh 라 어림잡아도 시트에 깔리는 일은 없다. */
-.toast[data-sheet]{top:auto;bottom:calc(var(--sheet-h,56dvh) + 12px);animation:toastup .16s ease-out}
+.toast[data-sheet]{top:auto;bottom:calc(var(--sheet-h,56dvh) + 12px);animation:toastup var(--dur-state) var(--ease-out)}
 @keyframes toastin{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
 @keyframes toastup{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
-@media (prefers-reduced-motion:reduce){.toast,.toast[data-sheet]{animation:none}}
 
 /* 카카오가 막혔을 때 대신 그리는 지도 (그릴링 논의27) */
 .osm{position:absolute;inset:0;overflow:hidden;background:#e8e6e1;touch-action:none;cursor:grab}
@@ -369,10 +382,9 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
    누르는 자리가 아니다 — 여기에 손이 닿으면 그 밑의 지도를 못 누른다. */
 .opre{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;
   border:2px dashed var(--ink-2);background:rgba(255,255,255,.6);z-index:5;pointer-events:none;
-  animation:opre-in .16s ease-out}
+  animation:opre-in var(--dur-state) var(--ease-out)}
 @keyframes opre-in{from{opacity:0;transform:translate(-50%,-50%) scale(.7)}
   to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
-@media (prefers-reduced-motion:reduce){.opre{animation:none}}
 /* 확정된 지역의 범위(원) — 표시가 없으면 지점을 찾다가 스크롤 끝에 딴 동네를 고를 수
    있었다(실사용 신고). radius_m 을 반지름으로 그대로 쓴다 — 서버가 판정하는 범위와
    화면에 보이는 범위가 어긋나면 안 된다. 핀·미리보기보다 아래(낮은 z-index)라 손이
@@ -548,3 +560,63 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
   cursor:pointer;padding:8px 2px;min-height:0}
 .tpkbd{width:36px;height:36px;border:0;background:var(--surface-2);border-radius:var(--r-2);cursor:pointer;
   color:var(--ink-2);font-size:15px;min-height:0}
+
+/* ============================================================
+   움직임 — 손이 닿는 것은 반응한다 (2026-08-20)
+
+   노션 `UIUX_독학가이드` 07장: "사용자가 무언가를 누르면 시스템은 **반드시, 즉시**
+   반응해야 한다. 0.1초 안에 반응하면 '즉각'으로 읽힌다(닐슨)."
+   지금까지 이 앱의 단추는 눌러도 눌린 티가 안 났다 — 색이 바뀌는 것뿐이었고 그마저
+   `:hover` 뿐이라 손가락에는 아예 안 보였다. 누르는 동안 살짝 줄어드는 것 하나로
+   "받았다"를 말한다. 크기는 `--press-scale`.
+
+   ⚠ **transform 으로 제자리를 잡고 있는 것에는 이걸 못 붙인다.** 붙이면 그 자리가 튄다.
+   빠진 것들과 까닭:
+     .tabbar               translateX(-50%) 로 가운데를 맞춘다 (안의 .tab 은 괜찮다)
+     .toast                같은 이유
+     .opin .odot .opre .ofrom   지도 좌표에 translate 로 앵커돼 있다
+     .tpclock-num          시계판 위에 translate 로 놓인다
+     홈의 .가운데표식 .장소표식 .내자리점 .출발지핀   같은 이유
+     홈의 .손잡이          잡아 끄는 것이지 누르는 것이 아니다
+   ============================================================ */
+.cta,a.cta,.fab,.row,.seg,.purpose,.mini,.tab,.zone button,.back,
+.dial-toggle,.dial-item,.ozoom button,.tpcal-grid button,.tpkbd,.tpcal-hd button{
+  transition:transform var(--dur-press) var(--ease-out),
+             background-color var(--dur-state) var(--ease-out),
+             border-color var(--dur-state) var(--ease-out),
+             color var(--dur-state) var(--ease-out),
+             box-shadow var(--dur-state) var(--ease-out)}
+.cta:active,a.cta:active,.fab:active,.row:active,.seg:active,.purpose:active,.mini:active,
+.tab:active,.zone button:active,.back:active,
+.dial-toggle:active,.dial-item:active,.ozoom button:active,.tpcal-grid button:active,
+.tpkbd:active,.tpcal-hd button:active{transform:scale(var(--press-scale))}
+/* 누를 수 없는 것은 안 줄어든다 — 줄어들면 눌린 줄 알고 다음 화면을 기다린다 */
+.cta[disabled]:active,.mini:disabled:active,.dial-item[disabled]:active,
+.row[data-static]:active{transform:none}
+/* 주 단추는 크기만으로는 눌린 티가 약하다 — 바탕도 한 단 진해진다 */
+.cta:active:not([disabled]){background:var(--brand-strong)}
+
+/* 아래에서 올라오는 것 — 모달과 그 안의 시트 (전에는 툭 나타났다).
+   뒷막은 밝아지고, 시트는 조금 아래에서 올라온다. 어디서 온 물건인지가 보여야
+   닫을 때 어디로 보내야 할지도 안다. */
+.modal{animation:모달뒷막 var(--dur-move) var(--ease-out)}
+.msheet{animation:시트올라옴 var(--dur-move) var(--ease-out)}
+@keyframes 모달뒷막{from{opacity:0}to{opacity:1}}
+@keyframes 시트올라옴{from{transform:translateY(14px)}to{transform:translateY(0)}}
+
+/* ---------- 움직임을 싫어하는 사람에게 ----------
+   전에는 애니메이션마다 덮개를 따로 뒀다(.sheet · .tabbar · .toast · .opre 네 곳).
+   빠뜨리기 쉬운 방식이라 **한 블록으로 모은다** — 앞으로 새로 더하는 움직임도
+   따로 손대지 않아도 여기 걸린다.
+
+   `none` 이 아니라 `.01ms` 인 까닭: 아주 짧게라도 돌려 두면 `transitionend` ·
+   `animationend` 가 그대로 발생한다. 지금 그 사건을 듣는 코드는 없지만(확인함),
+   `none` 으로 끊어 두면 나중에 누가 그걸 기다리는 코드를 쓸 때 이 화면에서만
+   영영 안 오는 사건이 된다. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.01ms!important;
+    scroll-behavior:auto!important}
+}
