@@ -9,7 +9,7 @@
    돌리는 법:  npm test */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { 갈래고르기, 갈래그림, 갈래들, 모름그림 } from '../lib/장소갈래.ts';
+import { 갈래고르기, 아이콘고르기, 색고르기, 갈래들, 모름아이콘, 모름색 } from '../lib/장소갈래.ts';
 
 test('카카오가 준 갈래 이름을 그대로 알아본다', () => {
   for (const g of 갈래들.filter((x) => x.코드)) assert.equal(갈래고르기(g.이름), g.이름);
@@ -53,11 +53,37 @@ test('모르는 말은 null — 버리지 않는다', () => {
   assert.equal(갈래고르기(undefined), null);
 });
 
-test('핀 그림 — 모르는 갈래도 그림이 있다', () => {
-  assert.equal(갈래그림('카페'), '☕');
-  assert.equal(갈래그림('park'), '🏞');
-  assert.equal(갈래그림('음식점', '음식점 > 술집 > 호프,요리주점'), '🍻');
-  assert.equal(갈래그림('약국'), 모름그림);
+test('아이콘 — 갈래마다 하나씩 있고, 모르는 갈래도 그릴 것이 있다', () => {
+  /* 2026-08-20 에 이모지에서 선 그림(SVG path)으로 바꿨다 — 값을 눈으로 못 보므로
+     '비어 있지 않은가'와 '갈래마다 서로 다른가'로 지킨다. 빈 아이콘은 지도에서
+     아무것도 안 그려진 동그라미가 된다. */
+  for (const g of 갈래들) {
+    const 길들 = 아이콘고르기(g.이름);
+    assert.ok(길들.length, `${g.이름} 에 아이콘 길이 없다`);
+    assert.ok(길들.every((d) => typeof d === 'string' && d.trim().length > 3), `${g.이름} 아이콘 길이 비었다`);
+  }
+  const 지문 = 갈래들.map((g) => g.아이콘.join('|'));
+  assert.equal(new Set(지문).size, 지문.length, '두 갈래가 같은 그림을 쓴다');
+  /* 갈래를 모르는 곳도 지도에는 선다 — 빈손이면 안 된다 */
+  assert.equal(아이콘고르기(null), 모름아이콘);
+  assert.equal(아이콘고르기(갈래고르기('약국')), 모름아이콘);
+  assert.ok(모름아이콘.length);
+});
+
+test('색 — 갈래마다 다르고, 시그니처 파랑과 안 겹친다', () => {
+  /* 2026-08-20 사용자 요청으로 표식이 갈래마다 다른 색이 됐다. 지켜야 할 것 셋 —
+     ① 갈래마다 하나씩 있다  ② 서로 다르다  ③ `--brand`(중간지점 말풍선) 와 안 겹친다.
+     ③ 을 어기면 지도에서 '이 화면이 잡아 준 자리'와 '둘레의 가게'가 같은 색이 된다. */
+  const 색들 = 갈래들.map((g) => 색고르기(g.이름));
+  for (const [i, c] of 색들.entries()) {
+    assert.match(c, /^#[0-9a-f]{6}$/, `${갈래들[i].이름} 색이 6자리 hex 가 아니다`);
+  }
+  assert.equal(new Set(색들).size, 색들.length, '두 갈래가 같은 색을 쓴다');
+  assert.ok(!색들.includes('#2f6bff'), '갈래 색이 시그니처 --brand 와 겹친다');
+  /* 모르는 갈래도 색이 있어야 한다 — 없으면 CSS 의 `var(--c)` 가 비어 투명해진다 */
+  assert.equal(색고르기(null), 모름색);
+  assert.equal(색고르기(갈래고르기('약국')), 모름색);
+  assert.ok(!색들.includes(모름색), '모름색이 어느 갈래 색과 겹친다');
 });
 
 test('갈래마다 물어볼 길이 하나씩 있다 — 코드든 낱말이든', () => {

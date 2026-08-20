@@ -20,12 +20,14 @@
    셌지만, 그 셋을 다 뺐다. 핀은 **그리기만 한다.**
    덕분에 '끄는 동안 호출이 폭주하는' 위험도 함께 사라졌다(`/api/home-ai` 는 분당 5번이다).
 
-   핀 그림은 `./핀그림.ts` 에 있다 — 모양·색·뜨는 높이를 고치려면 그 파일 맨 위만 보면 된다.
+   핀 그림은 `./핀그림.ts` 에, 그것을 얹는 엘리먼트는 `./표식.ts` 에 있다 — 모양·색을
+   고치려면 그 두 파일만 보면 된다.
    카카오와 OSM 이 **같은 SVG** 를 쓴다: 갈라 두면 같은 출발지가 두 지도에서 다르게 보인다. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import s from './홈.module.css';
-import { 가운데표식만들기 } from './표식';
-import { 핀주소, 핀밀기, 출발지색고르기 } from './핀그림';
+import { 가운데표식만들기, 장소표식만들기, 출발지표식만들기 } from './표식';
+import type { 갈래 } from '@/lib/장소갈래';
+import { 출발지색고르기 } from './핀그림';
 import { TILE, toPx, toLatLng, 여백맞추기, type 여백 as 여백꼴 } from '@/lib/지도셈';
 
 declare global { interface Window { kakao: any } }
@@ -41,6 +43,19 @@ type 좌표 = { lat: number; lng: number };
 /* 출발지 상자가 지도의 이만큼을 채우게 맞춘다 — 남는 여백은 이름표 몫이다 (osmmap 과 같은 값).
    `여백맞추기` 는 네 변을 따로 받으므로, 예전의 사방 균등 여백을 픽셀로 환산해 넘긴다. */
 const FIT = 0.72;
+
+/* ── 장소 표식이 뜨는 배율 ────────────────────────────────
+   2026-08-20 사용자 요청 — "맵을 일정 이상 축소하면 핀이 표기되지 않도록".
+   한 갈래에 45곳까지 오는데(lib/places.ts 는 홈에 갯수 제한을 안 둔다), 지도를 넓게
+   빼면 그 45개가 반경 1km 안에서 서로 겹쳐 한 덩어리가 된다 — 무엇이 몇 개인지도
+   안 읽히고 중간지점 말풍선까지 묻힌다.
+
+   ⚠ 두 지도의 눈금이 **반대로** 센다. 카카오는 `level` 이 클수록 넓게 보고(1=20m,
+   4=100m, 6=500m, 7=1km), OSM 은 `z` 가 클수록 좁게 본다(z16≈100m, z14≈500m).
+   눈금자를 맞춰 보면 `카카오level ≈ 20 - OSMz` 라 아래 두 값은 **같은 넓이**다 —
+   500m 눈금. 한쪽만 고치면 카카오가 죽었을 때 기준이 달라진다. */
+const 장소보이는카카오레벨 = 6;   /* 이 값 이하(더 가까이)에서만 */
+const 장소보이는OSM배율 = 14;     /* 이 값 이상(더 가까이)에서만 */
 
 /* 물방울 핀(`목표핀그림`·`가운데핀엘리먼트`)은 여기서 안 쓴다 — 홈은 말풍선을 쓴다(위 머리말 ③).
    그 그림이 필요한 곳은 `app/m/[code]/ui.tsx` 와 `globals.css` 두 곳뿐이고 거기는 그대로다. */
@@ -62,9 +77,9 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
   /* 네 변이 각각 몇 픽셀씩 **가려지는가** — 셸이 재서 준다(윗칸 높이 · 시트가 올라온 높이 ·
      탭바). 안 주면 사방을 예전처럼 균등하게 비운다. */
   여백?: 여백꼴;
-  /* 지금 고른 출발지 번호(0부터). 그 핀만 살짝 떠오르고 위로 올라온다.
-     -1 이면 고른 것이 없다. 목업은 끌 때 뜨게 했지만 우리는 드래그가 없어
-     '고름'이 그 자리를 대신한다(목업 raiseFocusedPin 3374–3380 과 같은 뜻). */
+  /* 지금 고른 출발지 번호(0부터). 그 핀만 **동그라미에서 물방울로 자란다**
+     (2026-08-20 사용자 요청 — 홈.module.css 의 `.출발지핀`). -1 이면 고른 것이 없다.
+     목업은 끌 때 핀을 띄웠지만 우리는 드래그가 없어 '고름'이 그 자리를 대신한다. */
   고른출발지?: number;
   /* 출발지 핀을 누르면 — 그 출발지 시트를 연다 */
   출발지누름?: (i: number) => void;
@@ -75,8 +90,8 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
   /* ── 주변 탐색(E단계)에서만 오는 것들 ────────────────────
      중간지점 둘레의 장소. 출발지 핀보다 **아래**에 깔린다 — 내가 넣은 자리가 늘 먼저
      읽혀야 한다. 탐색이 꺼져 있으면 빈 배열이라 아무것도 안 그린다. */
-  장소들?: { id: string; name: string; lat: number; lng: number; 그림: string }[];
-  /** 지금 고른 장소 — 그 핀만 파랗게 도드라진다 */
+  장소들?: { id: string; name: string; lat: number; lng: number; 갈래: 갈래 | null }[];
+  /** 지금 고른 장소 — 그 표식만 물방울로 커진다(홈.module.css 의 `.장소표식[data-고름]`) */
   고른장소?: string | null;
   장소누름?: (id: string) => void;
   /* 지금 있는 자리를 알아냈을 때 셸에게 알린다 — 셸이 '현위치로 맞추기' 를 켤지 말지
@@ -153,6 +168,10 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
   const 카카오경로선 = useRef<any[]>([]);
   const [카카오죽음, set카카오죽음] = useState(false);
   const [카카오준비, set카카오준비] = useState(false);
+  /* 지금 카카오가 보고 있는 배율. 장소 표식을 띄울지 말지가 이 값에 걸린다(위 상수).
+     처음 값은 `Map({level:7})` 과 같아야 한다 — 다르면 지도가 붙는 첫 프레임에
+     표식이 떴다 사라진다. OSM 폴백은 자기 `z` 를 그대로 본다. */
+  const [카카오레벨, set카카오레벨] = useState(7);
 
   useEffect(() => {
     if (!그릴것있나 || 카카오죽음 || 카카오맵.current) return;
@@ -198,6 +217,18 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     const 손 = () => 지도누름칸.current?.();
     window.kakao.maps.event.addListener(m, 'click', 손);
     return () => window.kakao.maps.event.removeListener(m, 'click', 손);
+  }, [카카오준비]);
+
+  /* 배율이 바뀌면 알아 둔다 — 장소 표식이 뜨는 배율(위 상수)을 여기서 잰다.
+     ⚠ `손댐`(사람이 만졌나)과 달리 **우리가 옮긴 것도 센다**: 과녁 단추로 전체를
+     담아 넓게 빠졌을 때도 표식은 함께 사라져야 하기 때문이다. */
+  useEffect(() => {
+    const m = 카카오맵.current;
+    if (!카카오준비 || !m) return;
+    const 잼 = () => set카카오레벨(m.getLevel());
+    잼();
+    window.kakao.maps.event.addListener(m, 'zoom_changed', 잼);
+    return () => window.kakao.maps.event.removeListener(m, 'zoom_changed', 잼);
   }, [카카오준비]);
 
   /* ── 사람이 지도에 손을 댔나 ────────────────────────────────
@@ -382,40 +413,27 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       얹기(내자리, `<span class="${s.내자리점}" style="left:0;top:0" aria-hidden></span>`);
     }
     /* 장소 핀(주변 탐색) — 출발지 핀보다 **먼저** 얹어 아래에 깔린다.
-       zIndex 5 는 출발지(7)와 경로선 사이다(globals.css 의 층 표와 결이 같다). */
-    (장소들 ?? []).forEach((p) => {
-      const 칸 = document.createElement('button');
-      칸.type = 'button';
-      칸.className = s.장소표식;
-      칸.setAttribute('data-slot', '장소표식');
-      칸.setAttribute('data-고름', p.id === 고른장소 ? '예' : '아니오');
-      칸.setAttribute('aria-label', p.name);
-      칸.style.cssText = 'position:absolute;left:0;top:0';
-      칸.textContent = p.그림;
-      if (장소누름) 칸.addEventListener('click', (e) => { e.stopPropagation(); 장소누름(p.id); });
-      얹기엘리먼트(p, 칸, 5);
+       zIndex 5 는 출발지(7)와 경로선 사이다(globals.css 의 층 표와 결이 같다).
+       ⚠ 고른 하나는 물방울로 커진다 — 그때는 이웃 표식을 덮어야 하므로 출발지(7)보다도
+       위인 11 로 올린다(고른 출발지 12 바로 아래다).
+       ⚠ 넓게 뺀 지도에서는 아예 안 얹는다(위 `장소보이는카카오레벨`). */
+    (카카오레벨 <= 장소보이는카카오레벨 ? (장소들 ?? []) : []).forEach((p) => {
+      const 고름 = p.id === 고른장소;
+      얹기엘리먼트(p, 장소표식만들기(s, {
+        이름: p.name, 갈래: p.갈래, 고름,
+        누름: 장소누름 ? () => 장소누름(p.id) : undefined,
+      }), 고름 ? 11 : 5);
     });
 
     출발지들.forEach((o, i) => {
-      /* 번호 물방울. 고른 것 하나만 떠오르고 위로 올라온다.
+      /* 안 고르면 번호 동그라미, 고르면 물방울(표식.ts).
          `얹기` 는 zIndex 4 로 고정이라 여기서는 못 올린다 — 아래 `얹기엘리먼트` 로
          zIndex 를 따로 주는 갈래를 쓴다. */
       const 고름 = i === 고른출발지;
-      const 그림 = document.createElement('img');
-      그림.src = 핀주소({ 번호: i + 1, 색: 출발지색고르기(i), 뜬정도: 고름 ? 1 : 0 });
-      그림.alt = '';
-      그림.setAttribute('aria-hidden', 'true');
-      그림.draggable = false;
-      const 칸 = document.createElement('button');
-      칸.type = 'button';
-      칸.className = s.출발지핀;
-      칸.setAttribute('data-slot', '출발지핀');
-      칸.setAttribute('data-번호', String(i + 1));
-      칸.setAttribute('aria-label', `출발지 ${i + 1} ${o.이름}`);
-      칸.style.cssText = `position:absolute;left:0;top:0;transform:translate(${핀밀기.x}px,${핀밀기.y}px)`;
-      칸.appendChild(그림);
-      if (출발지누름) 칸.addEventListener('click', (e) => { e.stopPropagation(); 출발지누름(i); });
-      얹기엘리먼트(o, 칸, 고름 ? 12 : 7);
+      얹기엘리먼트(o, 출발지표식만들기(s, {
+        번호: i + 1, 이름: o.이름, 색: 출발지색고르기(i), 고름,
+        누름: 출발지누름 ? () => 출발지누름(i) : undefined,
+      }), 고름 ? 12 : 7);
     });
     if (가운데) {
       /* 목업의 말풍선(말풍선 + 줄기 + 점). 진짜 엘리먼트로 짓는다 —
@@ -440,7 +458,7 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
        여백이 1px 달라져도) 도는데, 그때마다 지도를 다시 맞추면 보고 있던 자리가 제멋대로
        튄다(2026-08-20 신고). 맞추는 일은 위 ⓐ~ⓓ 한 곳이 맡는다. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng, 경로들, 가운데누름, 고른출발지, 출발지누름, 장소들, 고른장소, 장소누름]);
+  }, [카카오준비, 카카오레벨, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng, 경로들, 가운데누름, 고른출발지, 출발지누름, 장소들, 고른장소, 장소누름]);
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
@@ -574,35 +592,38 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
                 style={{ left: q.x, top: q.y }} aria-hidden />
             );
           })()}
-          {/* 장소 핀(주변 탐색) — 카카오 쪽과 **같은 클래스**다. 출발지보다 낮게 깔린다. */}
-          {(장소들 ?? []).map((p) => {
+          {/* 장소 핀(주변 탐색) — 카카오 쪽과 **같은 엘리먼트**를 붙인다(표식.ts).
+              전에는 여기만 JSX 로 따로 짰는데, 표식이 이름표까지 달린 두 겹이 되면서
+              두 벌을 손으로 맞추는 일이 됐다 — 가운데 말풍선과 같은 수법으로 합쳤다. */}
+          {(z >= 장소보이는OSM배율 ? (장소들 ?? []) : []).map((p) => {
             const q = 자리(p);
             if (!q) return null;
+            const 고름 = p.id === 고른장소;
             return (
-              <button key={p.id} type="button" className={s.장소표식}
-                data-slot="장소표식" data-고름={p.id === 고른장소 ? '예' : '아니오'}
-                aria-label={p.name}
-                style={{ position: 'absolute', left: q.x, top: q.y, zIndex: 5 }}
-                onClick={(e) => { e.stopPropagation(); 장소누름?.(p.id); }}>
-                {p.그림}
-              </button>
+              <span key={p.id} style={{ position: 'absolute', left: q.x, top: q.y, zIndex: 고름 ? 11 : 5 }}
+                ref={(el) => {
+                  if (!el) return;
+                  el.replaceChildren(장소표식만들기(s, {
+                    이름: p.name, 갈래: p.갈래, 고름,
+                    누름: 장소누름 ? () => 장소누름(p.id) : undefined,
+                  }));
+                }} />
             );
           })}
           {출발지들.map((o, i) => {
             const q = 자리(o);
             if (!q) return null;
             const 고름 = i === 고른출발지;
-            /* 카카오 쪽과 **같은 SVG** 다(핀그림.ts) — 두 지도가 같아 보여야 한다 */
+            /* 카카오 쪽과 **같은 엘리먼트**를 붙인다(표식.ts) — 두 지도가 같아 보여야 한다 */
             return (
-              <button key={`출발${i}${o.lat}`} type="button" className={s.출발지핀}
-                data-slot="출발지핀" data-번호={i + 1}
-                aria-label={`출발지 ${i + 1} ${o.이름}`}
-                style={{ left: q.x, top: q.y, zIndex: 고름 ? 12 : 7,
-                  transform: `translate(${핀밀기.x}px, ${핀밀기.y}px)` }}
-                onClick={(e) => { e.stopPropagation(); 출발지누름?.(i); }}>
-                <img src={핀주소({ 번호: i + 1, 색: 출발지색고르기(i), 뜬정도: 고름 ? 1 : 0 })}
-                  alt="" draggable={false} aria-hidden />
-              </button>
+              <span key={`출발${i}${o.lat}`} style={{ position: 'absolute', left: q.x, top: q.y, zIndex: 고름 ? 12 : 7 }}
+                ref={(el) => {
+                  if (!el) return;
+                  el.replaceChildren(출발지표식만들기(s, {
+                    번호: i + 1, 이름: o.이름, 색: 출발지색고르기(i), 고름,
+                    누름: 출발지누름 ? () => 출발지누름(i) : undefined,
+                  }));
+                }} />
             );
           })}
           {가운데 && (() => {

@@ -222,23 +222,35 @@
   overscroll-behavior-x: contain;
 }
 .출발지줄::-webkit-scrollbar { display: none; }
-/* 칩 하나는 상자 + 그 안의 단추 **둘**이다 — 몸통(`.칩속`)과 ✕(`.칩빼기`).
-   목업은 몸통 하나뿐이었지만 우리는 ✕ 를 남긴다(아래 `.칩빼기` 주석). */
+/* 칩 하나는 상자 + 그 안의 단추 **하나**다(`.칩속`).
+   ⚠ 2026-08-20 — 상자 안에 ✕(`.칩빼기`)가 하나 더 있었는데 사람이 정해 뺐다.
+   삭제로 가는 길은 이제 시트 요약 줄의 휴지통 하나뿐이다(홈.tsx 의 `.요약삭제`) —
+   칩을 누르면 그 출발지 시트가 반까지 올라오므로 거기서 바로 지운다.
+   되살릴 일이 생기면 사람에게 먼저 묻는다(git 기록에 그때 값이 다 있다). */
 .출발지칩 {
   flex: none; scroll-snap-align: center;
   display: flex; align-items: center;
   min-height: 40px;
-  padding: 0 4px 0 6px;
+  padding: 0 10px 0 6px;
   background: var(--surface);
   border-radius: var(--r-full);
   box-shadow: var(--shadow-1);
   white-space: nowrap;
+  /* ⚠ 여기 `transition` 을 두지 마라 — 이 파일 맨 끝 '누름 반응' 칸이 `.출발지칩` 을
+     이미 걸고 있어서, 여기 또 적으면 뒤엣것이 통째로 덮어 어느 쪽이 도는지 헷갈린다.
+     켜고 꺼지는 것이 색 하나뿐이라 그 색이 번지듯 넘어가는 것이 거기 들어 있다. */
 }
 /* 지금 눈이 가 있는 칩 — 지도가 그 자리로 가 있다는 표시다.
-   `aria-pressed` 는 안쪽 단추에 붙으므로 상자는 `:has()` 로 따라간다. */
-.출발지칩:has(.칩속[aria-pressed="true"]) {
-  box-shadow: 0 0 0 2px var(--c) inset, var(--shadow-2);
-}
+   `aria-pressed` 는 안쪽 단추에 붙으므로 상자는 `:has()` 로 따라간다.
+
+   ⚠ 2026-08-20 — 전에는 `0 0 0 2px var(--c) inset`(그 출발지 색 테두리)이었는데
+   사람이 정해 **테두리를 걷고 채움으로 바꿨다**. 채움 값과 그 까닭은 globals.css
+   의 `--chip-on` 에 적어 뒀다. 그림자는 안 올린다(--shadow-1 그대로) — 켜질 때
+   높이까지 뜨면 옆 칩과 줄이 안 맞아 보인다. 바뀌는 것은 색 하나다. */
+.출발지칩:has(.칩속[aria-pressed="true"]) { background: var(--chip-on); }
+/* 켜진 칩 위에서 --ink-3 는 3.65:1 로 기준(4.5)에 못 미친다 — 한 단 어둡게 내린다.
+   ⚠ 색만 바꾸고 크기·무게는 그대로다: 글자가 굵어지면 칩 폭이 변해 줄이 흔들린다. */
+.출발지칩:has(.칩속[aria-pressed="true"]) .칩수단 { color: var(--ink-2); }
 
 .칩속 {
   all: unset;
@@ -275,25 +287,11 @@
   margin-left: -2px;
   font-size: 11.5px; font-weight: 500; color: var(--ink-3);
   white-space: nowrap;
+  /* 켜질 때 --ink-2 로 내려간다(위 `:has()` 규칙) — 바탕과 같은 결로 넘어가게 한다 */
+  transition: color var(--dur-state) var(--ease-out);
 }
 
-/* 칩 안의 ✕ — 목업에는 없다. 우리는 남긴다: 삭제를 시트 안으로만 옮기면
-   키보드만 쓰는 사람은 '칩 누르기 → 시트 열기 → 삭제' 로 세 번을 눌러야 한다.
-   지금 판(탐색.module.css 의 .알약 button)이 한 번에 되던 것을 잃지 않는다. */
-.칩빼기 {
-  all: unset;
-  position: relative; flex: none;
-  width: 26px; height: 30px; border-radius: var(--r-full);
-  display: grid; place-items: center;
-  color: var(--ink-3); font-size: 13px; font-weight: 700; line-height: 1;
-  cursor: pointer;
-}
-.칩빼기:hover { color: var(--danger); }
-.칩빼기::before {
-  content: ''; position: absolute; left: 50%; top: 50%;
-  width: var(--tap); height: var(--tap); transform: translate(-50%, -50%);
-}
-.칩빼기:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+/* 칩 안의 ✕(`.칩빼기`)가 여기 있었다 — 2026-08-20 에 사람이 정해 뺐다(위 `.출발지칩` 주석). */
 
 /* 여기 있던 **기준 단추(.기준줄/.기준단추)와 안내 줄(.안내줄)** 은 2026-08-19 에
    사람이 정해 뺐다 — 지도 위에 늘 떠 있는 것을 줄이자는 뜻이다(윗칸.tsx 머리말).
@@ -384,11 +382,18 @@
   font: inherit; font-size: 12.5px; font-weight: 700; color: var(--ink-2);
   white-space: nowrap; cursor: pointer;
 }
+/* 갈래 그림은 이제 선 그림(SVG)이다 — 칩 글자색을 그대로 물려받아 켜질 때 함께 짙어진다
+   (lib/장소갈래.ts 머리말). 줄어들면 안 되므로 flex 에서 뺀다. */
+.갈래칩 svg { flex: none; }
 .갈래칩::before {
   content: ''; position: absolute; left: 0; right: 0; top: 50%;
   height: var(--tap); transform: translateY(-50%);
 }
-.갈래칩[aria-pressed="true"] { background: var(--brand); color: #fff; box-shadow: var(--shadow-2); }
+/* 켜진 갈래 칩 — 출발지 칩과 **같은 생김새**다(2026-08-20 사용자 요청).
+   전에는 `--brand` 바탕에 흰 글자였는데, 두 줄이 같은 자리를 나눠 쓰면서(위 `data-탐색`)
+   같은 칩이 어느 줄이냐에 따라 파랗게도 회색으로도 켜졌다.
+   색이 바뀌는 결(--dur-state)은 아래 '누름 반응' 칸이 이미 걸어 뒀다. */
+.갈래칩[aria-pressed="true"] { background: var(--chip-on); color: var(--ink); }
 .갈래칩:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 /* 아직 못 받았거나 이 갈래가 비었을 때 — 자리를 비워 두면 '켰는데 아무 일도 안 났다'가 된다 */
 .갈래빔 {
@@ -524,15 +529,18 @@
   font-variant-numeric: tabular-nums;
 }
 .시트요약 .요약값 b { font-size: 14px; font-weight: 700; color: var(--ink); }
+/* ⚠ 2026-08-20 — **키웠다**(32 → 40px, 사람이 정했다). 같은 날 출발지 칩의 ✕ 가
+   사라지면서 이것이 삭제로 가는 하나뿐인 길이 됐다 — 하나뿐인 길이 요약 줄에서 가장
+   작은 것이면 안 된다. 그림도 휴지통에서 ✕ 로 바뀌었다(홈.tsx 의 `빼기표`). */
 .시트요약 .요약삭제 {
   all: unset;
   flex: none; box-sizing: border-box;
-  width: 32px; height: 32px; border-radius: 50%;
+  width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center;
-  color: var(--ink-3); cursor: pointer;
+  color: var(--ink-2); cursor: pointer;
   transition: color var(--dur-state) var(--ease-out), background var(--dur-state) var(--ease-out), transform var(--dur-press) var(--ease-out);
 }
-/* 32px 이라 손가락 기준에 못 미친다 — 투명하게만 넓힌다(`.현위치` 와 같은 수법) */
+/* 40px 이라 아직 손가락 기준(48)에 못 미친다 — 투명하게만 넓힌다(`.현위치` 와 같은 수법) */
 .시트요약 .요약삭제 { position: relative; }
 .시트요약 .요약삭제::before {
   content: ''; position: absolute; left: 50%; top: 50%;
@@ -543,17 +551,27 @@
 .시트요약 .요약삭제:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 /* 마지막 한 곳은 못 뺀다 — 눌러도 안 되는 것은 눌러 보기 전에 보여야 한다 */
 .시트요약 .요약삭제:disabled { opacity: .35; cursor: not-allowed; }
-.시트요약 .요약삭제:disabled:hover { color: var(--ink-3); background: none; }
+.시트요약 .요약삭제:disabled:hover { color: var(--ink-2); background: none; }
 
 /* 시트 밑단은 스냅한 만큼 탭바 밑으로 내려가 가려진다 — 그 양(--시트잘림, 시트끌기.ts 가
-   갱신)만큼 아래 여백을 더 줘야 마지막 글자가 중간에서 안 잘린다. */
+   갱신)만큼 아래 여백을 더 줘야 마지막 글자가 중간에서 안 잘린다.
+
+   ⚠ 거기에 `--시트밑` 이 하나 더 붙는다(2026-08-20). 까닭 —
+   시트가 열린 자리(browse 가 아닌 모드)에서는 **탭바가 미끄러져 내려가 없다.** 그러면
+   시트 밑단이 곧 화면 밑단이고, 폰의 시스템 네비게이션 바(홈 표시줄·제스처 바)가 바로
+   그 자리에 얹힌다 — `--시트잘림` 은 탭바 기준으로 잰 값이라 이걸 모른다. 실제로
+   출발지 시트를 '반'까지 올리면 마지막 줄이 네비게이션 바 밑에 깔렸다.
+   browse 에서는 0 이다: 그때는 탭바가 서 있고, 탭바가 제 `padding-bottom` 으로
+   그 자리를 이미 비워 두고 있다(globals.css 의 `.tabbar`). 두 번 비우면 헛 여백이 된다. */
+.셸 { --시트밑: var(--아래여백); }
+.셸[data-모드="browse"] { --시트밑: 0px; }
 .시트본문 {
   flex: 1; min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
-  padding: 4px 16px calc(20px + var(--시트잘림));
-  scroll-padding-bottom: calc(20px + var(--시트잘림));
+  padding: 4px 16px calc(20px + var(--시트밑) + var(--시트잘림));
+  scroll-padding-bottom: calc(20px + var(--시트밑) + var(--시트잘림));
 }
 
 /* ---------- 시트 안 공용 부품 ---------- */
@@ -578,6 +596,41 @@
 /* 16px 여백을 뚫고 끝까지 가는 가름줄 */
 .가름줄 { height: 1px; background: var(--line); margin: 15px -16px; }
 .칸이름 { font-size: 13px; font-weight: 700; margin: 0 0 10px; }
+
+/* 둘레 장소 시트의 정보 줄 — (그림) (값) 한 줄씩(시트내용_장소.tsx).
+   `.값들/.값줄`(왼쪽 이름 · 오른쪽 값)과 다른 꼴인 까닭: 여기 오는 것은 재어 본 숫자가
+   아니라 **그 자리에 딸린 것**(전화·주소)이라, 값이 길어 오른쪽 정렬이 안 선다. */
+.정보들 { display: flex; flex-direction: column; }
+.정보줄 {
+  display: flex; align-items: flex-start; gap: 11px;
+  margin: 0; padding: 11px 0;
+  min-height: var(--tap); box-sizing: border-box;
+  font-size: 13.5px; line-height: 1.5; color: var(--ink);
+  text-decoration: none;
+}
+.정보줄 + .정보줄 { border-top: 1px solid var(--line); }
+.정보그림 { flex: none; margin-top: 1px; color: var(--ink-3); }
+.정보값 { min-width: 0; word-break: keep-all; }
+/* 누를 수 있는 줄만 링크 티를 낸다 — 주소는 `<p>` 라 여기 안 걸린다 */
+a.정보줄 .정보값 { color: var(--brand-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+a.정보줄:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: var(--r-1); }
+
+/* 시트 맨 아래에서 **바깥 서비스로 나가는** 단추(시트내용_출발지.tsx 의 카카오맵 길찾기).
+   전역 `.cta`(꽉 찬 브랜드색)를 안 쓴다 — 그것은 이 화면의 주 행동('모임 만들기') 자리다.
+   여기서 나가는 것은 곁길이라 한 단 낮춰 테두리 단추로 둔다. */
+.바깥단추 {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; min-height: var(--tap); box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: var(--r-2);
+  background: var(--surface); color: var(--ink);
+  font-size: 14px; font-weight: 700; text-decoration: none;
+  cursor: pointer;
+  transition: background var(--dur-state) var(--ease-out), border-color var(--dur-state) var(--ease-out), transform var(--dur-press) var(--ease-out);
+}
+.바깥단추 svg { flex: none; color: var(--ink-3); }
+.바깥단추:hover { background: var(--surface-2); border-color: var(--ink-3); }
+.바깥단추:active { transform: scale(var(--press-scale)); }
+.바깥단추:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
 .값들 { display: flex; flex-direction: column; gap: 9px; }
 .값줄 { display: flex; align-items: center; gap: 10px; font-size: 13px; }
@@ -623,44 +676,162 @@
   box-shadow: 0 0 0 8px rgba(47, 107, 255, .22), 0 6px 18px rgba(47, 107, 255, .45);
 }
 
-/* 출발지 핀 — 번호 물방울. 그림 자체는 `핀그림.ts` 가 SVG 로 짓는다.
-   여기서는 '누를 수 있는 상자'만 만든다.
-   ⚠ `transform` 은 여기 두지 않는다 — 핀 끝이 좌표에 닿게 미는 값은 `핀밀기`(핀그림.ts)가
-   쥐고 있고, 카카오와 OSM 둘 다 인라인으로 그 값을 쓴다. CSS 에도 두면 두 곳이 다투게 된다. */
+/* 출발지 핀 — **안 고르면 번호 동그라미, 고르면 물방울**(2026-08-20 사용자 요청).
+   그 전에는 둘 다 물방울이고 고른 것만 7px 떠올랐는데, 출발지가 넷쯤 되면 뜬 것과
+   안 뜬 것이 눈으로 안 갈렸다. 꼴 자체가 달라지면 한눈에 갈린다 — 같은 날 둘레
+   장소 표식(아래 `.장소표식`)도 같은 규칙을 받았다.
+
+   물방울 그림 자체는 `핀그림.ts` 가 SVG 로 짓고, 동그라미는 여기 CSS 다.
+   ⚠ `transform` 은 여기 두지 않는다 — 좌표에 맞추는 밀기는 꼴마다 다르고(동그라미는
+   한가운데, 물방울은 끝), 그 두 값은 `핀그림.ts`(`원밀기`·`핀밀기`)가 쥐고 있다.
+   카카오와 OSM 둘 다 표식.ts 를 거쳐 인라인으로 그 값을 쓴다. CSS 에도 두면 다툰다. */
 .출발지핀 {
   all: unset;
   position: absolute;
   display: block;
+  /* 상자 크기·좌표점은 표식.ts 가 인라인으로 준다(핀그림.ts 의 `출발지상자`).
+     상자 자신은 손을 안 받는다 — 60×80 짜리 빈 판이 지도 탭과 이웃 핀을 삼키면 안 된다
+     (`.장소표식` 과 같은 규칙). 실제로 눌리는 것은 아래 두 꼴이다. */
+  pointer-events: none;
+}
+/* 두 꼴이 같은 자리에 겹쳐 서서 서로 반대로 흐려진다 — 그 사이가 '자라는' 움직임이다.
+   ⚠ `display:none` 으로 감추지 마라: 그러면 이을 것이 없어 톡 바뀐다. */
+.출발지동그라미, .출발지물방울 {
+  position: absolute;
+  pointer-events: auto;
   cursor: pointer;
-  /* 물방울은 34×48 이라 손가락 기준(48)에 가로가 14px 모자란다 — 가로만 넓힌다.
-     세로는 이미 48이고, 더 넓히면 위아래 핀이 서로를 먹는다. */
+  transition: opacity var(--dur-move) var(--ease-out), transform var(--dur-move) var(--ease-out);
 }
-.출발지핀::before {
-  content: ''; position: absolute; left: 50%; top: 0;
-  width: var(--tap); height: 100%;
-  transform: translateX(-50%);
-}
-.출발지핀 img { display: block; }
-.출발지핀:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: var(--r-1); }
-
-/* 장소 핀 — 탐색 모드에서만 지도에 올라온다(E단계) */
-.장소표식 {
-  /* 카카오 오버레이와 OSM 폴백이 **같은 클래스**를 쓴다 — 자리는 밖에서 주고(left/top)
-     가운데 맞추기는 이 transform 이 한다(`.내자리점` 과 같은 규칙). */
-  border: 0; padding: 0; font: inherit; line-height: 1;
-  transform: translate(-50%, -50%);
-  width: 34px; height: 34px; border-radius: 50%;
-  background: #fff; border: 2px solid var(--ink-3);
+/* 안 고른 꼴 — 물방울 **머리를 그대로 뗀** 모양이다(2026-08-20 사용자 요청,
+   "기존 핀 디자인과 최대한 유사하게"): 색 몸통 · 흰 테 · 흰 속 동그라미 · 핀 색 번호.
+   ⚠ 값 셋이 `핀그림.ts` 의 물방울과 짝이다 — 테 2.6(`테두리두께`) · 속 지름 14.8
+   (`글자원.r` 7.4 × 2) · 글자 11(`글자.크기`). CSS 가 TS 를 못 읽어 여기 한 번 더
+   적혀 있고, 한쪽만 고치면 두 꼴이 갈라진다. **지름은 여기 없다** — 그것만은
+   표식.ts 가 `출발지상자.원지름` 을 인라인으로 넣는다(자리 셈과 한 덩어리라서). */
+.출발지동그라미 {
   display: grid; place-items: center;
-  font-size: 16px; cursor: pointer;
+  box-sizing: border-box;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--c);
+  border: 2.6px solid #fff;
+  box-shadow: 0 1.4px 3.2px rgba(20, 24, 39, .32);
+}
+.출발지동그라미 b {
+  display: grid; place-items: center;
+  width: 14.8px; height: 14.8px; border-radius: 50%;
+  background: #fff; color: var(--c);
+  font-size: 11px; font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* 안 고른 자리 — 물방울은 없는 셈이고 동그라미가 제 크기로 선다.
+   물방울은 **끝을 붙잡고**(transform-origin 50% 100%) 자란다: 가리키는 자리는
+   안 움직이고 몸통만 솟는다. */
+.출발지물방울 {
+  display: block;
+  transform-origin: 50% 100%;
+  opacity: 0; transform: scale(.72);
+  pointer-events: none;
+}
+/* 고른 자리 — 뒤바뀐다. 동그라미는 물방울 머리 뒤로 사라지듯 살짝 커지며 흐려진다. */
+.출발지핀[data-고름="예"] .출발지물방울 { opacity: 1; transform: scale(1); pointer-events: auto; }
+.출발지핀[data-고름="예"] .출발지동그라미 { opacity: 0; transform: translate(-50%, -50%) scale(1.15); pointer-events: none; }
+/* 손가락 기준(48)을 투명하게 채운다 — 동그라미가 34px 이라 모자란다.
+   물방울에는 못 붙인다(`<img>` 는 가짜 요소를 못 가진다) — 세로 48은 이미 채우고,
+   그때는 이미 고른 핀이라 다시 눌러도 같은 시트가 열릴 뿐이다. */
+.출발지동그라미::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--tap); height: var(--tap); border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.출발지핀:focus-visible { outline: none; }
+.출발지핀:focus-visible .출발지물방울,
+.출발지핀:focus-visible .출발지동그라미 { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* 장소 표식 — 탐색 모드에서만 지도에 올라온다(E단계).
+
+   2026-08-20 에 통째로 다시 그렸다(사용자 요청). 전에는 흰 동그라미에 이모지 하나였고,
+   고르면 파랗게 칠해지는 것이 전부였다. 지금은 두 꼴을 **한 엘리먼트가 오간다**:
+
+     안 고른 것   갈래 색 동그라미(32)
+     고른 것      물방울(44 + 꼬리)로 커진다
+
+   ⚠ 두 꼴을 두 엘리먼트로 나누지 않는다 — 사이를 잇는 움직임이 사라져 톡 바뀐다.
+   ⚠ 색은 **갈래마다 다르다**(lib/장소갈래.ts 의 `갈래색`) — 표식이 `--c` 로 들고 온다.
+     시그니처 파랑은 여기 안 쓴다: 그 색은 중간지점 말풍선 것이다.
+   ⚠ 가게 이름은 안 적는다 — 까닭은 표식.ts 의 `장소표식만들기` 머리말에 적었다.
+   ⚠ 좌표에 닿는 점이 꼴마다 다르다: 안 골랐을 때는 **동그라미 한가운데**,
+     골랐을 때는 **꼬리 끝**(한가운데에서 22 - 2 + 12 = 32px 아래)이다.
+     이 숫자가 아래 크기와 어긋나면 핀이 가리키는 자리가 틀어진다. */
+.장소표식 {
+  /* 카카오 오버레이와 OSM 폴백이 **같은 엘리먼트**를 쓴다(표식.ts) — 자리는 밖에서
+     주고(left/top) 좌표 맞추기는 이 transform 이 한다(`.내자리점` 과 같은 규칙).
+
+     ⚠ **상자가 내용보다 큰 까닭** — 예전 홈(app/탐색/지도.tsx)이 "카카오 오버레이
+     래퍼가 박스 밖으로 삐져나온 그림을 잘라 낸다"는 기록을 남겼다. 2026-08-20 에 실제로
+     재 보니 지금 SDK 의 래퍼는 0×0 · overflow:visible 이라 **안 자른다** — 그래도 규칙은
+     지킨다: 커진 물방울도 꼬리도 전부 이 상자 **안**에 들어간다.
+     대신 상자 자신은 손을 안 받는다(pointer-events:none) — 안 그러면 보이지도 않는
+     판이 지도 탭과 옆 가게를 통째로 삼킨다. 실제로 눌리는 것은 `.장소핀` 하나다. */
+  position: absolute;
+  border: 0; padding: 0; margin: 0; background: none; font: inherit;
+  width: 60px; height: 80px;
+  pointer-events: none;
+  /* 동그라미 한가운데(30,30)가 좌표에 닿는다 */
+  transform: translate(-30px, -30px);
+  transition: transform var(--dur-move) var(--ease-out);
+}
+/* 고르면 꼬리 끝(30,62)이 좌표에 닿는다. 가로는 안 움직인다 — 동그라미가 제 한가운데를
+   쥔 채로 커지기 때문이다(아래 `.장소핀` 의 translate(-50%,-50%)). */
+.장소표식[data-고름="예"] { transform: translate(-30px, -62px); }
+.장소핀 {
+  position: absolute; left: 30px; top: 30px;
+  width: 32px; height: 32px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--c); color: #fff;
+  border: 2px solid #fff;
+  display: grid; place-items: center;
   box-shadow: var(--shadow-1);
+  transition: width var(--dur-move) var(--ease-out), height var(--dur-move) var(--ease-out),
+              box-shadow var(--dur-state) var(--ease-out);
 }
-.장소표식 { border: 2px solid var(--ink-3); }
-.장소표식[data-고름="예"] {
-  border-color: var(--brand); background: var(--brand);
-  box-shadow: 0 0 0 7px rgba(47, 107, 255, .2);
+.장소표식[data-고름="예"] .장소핀 {
+  width: 44px; height: 44px;
+  /* 그늘은 갈래 색을 안 따라간다 — 색마다 그늘을 따로 만들면 여섯 벌이 되고,
+     짙은 갈래(주차장)에서는 그늘이 색보다 어두워 테두리처럼 보인다. */
+  box-shadow: 0 6px 18px rgba(23, 23, 28, .32);
 }
-.장소표식:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+/* 32px 은 손가락 기준(48)에 모자란다 — 투명하게만 넓힌다(`.출발지핀` 과 같은 수법).
+   48 까지 안 넓히는 까닭: 둘레 장소는 서로 몇십 미터 안에 붙어 서서, 넓힐수록 옆
+   가게의 몫을 먹는다. */
+.장소핀::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 44px; height: 44px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+/* 동그라미가 커지면 그림도 함께 커진다 — 안 그러면 큰 접시에 놓인 작은 그림이 된다.
+   SVG 의 width·height 속성을 CSS 가 덮는다. */
+.장소핀 svg { transition: width var(--dur-move) var(--ease-out), height var(--dur-move) var(--ease-out); }
+.장소표식[data-고름="예"] .장소핀 svg { width: 22px; height: 22px; }
+/* 물방울 꼬리 — 고르기 전에는 높이 0 으로 접혀 있다가 밑으로 자란다.
+   `border` 삼각형이라 색이 한 곳(위 테두리)에만 있다. */
+.장소핀::after {
+  content: ''; position: absolute; left: 50%; top: 100%;
+  width: 0; height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 12px solid var(--c);
+  transform: translate(-50%, -2px) scaleY(0);
+  transform-origin: 50% 0;
+  transition: transform var(--dur-move) var(--ease-out);
+}
+.장소표식[data-고름="예"] .장소핀::after { transform: translate(-50%, -2px) scaleY(1); }
+.장소표식:focus-visible { outline: none; }
+.장소표식:focus-visible .장소핀 { outline: 2px solid var(--brand); outline-offset: 3px; }
 
 /* 지금 있는 자리. 출발지 핀과 **한눈에 갈라져야** 한다 — 저건 내가 넣은 곳이고
    이건 내가 서 있는 곳이다(지금 판 탐색.module.css 의 .내자리점 을 그대로 옮겼다). */
@@ -701,13 +872,17 @@
    ⚠ 지도 위 표식(.가운데표식 · .장소표식 · .내자리점 · .출발지핀)과 시트 손잡이는
    **뺐다.** 앞은 좌표에 transform 으로 앵커돼 있어 줄이면 자리가 튀고, 손잡이는
    잡아 끄는 것이지 누르는 것이 아니다. 까닭은 globals.css 의 같은 칸에도 적어 뒀다. */
-.칩속, .칩빼기, .갈래칩, .AI칩, .패널줄 {
+.출발지칩, .갈래칩, .AI칩, .패널줄 {
   transition: transform var(--dur-press) var(--ease-out),
               background var(--dur-state) var(--ease-out),
               color var(--dur-state) var(--ease-out),
               box-shadow var(--dur-state) var(--ease-out);
 }
-.칩속:active, .칩빼기:active, .갈래칩:active, .AI칩:active, .패널줄:active,
+/* ⚠ 줄어드는 것은 `.칩속`(안쪽 단추)이 아니라 **`.출발지칩`(알약 상자)** 이다.
+   ✕ 가 빠지면서 칩은 단추 하나짜리 물건이 됐고, 켜진 칩은 상자가 색을 쥔다 —
+   안쪽 글자만 줄이면 회색 알약은 그대로 선 채 글씨만 오므라들어 눌린 게 아니라
+   글자가 흔들린 것으로 보인다(2026-08-20). */
+.출발지칩:has(.칩속:active), .갈래칩:active, .AI칩:active, .패널줄:active,
 .AI단추:active, .현위치:active, .탐색단추:active, .시트요약 .요약삭제:active:not(:disabled) {
   transform: scale(var(--press-scale));
 }

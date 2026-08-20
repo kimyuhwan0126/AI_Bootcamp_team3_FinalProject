@@ -9,6 +9,14 @@ export type Place = {
   /** 카카오 category_name — "음식점 > 술집 > 호프,요리주점". **술집을 음식점에서 갈라내는
       것은 이것뿐이다**(lib/장소갈래.ts 머리말). 옛 캐시 줄에는 없을 수 있어 선택값이다. */
   categoryDetail?: string;
+  /* ── 아래 둘은 2026-08-20 에 늘렸다 — 홈 탐색 모드의 **장소 시트**가 쓴다
+     (app/홈/시트내용_장소.tsx). 그 시트가 이름과 주소만 적으면 눌러서 얻는 것이 없다.
+     ⚠ 둘 다 **카카오에만 있다.** OSM 폴백에는 없고, 카카오도 안 주는 가게가 많다 —
+     화면은 있을 때만 그 줄을 세운다. 옛 캐시 줄에도 없으므로 선택값이다. */
+  /** 카카오 phone — "031-413-5051". 빈 문자열로 오는 일이 잦아 아래에서 걸러 담는다. */
+  phone?: string;
+  /** 카카오 place_url — 그 가게의 카카오맵 페이지. 사진·영업시간은 우리가 안 받아 온다. */
+  url?: string;
 };
 
 /* 몇 곳은 불러왔고 몇 곳은 못 불러왔다 — 목록에 곁가지로 얹는다(정규식 match.index 와 같은 결).
@@ -217,6 +225,9 @@ async function fromKakao(lat: number, lng: number, radius: number, 변종: 둘�
             address: d.road_address_name || d.address_name || '',
             lat: Number(d.y), lng: Number(d.x),
             category: d.category_group_name, categoryDetail: d.category_name,
+            /* 빈 문자열은 아예 안 담는다 — 담으면 캐시 줄만 길어지고, 화면은 `!!phone`
+               으로 가르므로 결과가 같다. `undefined` 는 JSON.stringify 가 지운다. */
+            phone: d.phone || undefined, url: d.place_url || undefined,
           });
         }
         갈래성공++;

@@ -19,16 +19,18 @@
      이동 요약 (거리 · 걸리는 시간 · 이 모임에서 가장 오래 걸리는 사람인지)
      오는 길   (카카오가 준 구간별 안내 — 목업의 직선거리 **추정값**과 달리 진짜 경로다) */
 
+import { useEffect, useState } from 'react';
 import type { Origin, Transport } from '../originfield';
 import type { RouteStep } from '@/lib/routes';
 import { 수단이름 } from '@/lib/수단표기';
+import { 길찾기주소 } from './카카오길찾기';
 import s from './홈.module.css';
 
 const 분 = (초: number) => `${Math.round(초 / 60)}분`;
 const 킬로 = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`);
 
 export default function 시트내용출발지({
-  출발지, 이동수단, 이동수단정하기, 경로, 경로구하는중, 가장오래,
+  출발지, 이동수단, 이동수단정하기, 경로, 경로구하는중, 가장오래, 가운데, 가운데라벨,
 }: {
   /* 이름은 화면에 안 적는다(요약 줄이 적는다) — 읽어 주는 기계에게 '누구의 수단인가'를
      말하는 데만 쓴다. 그 줄과 이 칸은 서로 다른 자리라 눈으로 잇지 못하는 사람도 있다. */
@@ -40,8 +42,29 @@ export default function 시트내용출발지({
   경로구하는중: boolean;
   /** 이 사람이 이 모임에서 가장 오래 걸리는가 */
   가장오래: boolean;
+  /* 어디까지 가는가 — 아래 '카카오맵에서 길찾기' 의 도착지다. 가운데가 없으면
+     시트 자체가 안 열리므로(홈.tsx 의 `펼칠수있나`) 여기 null 이 올 일은 없지만,
+     타입으로 못 박지 않는다: 그 규칙이 바뀌어도 이 칸이 조용히 틀리면 안 된다. */
+  가운데: { lat: number; lng: number } | null;
+  가운데라벨: string;
 }) {
   const 걸리는시간 = 경로?.durationS != null ? 분(경로.durationS) : null;
+
+  /* ── 카카오맵으로 넘기는 주소 (2026-08-20 사용자 요청) ────────
+     주소를 짓는 데 카카오 SDK 의 좌표 변환이 필요해 **비동기**다(카카오길찾기.ts).
+     못 지으면 null 로 남고 단추도 안 뜬다 — 눌러도 아무 데도 안 가는 단추를 두느니
+     없는 편이 낫다. 출발지·도착지·수단 중 하나라도 바뀌면 다시 짓는다. */
+  const [길주소, set길주소] = useState<string | null>(null);
+  useEffect(() => {
+    if (!가운데) { set길주소(null); return; }
+    let 살아있나 = true;
+    길찾기주소(
+      { lat: 출발지.lat, lng: 출발지.lng, 이름: 출발지.name },
+      { lat: 가운데.lat, lng: 가운데.lng, 이름: 가운데라벨 },
+      이동수단,
+    ).then((u) => { if (살아있나) set길주소(u); });
+    return () => { 살아있나 = false; };
+  }, [출발지.lat, 출발지.lng, 출발지.name, 가운데?.lat, 가운데?.lng, 가운데라벨, 이동수단]);
 
   return (
     <div data-slot="시트-출발지">
@@ -99,6 +122,30 @@ export default function 시트내용출발지({
               </li>
             ))}
           </ol>
+        </>
+      )}
+
+      {/* 시트 맨 아래 — 카카오맵으로 넘어가 실제 길을 본다(2026-08-20 사용자 요청).
+          위 '오는 길' 은 우리가 받아 온 요약이고, 이 단추는 **실시간 안내가 있는 곳**으로
+          간다. 그래서 맨 아래다: 여기까지 읽고도 더 볼 것이 있을 때 누른다.
+
+          ⚠ `<a target="_blank">` 다. 같은 탭에서 나가면 넣어 둔 출발지가 있는 화면을
+          잃는다(sessionStorage 라 돌아오면 살아 있지만, 지도 자리·시트 자리는 처음으로
+          돌아간다). `rel="noreferrer"` 는 새 탭에서 우리 창을 못 건드리게 막는다.
+
+          ⚠ 자동차는 카카오가 **경로까지 바로** 그려 주고, 대중교통은 출발·도착이 채워진
+          길찾기 화면까지 간다(까닭은 카카오길찾기.ts 머리말에 재 본 대로 적었다). */}
+      {!!길주소 && (
+        <>
+          <div className={s.가름줄} />
+          <a className={s.바깥단추} href={길주소} target="_blank" rel="noreferrer"
+            data-slot="카카오길찾기">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 10.8 21 3l-7.8 18-2.1-7.1-8.1-3.1Z" />
+            </svg>
+            카카오맵에서 길찾기
+          </a>
         </>
       )}
     </div>
