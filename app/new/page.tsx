@@ -136,7 +136,7 @@ export default function New() {
         <h1>모임 만들기</h1>
       </div>
       <div className="sheet" style={{ maxHeight: 'none', flex: 1 }}>
-        <p className="mut" style={{ marginTop: 0 }}>중간에서 만나요 — 각자 가고 싶은 곳을 고르면 가장 많이 선정된 곳으로 정해집니다.</p>
+        <p className="mut" style={{ marginTop: 0 }}>중간에서 만나요 — 각자 가고 싶은 곳을 고르면 가장 많이 고른 곳으로 정해져요.</p>
 
         {/* 로그인이 필요하다는 것을 **폼 위에서** 먼저 말한다 (논의123).
             아래 `로그인필요` 안내와 겹치지 않게, 이미 눌러 본 사람에게는 이 줄을 숨긴다 —
@@ -156,7 +156,7 @@ export default function New() {
         </div>
         <div className="fld">
           <label htmlFor="hn">내 이름</label>
-          <input id="hn" value={host} onChange={(e) => setHost(e.target.value)} placeholder="방장이 됩니다" />
+          <input id="hn" value={host} onChange={(e) => setHost(e.target.value)} placeholder="방장이 돼요" />
         </div>
         {/* 어디서 온 값인지 말해 준다 — 안 그러면 남이 넣어 둔 값처럼 보인다.
             두고 온 출발지가 있으면 그것도 밝힌다: 말 없이 하나만 남으면 사라진 줄 안다 */}

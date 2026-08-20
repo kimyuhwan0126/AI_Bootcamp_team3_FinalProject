@@ -200,7 +200,7 @@ export default function 내정보() {
           </div>
         )}
 
-        <button className="cta" onClick={저장} disabled={pin덜됐다}>저장</button>
+        <button className="cta" onClick={저장} disabled={pin덜됐다}>내 정보 저장</button>
         {넣어뒀다 && <button className="cta sub" onClick={지우기}>이 기기에서 지우기</button>}
         {알림 && <p className={s.알림} role="status">{알림}</p>}
       </div>

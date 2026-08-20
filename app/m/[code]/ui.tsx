@@ -309,7 +309,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
      서버가 낼 수 있는 코드를 전부 담고, 그래도 모르는 것은 일반 문구로 덮는다 —
      영문 코드는 어떤 경우에도 사용자에게 보이지 않아야 한다. */
   const say = useCallback((code: string) => ({
-    ai_unavailable: 'AI 추천을 지금 부를 수 없어요',
+    ai_unavailable: 'AI 추천을 지금 부를 수 없어요 — 잠시 뒤에 다시 눌러 주세요',
     quota_kakao: v.me.isHost ? '카카오 무료 사용량을 다 썼어요 — 콘솔에서 한도를 늘려 주세요'
                              : '지금은 장소를 찾을 수 없어요',
     forbidden: '방장만 할 수 있어요',
@@ -851,7 +851,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
        · 혼자면 "나가면 모임이 사라져요" 를 묻고 → **예 를 눌러도 서버가 거절한다**
      둘 다 못 지킬 약속이었다. 방장이 빠지는 길은 **[모임 설정] 안의 [✕ 모임 삭제]** 하나뿐이다. */
   const leave = async () => {
-    if (!window.confirm('이 모임에서 나갑니다. 내가 고른 것도 함께 빠져요.')) return;
+    if (!window.confirm('이 모임에서 나가요. 내가 고른 것도 함께 빠져요.')) return;
     if (await send({ action: 'leave' })) location.href = '/';
   };
 
@@ -1023,8 +1023,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
           </p>
           <p className="mut" style={{ margin: '8px 0 18px' }}>
             {강퇴
-              ? '그래서 진행 상황은 볼 수 없어요. 다시 들어가려면 방장의 승인이 필요합니다.'
-              : '승인되면 바로 들어갈 수 있어요. 24시간 안에 답이 없으면 신청이 사라집니다.'}
+              ? '그래서 진행 상황은 볼 수 없어요. 다시 들어가려면 방장이 승인해야 해요.'
+              : '승인되면 바로 들어갈 수 있어요. 24시간 안에 답이 없으면 신청이 사라져요.'}
           </p>
           {강퇴 && (
             <a className="cta" style={{ textAlign: 'center', lineHeight: '48px', textDecoration: 'none' }}
@@ -1364,14 +1364,14 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
         )}
 
         {stage === 'region' && !done_ && (
-          <p className="note">지도를 누르면 그 자리의 <b>지역</b>이 미리보기로 떠요 — 한 번 더 누르면 후보가 됩니다.
+          <p className="note">지도를 누르면 그 자리의 <b>지역</b>이 미리보기로 떠요 — 한 번 더 누르면 후보가 돼요.
             여러 곳을 골라도 되고, 같은 곳을 다시 누르면 취소돼요.
-            <b> 가장 많은 사람이 고른 지역</b>으로 정해집니다.</p>
+            <b> 가장 많은 사람이 고른 지역</b>으로 정해져요.</p>
         )}
         {stage === 'place' && !done_ && (
-          <p className="note">지도를 누르면 <b>그 근처 지점</b>이 뜨고, 고르면 미리보기가 됩니다 — 한 번 더 눌러야 후보예요.
+          <p className="note">지도를 누르면 <b>그 근처 지점</b>이 뜨고, 고르면 미리보기가 돼요 — 한 번 더 눌러야 후보예요.
             {region && <> <b>{region.name}</b> 안에서 골라 주세요.</>} 여러 곳을 골라도 되고,
-            같은 곳을 다시 누르면 취소돼요. <b>가장 많은 사람이 고른 지점</b>으로 정해집니다.</p>
+            같은 곳을 다시 누르면 취소돼요. <b>가장 많은 사람이 고른 지점</b>으로 정해져요.</p>
         )}
         {/* 혼자면 확정을 막되 이유를 말한다 (논의68) — 막아 두고 말이 없으면 고장으로 읽힌다 */}
         {v.me.isHost && active.length === 1 && !done_ && (
@@ -1404,8 +1404,11 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
               {withOrigin.map((p) => {
                 const r = routes[p.id];
                 const 말 = !r || r.st === 'loading' ? '경로를 찾는 중…'
-                  : r.st === 'error' ? '경로를 못 불러왔어요'
-                  : !r.found ? '경로를 찾지 못했어요'
+                  /* 둘은 다른 일이다 — 앞은 우리가 못 불러온 것(다시 하면 될 수 있다),
+                     뒤는 카카오가 '길이 없다'고 답한 것(다시 해도 같다). 전에는 '못 불러왔어요' ·
+                     '찾지 못했어요' 로 거의 같은 말이라 어느 쪽인지 알 수 없었다. */
+                  : r.st === 'error' ? '길을 못 불러왔어요'
+                  : !r.found ? '이어지는 길이 없어요'
                   : [r.distanceM != null ? `${(r.distanceM / 1000).toFixed(1)}km` : null,
                      r.durationS != null ? `${Math.round(r.durationS / 60)}분` : null]
                       .filter(Boolean).join(' · ') || '경로를 찾았어요';
@@ -1452,7 +1455,8 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                           <p className="mut">
                             {!r || r.st === 'loading' ? '경로를 찾는 중이에요…'
                               : r.st === 'ok' && r.found ? '상세 경로 안내가 없어요 — 자차 이동은 구간을 안 나눠요.'
-                              : '경로를 아직 못 찾았어요.'}
+                              : r?.st === 'error' ? '길을 못 불러왔어요 — 화면을 새로 열면 다시 불러와요.'
+                              : '두 곳을 잇는 길을 못 찾았어요.'}
                           </p>
                         )}
                       </div>
@@ -1605,7 +1609,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                 <>
                   <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                     <button className="fab" style={{ flex: 1 }} onClick={() => setSettings(false)}>취소</button>
-                    <button className="fab primary" style={{ flex: 1 }} disabled={busy} onClick={saveSettings}>저장</button>
+                    <button className="fab primary" style={{ flex: 1 }} disabled={busy} onClick={saveSettings}>설정 저장</button>
                   </div>
                   {/* 되돌릴 수 없는 것은 따로, 맨 아래 */}
                   <div className="zone">
@@ -1761,7 +1765,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
               {/* 단계 이름 대신 무엇을 다시 고르는지로 말한다 (논의111 · 117).
                   지역을 다시 고르면 모아 둔 지점은 사라진다 (논의87) — 그대로 있다고 말하지 않는다. */}
               다시 <b>{rewound}</b>부터 골라요.
-              {rewound === '지역' && ' 지점은 지역이 정해진 뒤에 다시 고릅니다.'}
+              {rewound === '지역' && ' 지점은 지역이 정해진 뒤에 다시 골라요.'}
             </p>
             <button className="fab primary" style={{ width: '100%' }}
               onClick={() => setRewound(null)}>알겠어요</button>
