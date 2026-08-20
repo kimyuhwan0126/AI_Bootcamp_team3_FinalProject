@@ -46,7 +46,9 @@ const FIT = 0.72;
    그 그림이 필요한 곳은 `app/m/[code]/ui.tsx` 와 `globals.css` 두 곳뿐이고 거기는 그대로다. */
 
 export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가운데', 경로들,
-  여백, 고른출발지 = -1, 출발지누름, 가운데누름, 지도누름 }: {
+  여백, 고른출발지 = -1, 출발지누름, 가운데누름, 지도누름,
+  내자리알림, 손댐알림, 맞춤요청,
+  장소들, 고른장소, 장소누름 }: {
   출발지들: 점[];
   가운데: { lat: number; lng: number } | null;
   /* 기준(거리·시간)에 따라 가운데 핀 이름표를 바꾼다(탐색.tsx, 2026-08-17) — 같은 자리라도
@@ -70,6 +72,30 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
   가운데누름?: () => void;
   /* 지도 빈 곳을 누르면 — browse ⇄ clean 을 오간다 */
   지도누름?: () => void;
+  /* ── 주변 탐색(E단계)에서만 오는 것들 ────────────────────
+     중간지점 둘레의 장소. 출발지 핀보다 **아래**에 깔린다 — 내가 넣은 자리가 늘 먼저
+     읽혀야 한다. 탐색이 꺼져 있으면 빈 배열이라 아무것도 안 그린다. */
+  장소들?: { id: string; name: string; lat: number; lng: number; 그림: string }[];
+  /** 지금 고른 장소 — 그 핀만 파랗게 도드라진다 */
+  고른장소?: string | null;
+  장소누름?: (id: string) => void;
+  /* 지금 있는 자리를 알아냈을 때 셸에게 알린다 — 셸이 '현위치로 맞추기' 를 켤지 말지
+     이것으로 가른다(모르면 그 단계를 건너뛴다). 위치를 묻는 곳은 여기 하나다. */
+  내자리알림?: (자리: { lat: number; lng: number } | null) => void;
+  /* 사람이 지도를 만졌다고 셸에 알린다 — 한 번 만질 때마다 한 번만 부른다.
+     셸은 이것을 받아 과녁 단추를 기본 상태로 되돌린다(홈.tsx 의 `손댐`). */
+  손댐알림?: () => void;
+  /* 사람이 "여기를 보여 달라"고 시켰다는 알림 — 과녁 단추(내자리·전체)와 출발지 칩(한곳).
+     `회차` 가 올라갈 때마다 한 번씩 맞춘다 — 같은 갈래를 거듭 눌러도 다시 맞춰야 하므로
+     갈래만으로는 못 가른다.
+     ⚠ 이것 말고 지도를 저 혼자 옮기는 길은 '출발지·가운데가 바뀌었을 때' 뿐이다
+     (아래 `손댐` 주석 참고) — 화면을 눌렀다고 지도가 튀면 안 된다. */
+  맞춤요청?: {
+    갈래: '내자리' | '전체' | '한곳';
+    /** '한곳' 일 때 어디로 */
+    점?: { lat: number; lng: number };
+    회차: number;
+  };
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [z, setZ] = useState(13);
@@ -91,24 +117,27 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
      없어요" 안내가 그 자리를 채운다). */
   const [내자리, set내자리] = useState<{ lat: number; lng: number } | null>(null);
 
+  /* 셸에 알리는 함수는 셸이 그릴 때마다 새 함수다 — ref 에 담아 둔다(deps 에 넣으면
+     위치를 다시 묻는다). */
+  const 내자리알림칸 = useRef(내자리알림);
+  내자리알림칸.current = 내자리알림;
+
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
     navigator.geolocation.getCurrentPosition(
-      (p) => set내자리({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      (p) => {
+        const 자리 = { lat: p.coords.latitude, lng: p.coords.longitude };
+        set내자리(자리);
+        내자리알림칸.current?.(자리);
+      },
       /* 거절·시간초과·못 찾음을 가르지 않는다 — 사람이 할 일은 셋 다 같다(출발지를 손으로 넣는다) */
       () => {},
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 },
     );
   }, []);
 
-  /* 출발지가 하나도 없을 때만 내 자리로 지도를 맞춘다 — 출발지가 들어오면
-     아래 '출발지에 맞추기' 가 임자다. 둘이 다투면 방금 넣은 출발지가 화면 밖으로 밀린다. */
-  useEffect(() => {
-    if (!내자리 || 출발지들.length) return;
-    setC(내자리);
-    setZ(15);            /* 동네가 보이는 배율 — 어디인지 알아볼 수 있어야 '내 자리' 가 뜻이 있다 */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [내자리, 출발지들.length]);
+  /* 출발지가 하나도 없을 때 내 자리로 맞추는 일은 아래 `점들맞추기` 가 한다 —
+     카카오와 OSM 이 같은 한 곳에서 옮겨야 두 지도가 갈라지지 않는다. */
 
   /* 타일을 받을 만한 때인가. 전에는 '출발지가 있을 때만' 이었다 —
      홈에 들를 때마다 남의 타일 서버에서 열 몇 장을 받는 것을 막으려던 것이다.
@@ -171,6 +200,39 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     return () => window.kakao.maps.event.removeListener(m, 'click', 손);
   }, [카카오준비]);
 
+  /* ── 사람이 지도에 손을 댔나 ────────────────────────────────
+     **한 번이라도 대면 지도는 저 혼자 안 움직인다.** 2026-08-20 사용자 신고:
+     지도를 한 번 누르면(clean 모드) 위아래가 밀려 사라지면서 `여백` 이 확 바뀌고,
+     그 여백이 바뀔 때마다 아래 맞춤이 다시 돌아 보고 있던 자리가 제멋대로 튀었다.
+     여백은 여전히 봐야 한다(처음 열 때 시트·탭바가 자리를 잡고 나서 한 번 맞춰야
+     핀이 시트 밑에 깔리지 않는다) — 그래서 '아직 손 안 댔을 때만' 으로 좁혔다.
+
+     ⚠ 카카오의 `dragstart`·`zoom_changed` 로 안 본다: `setBounds` 같은 **우리 손**도
+     그 이벤트를 똑같이 쏘아서, 맞추자마자 스스로 '사람이 댔다'고 적어 버린다.
+     칸 자체의 포인터·휠은 사람 손일 때만 온다 — 그것으로 가른다.
+     핀을 누른 것도 손댄 것으로 친다(시트가 열려 여백이 바뀌는데, 그때도 튀면 안 된다). */
+  const 손댐 = useRef(false);
+  /* 셸에 알리는 함수는 그릴 때마다 새 함수다 — ref 로 집어 온다(리스너를 다시 안 붙인다) */
+  const 손댐알림칸 = useRef(손댐알림);
+  손댐알림칸.current = 손댐알림;
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    /* 이미 손댄 뒤로는 안 알린다 — 끄는 동안 포인터가 몇 번을 와도 셸을 한 번만 흔든다.
+       `손댐` 은 새 출발지가 들어오거나 과녁 단추를 눌렀을 때 다시 풀린다(아래 ⓐ·ⓓ). */
+    const 댐 = () => {
+      if (손댐.current) return;
+      손댐.current = true;
+      손댐알림칸.current?.();
+    };
+    el.addEventListener('pointerdown', 댐, true);
+    el.addEventListener('wheel', 댐, { capture: true, passive: true });
+    return () => {
+      el.removeEventListener('pointerdown', 댐, true);
+      el.removeEventListener('wheel', 댐, true);
+    };
+  }, []);
+
   /* 창 크기가 바뀌면 카카오 지도도 다시 그려야 한다 — 스스로 못 알아챈다 */
   useEffect(() => {
     const el = box.current;
@@ -183,38 +245,105 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     return () => ro.disconnect();
   }, []);
 
-  /* 출발지가 바뀔 때마다 다시 맞춘다 — 모임 화면과 규칙이 다른 자리다.
-     거기서는 남이 찍을 때마다 지도를 되돌리면 지도를 뺏는 셈이라 한 번만 맞췄지만,
-     여기서 지도를 움직이는 사람은 나 하나다. 방금 넣은 출발지가 화면 밖이면 넣은 뜻이 없다.
-     ⚠ OSM 폴백에서만 쓴다 — 카카오가 살아 있으면 아래 카카오 효과가 LatLngBounds 로 맞춘다.
+  /* ── 지도를 어디에 맞출 것인가 ─────────────────────────────
+     맞추는 셈은 **여기 한 곳**이다 — 카카오면 LatLngBounds 로, 막혔으면 `여백맞추기` 로
+     같은 점들을 같은 여백에 넣는다. 전에는 두 곳(아래 카카오 효과 · 여기 OSM 효과)이
+     따로 맞춰서, 한쪽만 고치면 두 지도가 다르게 보였다.
+
      ⚠ 2026-08-22 — **가운데도 상자에 넣는다**(실사용 신고로 찾은 사고: AI 추천은 출발지들의
      기하학적 가운데가 아니라 AI 가 고른 자리라 출발지 상자 밖으로 나갈 수 있다 — 그러면
-     핀 좌표는 맞는데 지금 보이는 지도 범위 밖이라 화면에서 통째로 안 보였다. 카카오 쪽은
-     이미 가운데를 상자에 넣고 있었다(아래 카카오 효과의 LatLngBounds) — 여기(OSM)만
-     빠져 있던 것을 맞춘다. 거리·시간 가운데는 원래도 출발지 상자 안이라(거리는 평균,
-     시간도 근처) 못 느꼈을 뿐 같은 사고였다. */
-  /* 여백을 안 주면 예전처럼 사방을 똑같이 비운다 — (1-FIT)/2 씩이 그때와 같은 양이다.
+     핀 좌표는 맞는데 지금 보이는 지도 범위 밖이라 화면에서 통째로 안 보였다).
+     부르는 쪽이 점들을 만들 때 가운데를 같이 넣어 준다.
+
+     여백을 안 주면 예전처럼 사방을 똑같이 비운다 — (1-FIT)/2 씩이 그때와 같은 양이다.
      `여백` 을 객체째 deps 에 넣으면 셸이 그릴 때마다 새 객체라 지도가 계속 튄다 —
-     네 숫자를 문자열로 굳혀 값이 진짜 바뀔 때만 다시 맞춘다. */
+     네 숫자를 문자열로 굳혀 값이 진짜 바뀔 때만 본다. */
   const 실여백: 여백꼴 = 여백 ?? {
     위: size.h * ((1 - FIT) / 2), 아래: size.h * ((1 - FIT) / 2),
     좌: size.w * ((1 - FIT) / 2), 우: size.w * ((1 - FIT) / 2),
   };
   const 여백서명 = `${Math.round(실여백.위)},${Math.round(실여백.아래)},${Math.round(실여백.좌)},${Math.round(실여백.우)}`;
+  /* 맞추는 순간의 값을 읽으려고 ref 에 담는다 — deps 에 넣으면 여백이 조금만 달라져도
+     아래 효과들이 다시 돌아, 고쳐 놓은 '제멋대로 튀는' 사고가 되돌아온다. */
+  const 실여백참 = useRef(실여백); 실여백참.current = 실여백;
+  const 크기참 = useRef(size); 크기참.current = size;
 
   const 서명 = 출발지들.map((o) => `${o.lat},${o.lng}`).join('|');
-  useEffect(() => {
-    if (!카카오죽음 || !출발지들.length) return;
-    const 점들 = 가운데 ? [...출발지들, 가운데] : 출발지들;
-    const 맞춤 = 여백맞추기(점들, { 폭: size.w, 높이: size.h }, 실여백);
+
+  /** 이 점들이 다 보이게 지도를 옮긴다. `가까이` 는 점이 하나일 때 쓰는 동네 배율이다. */
+  const 점들맞추기 = useCallback((점들: { lat: number; lng: number }[], 가까이 = false) => {
+    if (!점들.length) return;
+    const 여 = 실여백참.current, 크기 = 크기참.current;
+    const m = 카카오맵.current;
+    if (카카오준비 && m) {
+      if (가까이 && 점들.length === 1) {
+        m.setCenter(new window.kakao.maps.LatLng(점들[0].lat, 점들[0].lng));
+        m.setLevel(5);
+        return;
+      }
+      const bounds = new window.kakao.maps.LatLngBounds();
+      점들.forEach((p) => bounds.extend(new window.kakao.maps.LatLng(p.lat, p.lng)));
+      /* 카카오는 (위, 오른쪽, 아래, 왼쪽) 순으로 여백을 받는다 — 셸이 준 값을 그대로 넘긴다.
+         전에는 사방 56px 고정이었다. 전체화면에서는 그러면 시트가 아래를 340px 이나 덮는데도
+         지도는 그걸 모르고 맞춰서, 아래쪽 핀이 시트에 깔렸다. */
+      m.setBounds(bounds,
+        Math.round(여.위), Math.round(여.우), Math.round(여.아래), Math.round(여.좌));
+      return;
+    }
+    /* OSM 폴백 */
+    if (가까이 && 점들.length === 1) { setC(점들[0]); setZ(15); return; }
+    const 맞춤 = 여백맞추기(점들, { 폭: 크기.w, 높이: 크기.h }, 여);
     if (!맞춤) return;
     setC(맞춤.가운데);
     setZ(맞춤.배율);
-    /* 서명 하나로 출발지 바뀜을 본다 — 배열을 그대로 두면 그릴 때마다 새 배열이라 늘 다시 맞춘다.
-       가운데는 좌표 값으로 본다(객체 참조로 보면 매 그리기마다 새 객체라 늘 다시 맞춘다 —
-       지도가 사람 손을 뺏듯 자꾸 튄다). */
+  }, [카카오준비]);
+
+  /* 지금 화면에 담아야 할 점들 — 출발지 + 가운데. 함수로 두는 까닭은 위와 같다(새 배열). */
+  const 담을것 = useCallback(
+    () => [...출발지들, ...(가운데 ? [가운데] : [])],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [카카오죽음, 서명, size.w, size.h, 가운데?.lat, 가운데?.lng, 여백서명]);
+    [서명, 가운데?.lat, 가운데?.lng],
+  );
+
+  /* ⓐ 보여 줄 것이 바뀌면 다시 맞춘다 — 모임 화면과 규칙이 다른 자리다.
+     거기서는 남이 찍을 때마다 지도를 되돌리면 지도를 뺏는 셈이라 한 번만 맞췄지만,
+     여기서 지도를 움직이는 사람은 나 하나다. 방금 넣은 출발지가 화면 밖이면 넣은 뜻이 없다.
+     새 것이 들어왔으니 `손댐` 도 푼다 — 여기서부터는 다시 지도가 거들어도 되는 자리다. */
+  useEffect(() => {
+    if (!출발지들.length) return;
+    손댐.current = false;
+    점들맞추기(담을것());
+  }, [점들맞추기, 담을것, 출발지들.length]);
+
+  /* ⓑ 출발지가 하나도 없으면 내 자리를 보여 준다 — 출발지가 들어오면 ⓐ 가 임자다.
+     둘이 다투면 방금 넣은 출발지가 화면 밖으로 밀린다. */
+  useEffect(() => {
+    if (!내자리 || 출발지들.length) return;
+    점들맞추기([내자리], true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [점들맞추기, 내자리?.lat, 내자리?.lng, 출발지들.length]);
+
+  /* ⓒ 여백이나 창 크기가 바뀌었을 때 — **아직 손 안 댔을 때만** 다시 맞춘다.
+     처음 열 때 시트·탭바가 자리를 잡고 나서 한 번은 맞춰야 핀이 시트 밑에 깔리지 않는다.
+     하지만 사람이 지도를 만진 뒤로는 안 건드린다(위 `손댐` 머리말 — 2026-08-20 신고). */
+  useEffect(() => {
+    if (손댐.current || !출발지들.length) return;
+    점들맞추기(담을것());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [여백서명, size.w, size.h]);
+
+  /* ⓓ 사람이 "여기를 보여 달라"고 시켰다 — 이때는 손댄 뒤라도 맞춘다(눌러서 시킨 일이다).
+     `회차` 로만 본다: 같은 갈래를 거듭 눌러도 다시 맞춰야 한다. */
+  useEffect(() => {
+    if (!맞춤요청?.회차) return;
+    손댐.current = false;
+    if (맞춤요청.갈래 === '내자리') { if (내자리) 점들맞추기([내자리], true); return; }
+    /* 한 곳만 — 칩을 누른 그 출발지다. 상자로 담지 않고 그 자리를 가운데에 놓는다
+       (한 점을 담으면 `상자` 의 최소 반지름이 배율을 정해 버려 늘 같은 배율이 된다). */
+    if (맞춤요청.갈래 === '한곳') { if (맞춤요청.점) 점들맞추기([맞춤요청.점], true); return; }
+    점들맞추기(담을것());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [맞춤요청?.회차]);
 
   /* ── 카카오 지도가 살아 있을 때 — 핀을 얹고 화면을 맞춘다 ──────────
      핀은 CustomOverlay 로 그린다. `.opin` 스타일을 그대로 쓰기 위해 그 안에
@@ -252,6 +381,21 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
     if (내자리) {
       얹기(내자리, `<span class="${s.내자리점}" style="left:0;top:0" aria-hidden></span>`);
     }
+    /* 장소 핀(주변 탐색) — 출발지 핀보다 **먼저** 얹어 아래에 깔린다.
+       zIndex 5 는 출발지(7)와 경로선 사이다(globals.css 의 층 표와 결이 같다). */
+    (장소들 ?? []).forEach((p) => {
+      const 칸 = document.createElement('button');
+      칸.type = 'button';
+      칸.className = s.장소표식;
+      칸.setAttribute('data-slot', '장소표식');
+      칸.setAttribute('data-고름', p.id === 고른장소 ? '예' : '아니오');
+      칸.setAttribute('aria-label', p.name);
+      칸.style.cssText = 'position:absolute;left:0;top:0';
+      칸.textContent = p.그림;
+      if (장소누름) 칸.addEventListener('click', (e) => { e.stopPropagation(); 장소누름(p.id); });
+      얹기엘리먼트(p, 칸, 5);
+    });
+
     출발지들.forEach((o, i) => {
       /* 번호 물방울. 고른 것 하나만 떠오르고 위로 올라온다.
          `얹기` 는 zIndex 4 로 고정이라 여기서는 못 올린다 — 아래 `얹기엘리먼트` 로
@@ -292,23 +436,11 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
       카카오경로선.current.push(pl);
     });
 
-    /* 화면을 맞춘다 — 출발지가 있으면 그걸 다 담게, 없으면(내 자리만) 그 자리로 가깝게 */
-    if (출발지들.length) {
-      const bounds = new window.kakao.maps.LatLngBounds();
-      [...출발지들, ...(가운데 ? [가운데] : [])].forEach((p) =>
-        bounds.extend(new window.kakao.maps.LatLng(p.lat, p.lng)));
-      /* 카카오는 (위, 오른쪽, 아래, 왼쪽) 순으로 여백을 받는다 — 셸이 준 값을 그대로 넘긴다.
-         전에는 사방 56px 고정이었다. 전체화면에서는 그러면 시트가 아래를 340px 이나 덮는데도
-         지도는 그걸 모르고 맞춰서, 아래쪽 핀이 시트에 깔렸다. */
-      m.setBounds(bounds,
-        Math.round(실여백.위), Math.round(실여백.우),
-        Math.round(실여백.아래), Math.round(실여백.좌));
-    } else if (내자리) {
-      m.setCenter(new window.kakao.maps.LatLng(내자리.lat, 내자리.lng));
-      m.setLevel(5);
-    }
+    /* ⚠ 여기서 화면을 **안 맞춘다.** 이 효과는 핀·선이 바뀔 때마다(경로가 늦게 도착해도,
+       여백이 1px 달라져도) 도는데, 그때마다 지도를 다시 맞추면 보고 있던 자리가 제멋대로
+       튄다(2026-08-20 신고). 맞추는 일은 위 ⓐ~ⓓ 한 곳이 맡는다. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng, 경로들, 여백서명, 가운데누름, 고른출발지, 출발지누름]);
+  }, [카카오준비, 서명, 가운데?.lat, 가운데?.lng, 가운데라벨, 내자리?.lat, 내자리?.lng, 경로들, 가운데누름, 고른출발지, 출발지누름, 장소들, 고른장소, 장소누름]);
 
   const origin = (() => {
     const p = toPx(c.lat, c.lng, z);
@@ -442,6 +574,20 @@ export default function 지도({ 출발지들, 가운데, 가운데라벨 = '가
                 style={{ left: q.x, top: q.y }} aria-hidden />
             );
           })()}
+          {/* 장소 핀(주변 탐색) — 카카오 쪽과 **같은 클래스**다. 출발지보다 낮게 깔린다. */}
+          {(장소들 ?? []).map((p) => {
+            const q = 자리(p);
+            if (!q) return null;
+            return (
+              <button key={p.id} type="button" className={s.장소표식}
+                data-slot="장소표식" data-고름={p.id === 고른장소 ? '예' : '아니오'}
+                aria-label={p.name}
+                style={{ position: 'absolute', left: q.x, top: q.y, zIndex: 5 }}
+                onClick={(e) => { e.stopPropagation(); 장소누름?.(p.id); }}>
+                {p.그림}
+              </button>
+            );
+          })}
           {출발지들.map((o, i) => {
             const q = 자리(o);
             if (!q) return null;

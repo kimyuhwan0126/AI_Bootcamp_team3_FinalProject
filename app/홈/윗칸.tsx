@@ -1,7 +1,12 @@
 'use client';
 /* 홈 상단 — 지도 위에 늘 떠 있는 것들.
 
-   검색바(+워드마크) · 검색 결과 패널 · 출발지 칩 줄 · 중간지점 기준 단추 · 안내 한 줄.
+   검색바(+워드마크) · 검색 결과 패널 · 출발지 칩 줄.
+
+   ⚠ 칩 줄 아래에 있던 **기준 단추(거리/AI)와 안내 한 줄은 2026-08-19 에 사람이 정해 뺐다.**
+   지도 위에 늘 떠 있는 것을 줄이자는 뜻이다. 기준은 시트가 계속 말해 주고(시트요약·눈썹),
+   무엇을 하면 무엇이 나오는지도 시트 안 '작은글'이 말한다. 되살릴 일이 생기면 사람에게
+   먼저 물어야 한다 — 지금은 기준을 바꿀 길이 화면 어디에도 없다(홈.tsx 의 `기준` 참고).
 
    ⚠ 이 띠 자체는 `pointer-events:none` 이다(홈.module.css 의 `.윗칸`). 줄과 줄 **사이**
    빈 자리로 지도를 눌러야 하기 때문이다 — 안 그러면 지도 위쪽 3분의 1 에서 탭이 통째로
@@ -13,6 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Origin } from '../originfield';
 import { 장소찾기, 최소글자, type 찾은곳 } from '@/lib/장소찾기';
+import type { 갈래 as 갈래이름 } from '@/lib/장소갈래';
 import { 출발지색고르기 } from './핀그림';
 import s from './홈.module.css';
 
@@ -27,21 +33,49 @@ const 돋보기 = (
 );
 
 export default function 윗칸({
-  출발지들, 고름, 빼기, 초점, 칩누름, 열린칩 = -1,
-  기준, 기준바꾸기, 안내,
+  출발지들, 고름, 빼기, 초점, 칩누름, 수단표기,
+  기준, AI열림, AI상태, AI결과, AI고름, AI누름, AI고르기, AI끄기, AI닫기,
+  탐색, 켠갈래, 갈래누름, 갈래들, 장소상태, 장소수,
 }: {
   출발지들: Origin[];
   고름: (o: Origin) => void;
   빼기: (i: number) => void;
   /* 지금 눈이 가 있는 칩 — 지도가 그 자리로 가 있다는 표시다 */
   초점: number;
-  /* 거듭 누르면 3단으로 돈다(지도 이동 → 시트 열기 → 시트 내리기). 셸이 그 단계를 쥔다. */
+  /* 누르면 지도가 그 출발지로 간다. **그것뿐이다**(2026-08-20 사용자 요청) —
+     거듭 눌러 시트를 열고 닫던 3단 순환은 뺐다(홈.tsx 참고). */
   칩누름: (i: number) => void;
-  /* 지금 시트가 보여 주고 있는 출발지. 칩에 '열려 있다'고 표시한다. */
-  열린칩?: number;
+  /* 칩에 붙는 '· 대중교통' 한 마디. 무엇을 적을지는 `lib/수단표기.ts` 가 정한다 —
+     사람이 **고른 카테고리 그대로**다(2026-08-20 사용자 요청). */
+  수단표기: (i: number) => string;
+
+  /* ── AI 추천 둥근 단추 (2026-08-20 사용자 요청) ──────────────
+     출발지 줄 **아래 오른쪽**에 붙는다. 셸이 모든 상태를 쥐고 여기는 그리기만 한다 —
+     기준을 켜고 끄는 것도, 어느 곳을 골랐는지도 지도와 시트가 함께 봐야 하는 값이다. */
   기준: '거리' | 'AI';
-  기준바꾸기: () => void;
-  안내: string | null;
+  /** 추천 칩 줄이 펼쳐져 있나 */
+  AI열림: boolean;
+  AI상태: 'idle' | '구하는중' | '못구함' | '한도끝';
+  AI결과: { name: string; lat: number; lng: number }[] | null;
+  AI고름: number;
+  AI누름: () => void;
+  AI고르기: (i: number) => void;
+  /** 'off' 칩 — 기준을 거리로 되돌린다 */
+  AI끄기: () => void;
+  /** 화면 딴 데를 눌렀을 때 — 칩 줄만 닫는다(기준은 그대로) */
+  AI닫기: () => void;
+
+  /* ── 주변 탐색 (E단계) ────────────────────────────────────
+     켜지면 출발지 줄이 숨고 갈래 줄이 그 자리에 선다(홈.module.css 의 `.셸[data-탐색]`) */
+  탐색: boolean;
+  /* 지금 켜 둔 갈래 — **한 번에 하나뿐이다**(2026-08-20 사용자 요청).
+     같은 칩을 다시 누르면 꺼지고 null 이 된다. */
+  켠갈래: 갈래이름 | null;
+  갈래누름: (g: 갈래이름) => void;
+  /** 지금 받아 온 장소에 **실제로 있는** 갈래만 온다 — 눌러도 비는 칩을 안 만든다 */
+  갈래들: { 이름: 갈래이름; 그림: string }[];
+  장소상태: 'idle' | '구하는중' | '못구함' | '한도끝';
+  장소수: number;
 }) {
   const [말, set말] = useState('');
   const [결과, set결과] = useState<찾은곳[] | null>(null);
@@ -74,6 +108,20 @@ export default function 윗칸({
     return () => document.removeEventListener('pointerdown', 손, true);
   }, [열림]);
 
+  /* AI 칩 줄도 바깥을 누르면 닫힌다 — 검색 패널(위)과 **같은 수법**이다.
+     캡처 단계에서 듣되 자기 칸은 뺀다: 칩을 누르기도 전에 닫히면 안 된다.
+     지도를 누른 것도 '바깥'이다 — 그때 닫히는 것이 사람이 바라는 바다. */
+  const AI칸 = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!AI열림) return;
+    const 손 = (e: PointerEvent) => {
+      if (!AI칸.current?.contains(e.target as Node)) AI닫기();
+    };
+    document.addEventListener('pointerdown', 손, true);
+    return () => document.removeEventListener('pointerdown', 손, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [AI열림]);
+
   const 골랐다 = (곳: 찾은곳) => {
     고름(곳);
     /* 방금 넣은 곳이 목록에 계속 떠 있으면, 그것을 또 눌렀을 때 아무 일도 안 일어난다 */
@@ -90,9 +138,16 @@ export default function 윗칸({
           <input
             id="og"                       /* 지금 시험이 붙잡는 이름 — 옮겨도 그대로 둔다 */
             data-slot="홈검색칸"
-            type="search" value={말}
-            placeholder="어디에서 출발하시나요?"
-            aria-label="출발지 지역 검색"
+            /* ⚠ `type="search"` 가 아니다 — 웹킷이 글자를 넣는 순간 칸 안에 제 ✕(지우기)
+               단추를 그려 넣는데, 그것을 2026-08-20 에 사람이 정해 뺐다. 타입을 되돌리면
+               그 단추도 같이 돌아온다(CSS 로도 한 번 더 막아 뒀다 — 홈.module.css 의
+               `.검색바 input::-webkit-search-cancel-button`). */
+            type="text" value={말}
+            /* 탐색 모드에서는 지도에 뜬 것이 출발지가 아니라 둘레의 장소다 —
+               같은 칸이지만 지금 무엇을 찾는 자리인지 문구가 말해 준다(2026-08-20 사용자 요청).
+               ⚠ 하는 일은 그대로다: 골라 넣으면 **출발지로** 들어간다(아래 `골랐다`). */
+            placeholder={탐색 ? '장소 주소 검색' : '어디에서 출발하시나요?'}
+            aria-label={탐색 ? '장소 주소 검색' : '출발지 지역 검색'}
             autoComplete="off" role="combobox"
             aria-expanded={열림 && 결과있나}
             aria-controls="홈검색패널"
@@ -133,14 +188,15 @@ export default function 윗칸({
           {출발지들.map((o, i) => (
             <div key={`${o.name}${o.lat}`} className={s.출발지칩} data-slot="출발지칩" data-번호={i + 1}
               style={{ ['--c' as string]: 출발지색고르기(i) }}>
-              {/* `aria-pressed` 는 '지도가 이 자리를 보고 있다', `aria-expanded` 는
-                  '이 출발지 시트가 열려 있다' — 두 상태가 다르므로 따로 말한다.
-                  칩을 거듭 누르면 셸이 3단으로 돌린다. */}
+              {/* `aria-pressed` 는 '지도가 이 자리를 보고 있다'. 시트가 열렸는지는
+                  이제 칩이 말하지 않는다 — 칩이 시트를 여닫지 않으니 `aria-expanded` 는
+                  거짓말이 된다(그 일은 지도 핀이 한다). */}
               <button type="button" className={s.칩속} aria-pressed={i === 초점}
-                aria-expanded={i === 열린칩}
                 onClick={() => 칩누름(i)}>
                 <span className={s.번호} aria-hidden>{i + 1}</span>
                 <span className={s.이름}>{o.name}</span>
+                {/* 이름과 한 단추 안에 둔다 — 따로 두면 이 말만 눌러도 아무 일이 없다 */}
+                <span className={s.칩수단}>· {수단표기(i)}</span>
               </button>
               {/* ✕ 는 남긴다 — 삭제를 시트 안으로만 옮기면 키보드만 쓰는 사람은
                   '칩 누르기 → 시트 열기 → 삭제' 로 세 번을 눌러야 한다(지금 판은 한 번이다). */}
@@ -151,18 +207,74 @@ export default function 윗칸({
         </div>
       )}
 
-      {/* 중간지점 기준. 목업은 여기가 거리순/시간순이었지만 우리 값은 거리 / AI 다 —
-          시간 기준은 2026-08-23 에 사람이 정해 뺐다(app/탐색/탐색.tsx:36–42). */}
-      <div className={s.기준줄}>
-        <button type="button" className={s.기준단추} data-slot="기준" data-기준={기준}
-          onClick={기준바꾸기}
-          aria-label={`중간지점 기준: ${기준} — 눌러서 ${기준 === '거리' ? 'AI' : '거리'}로 전환`}>
-          {기준 === '거리' ? '거리 기준' : 'AI 추천'}
-        </button>
-      </div>
+      {/* ── AI 추천 ─────────────────────────────────────────
+          출발지가 2곳 이상일 때만 뜬다 — 한 곳뿐이면 잡을 가운데가 없어(홈.tsx) 추천할
+          것도 없다. 칩 줄은 단추 **아래**, 단추와 같은 오른쪽 끝에 붙는다. */}
+      {출발지들.length >= 2 && (
+        <div className={s.AI줄} data-slot="AI줄" ref={AI칸}>
+          <div className={s.AI단추줄}>
+            {/* 추천을 받아 오는 동안만 도는 고리. 단추 **왼쪽**이다 — 단추 위에 겹치면
+                'AI' 글자가 가려져 무슨 단추인지 못 읽는다. */}
+            {AI상태 === '구하는중' && (
+              <span className={s.AI뱅뱅} data-slot="AI뱅뱅" role="status"
+                aria-label="AI 추천을 받는 중이에요" />
+            )}
+            <button type="button" className={s.AI단추} data-slot="AI단추"
+              aria-pressed={기준 === 'AI'} aria-expanded={AI열림}
+              onClick={AI누름}
+              title="AI 추천 중간지점"
+              aria-label={기준 === 'AI' ? 'AI 추천 목록 여닫기' : 'AI 로 중간지점 추천받기'}>
+              AI
+            </button>
+          </div>
 
-      {/* browse 에서는 시트가 화면 밖이라, 처음 온 사람에게 말을 거는 것은 이 줄뿐이다 */}
-      {안내 && <p className={s.안내줄} data-slot="안내줄">{안내}</p>}
+          {AI열림 && 기준 === 'AI' && (
+            <div className={s.AI칩줄} data-slot="AI칩줄" role="group" aria-label="AI 추천 중간지점">
+              {AI상태 === '구하는중' && <span className={s.AI빔}>추천받는 중…</span>}
+              {AI상태 === '한도끝' && <span className={s.AI빔}>너무 여러 번 물었어요</span>}
+              {AI상태 === '못구함' && <span className={s.AI빔}>추천을 못 받았어요</span>}
+              {(AI결과 ?? []).map((p, i) => (
+                <button key={`${p.name}${p.lat}`} type="button" className={s.AI칩}
+                  aria-pressed={i === AI고름} onClick={() => AI고르기(i)}>{p.name}</button>
+              ))}
+              {/* 기준을 거리로 되돌리는 단 하나의 길 — 단추를 다시 눌러도 안 꺼진다 */}
+              <button type="button" className={s.AI칩} data-끄기 onClick={AI끄기}
+                aria-label="AI 추천 끄고 거리 기준으로">off</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 갈래 줄 (주변 탐색) ───────────────────────────────
+          출발지 줄과 **자리를 나눠 쓴다** — 어느 쪽을 보일지는 CSS 가 `data-탐색` 으로
+          가른다(홈.module.css). 그리기 자체는 늘 하되 탐색이 꺼져 있으면 안 그린다. */}
+      {탐색 && (
+        <div className={s.갈래줄} data-slot="갈래줄" role="group" aria-label="주변 장소 갈래">
+          {/* '전체' 칩은 2026-08-20 에 뺐다 — 아무것도 안 켠 처음 자리가 곧 전체 끄기다.
+              한 번에 하나만 켜진다(같은 날 사용자 요청): 갈래를 겹쳐 켜면 핀이 100개를
+              넘어 중간지점 말풍선이 묻혔다. `aria-pressed` 가 그 켜짐을 읽어 주는
+              기계에도 그대로 전한다 — 라디오가 아니라 **누름 단추**로 말하는 까닭은
+              같은 칩을 다시 눌러 끌 수 있기 때문이다. */}
+          {갈래들.map((g) => {
+            const 켬 = 켠갈래 === g.이름;
+            return (
+              <button key={g.이름} type="button" className={s.갈래칩} aria-pressed={켬}
+                onClick={() => 갈래누름(g.이름)}
+                aria-label={`${g.이름} ${켬 ? '지도에서 감추기' : '지도에 보이기'}`}>
+                <span aria-hidden>{g.그림}</span>{g.이름}
+              </button>
+            );
+          })}
+          {/* 칩만 있고 아무 말이 없으면 '켜졌는데 아무 일도 안 났다'가 된다 */}
+          {장소상태 === '구하는중' && <span className={s.갈래빔}>둘레를 찾는 중…</span>}
+          {장소상태 === '한도끝' && <span className={s.갈래빔}>너무 여러 번 물었어요</span>}
+          {장소상태 === '못구함' && <span className={s.갈래빔}>둘레에서 찾은 곳이 없어요</span>}
+          {장소상태 === 'idle' && !켠갈래 && <span className={s.갈래빔}>갈래를 눌러 보세요</span>}
+          {장소상태 === 'idle' && !!켠갈래 && !장소수 && (
+            <span className={s.갈래빔}>고른 갈래는 둘레에 없어요</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -75,8 +75,26 @@ export function 만들던것꺼내기(): Record<string, unknown> | null {
      · 탐색은 '이번에 어디서 만날까'를 재 보는 자리다. 어제 넣어 둔 친구들 출발지가
        오늘 홈에 그대로 남아 있으면 지운 줄 알고 또 넣는다.
      · 남의 집 근처 좌표를 이 기기에 영영 남기지 않는다.
-   새로고침·뒤로가기에는 남고, 창을 닫으면 사라진다. */
-const 열쇠 = 'moimer.탐색.v1';
+   새로고침·뒤로가기에는 남고, 창을 닫으면 사라진다.
+
+   ⚠ 2026-08-20 에 담는 꼴이 바뀌었다(v1 → v2). 전에는 출발지 배열만 담았는데,
+   출발지마다 이동 수단이 생기면서(app/홈/홈.tsx 의 `수단들`) 그것도 함께 담는다.
+   **반쪽만 기억하면 안 되기 때문이다** — 출발지는 살아 돌아오는데 수단만 대중교통으로
+   되돌아가면, 자동차로 바꿔 둔 사람이 그것을 눈치채지 못한 채 남의 시간을 제 시간으로 읽는다.
+
+   옛 꼴(v1)은 **읽지 않고 치운다.** 읽어 주는 갈래를 남기면 그것을 언제 지워도 되는지
+   아무도 모르는 죽은 코드가 된다. 대신 치우기까지 해서 찌꺼기를 안 남긴다 — 남겨 두면
+   옛 판으로 되돌렸을 때 지운 지 한참 된 목록이 말없이 얹힌다(빈 목록보다 나쁘다).
+   갈아타는 그 순간 열려 있던 탭은 목록을 한 번 잃는다. 사람이 알고 고른 값이다(논의: 2026-08-20).
+
+   ⚠ `null`(둔 적이 없다)과 `[]`(두고 갔는데 다 뺐다)의 갈림은 v2 에서도 그대로다.
+   옛 홈(app/탐색/탐색.tsx:85–89)이 그 갈림으로 '내정보 기본 출발지를 다시 얹을지'를 정한다 —
+   뭉개면 방금 손으로 다 뺀 자리에 기본 출발지가 새로고침마다 살아난다. */
+const 열쇠 = 'moimer.탐색.v2';
+const 옛열쇠 = 'moimer.탐색.v1';
+
+/** 두고 간 것 한 벌. `수단들` 의 열쇠는 `lib/출발지.ts` 의 `열쇠(o)` 다. */
+export type 두고간것 = { 출발지들: Origin[]; 수단들: Record<string, Transport> };
 
 /* 저장한 글자는 우리가 쓴 것이 아닐 수도 있다 — 좌표 없는 출발지가 얹히면
    가운데 셈이 NaN 이 되고 지도가 통째로 빈다 (lib/기본값.ts 와 같은 규칙). */
@@ -89,21 +107,45 @@ function 하나읽기(v: unknown): Origin | null {
   return { name: o.name, address: typeof o.address === 'string' ? o.address : '', lat: o.lat, lng: o.lng };
 }
 
-/** `null` 은 '두고 간 것이 없다', `[]` 는 '두고 갔는데 다 뺐다' — 이 둘을 갈라야
+/* 수단도 우리가 쓴 것이 아닐 수 있다 — 모르는 값은 버린다. 버려도 그 사람은
+   대중교통으로 읽히므로(홈.tsx 의 `수단보기`) 화면이 비거나 터지지 않는다. */
+function 수단들읽기(v: unknown): Record<string, Transport> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const 나온것: Record<string, Transport> = {};
+  for (const [k, t] of Object.entries(v as Record<string, unknown>)) {
+    if (t === 'transit' || t === 'car') 나온것[k] = t;
+  }
+  return 나온것;
+}
+
+/** `null` 은 '두고 간 것이 없다', `{출발지들: []}` 은 '두고 갔는데 다 뺐다' — 이 둘을 갈라야
  *  기본 출발지를 다시 얹을지 말지가 갈린다 (app/탐색/탐색.tsx) */
-export function 두고간것읽기(): Origin[] | null {
+export function 두고간것읽기(): 두고간것 | null {
   if (typeof window === 'undefined') return null;
   try {
+    /* 옛 꼴은 여기서 한 번 치운다 — 읽는 자리가 곧 갈아타는 자리다(위 머리말) */
+    window.sessionStorage.removeItem(옛열쇠);
     const 글 = window.sessionStorage.getItem(열쇠);
     if (!글) return null;
     const v = JSON.parse(글);
-    if (!Array.isArray(v)) return null;
-    return v.map(하나읽기).filter((o): o is Origin => !!o);
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    const 담긴것 = v as Record<string, unknown>;
+    /* 출발지 칸이 아예 없으면 우리가 쓴 글이 아니다 — 빈 배열(다 뺐다)과는 다르다 */
+    if (!Array.isArray(담긴것.출발지들)) return null;
+    return {
+      출발지들: 담긴것.출발지들.map(하나읽기).filter((o): o is Origin => !!o),
+      수단들: 수단들읽기(담긴것.수단들),
+    };
   /* 브라우저가 이 기기 저장을 막아 둔 수도 있다 — 그러면 두고 간 것이 없는 셈이다 */
   } catch { return null; }
 }
 
-export function 두고가기(list: Origin[]): void {
+/** 수단들을 안 주면 빈 것으로 담는다 — 옛 홈(app/탐색)처럼 수단이 하나뿐인 화면 몫이다.
+ *  그 화면에서 출발지를 만지면 홈에서 골라 둔 수단은 지워진다. 그 편이 맞다:
+ *  거기서 고친 목록에 여기서 고른 값이 반쯤 남아 있으면 어느 쪽이 참인지 알 길이 없다. */
+export function 두고가기(list: Origin[], 수단들: Record<string, Transport> = {}): void {
   if (typeof window === 'undefined') return;
-  try { window.sessionStorage.setItem(열쇠, JSON.stringify(list)); } catch { /* 못 써도 화면은 돈다 */ }
+  try {
+    window.sessionStorage.setItem(열쇠, JSON.stringify({ 출발지들: list, 수단들 }));
+  } catch { /* 못 써도 화면은 돈다 */ }
 }

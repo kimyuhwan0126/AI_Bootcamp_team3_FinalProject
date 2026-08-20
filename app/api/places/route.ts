@@ -2,7 +2,7 @@
    화면이 카카오를 직접 부르지 않는다 — 키를 숨기고, 할당량 오류를 한 곳에서 옮긴다.
    카카오가 막히면 OSM(Overpass)으로 내려간다. 지도와 같은 규칙이다(논의27). */
 import { NextResponse } from 'next/server';
-import { placesNear, PlacesUnavailable, type PlaceList } from '@/lib/places';
+import { placesNear, PlacesUnavailable, type PlaceList, type 둘레변종 } from '@/lib/places';
 import { 한국안 } from '@/lib/geo';
 import { 횟수확인, 너무잦음 } from '@/lib/ratelimit';
 
@@ -30,12 +30,17 @@ export async function GET(req: Request) {
   if (!(radius >= R_최소 && radius <= R_최대)) {
     return NextResponse.json({ error: 'bad_radius' }, { status: 400 });
   }
+  /* 누가 묻는가 — 화면마다 무엇을 물을지가 다르다(lib/places.ts 의 `변종표`).
+     `for=home` 만 홈 갈래(주차장 포함 · 갯수 제한 없음)로 간다. 아무 값이나 오면 기본이다:
+     화면이 갈래 코드를 직접 보내게 두면 바깥에서 아무 코드나 밀어 넣을 수 있다. */
+  const 변종: 둘레변종 = u.searchParams.get('for') === 'home' ? '홈' : '기본';
+
   /* '못 불러왔다'와 '정말 없다'는 다른 말이다. 안 받으면 Next 가 500 + HTML 을 내보내고
      화면은 "여기엔 등록된 지점이 없어요" 라고 잘못 말한다.
      partial 은 셀 수 없는 칸이라 JSON.stringify 가 지운다 — 봉투에 따로 싣는다. */
   let r: PlaceList | 'quota';
   try {
-    r = await placesNear(lat, lng, radius);
+    r = await placesNear(lat, lng, radius, 변종);
   } catch (e) {
     /* retryable 은 '기다리면 된다'는 표다 — 화면이 "잠시 뒤에 다시" 를 붙일지 여기서 갈린다
        (그릴링 논의101). 못 고를 자리(좌표 밖)와 지금 못 부르는 것은 다른 말이다. */

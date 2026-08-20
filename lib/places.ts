@@ -2,7 +2,14 @@
    같은 자리를 두 번 묻지 않는다 — lib/geo.ts 의 geo_cache 와 같은 칸으로 저장한다 (논의63). */
 import { neon } from '@neondatabase/serverless';
 
-export type Place = { id: string; name: string; address: string; lat: number; lng: number; category?: string };
+export type Place = {
+  id: string; name: string; address: string; lat: number; lng: number;
+  /** 카카오 category_group_name('음식점'…) 이거나 OSM 태그(restaurant…) */
+  category?: string;
+  /** 카카오 category_name — "음식점 > 술집 > 호프,요리주점". **술집을 음식점에서 갈라내는
+      것은 이것뿐이다**(lib/장소갈래.ts 머리말). 옛 캐시 줄에는 없을 수 있어 선택값이다. */
+  categoryDetail?: string;
+};
 
 /* 몇 곳은 불러왔고 몇 곳은 못 불러왔다 — 목록에 곁가지로 얹는다(정규식 match.index 와 같은 결).
    JSON 은 배열의 번호 칸만 내보내니 통신 모양은 그대로다. 알고 싶은 쪽만 partial 을 본다. */
@@ -31,6 +38,38 @@ const OVERPASS = [
 
 /* 모이머가 다루는 자리 — 밥·술·커피·문화·야외 */
 const KAKAO_GROUPS = ['FD6', 'CE7', 'CT1', 'AT4'];
+
+/* ── 무엇을 물을 것인가 ─────────────────────────────────────
+   부르는 화면마다 묻는 것이 다르다. 한 함수에 두 갈래를 두는 대신 **이름 붙인 변종**으로
+   둔다 — 화면이 갈래 코드를 직접 보내면 바깥에서 아무 코드나 밀어 넣을 수 있고,
+   무엇을 물었는지가 캐시 열쇠에 안 담겨 두 화면이 서로의 목록을 뺏어 간다.
+
+     기본  모임 화면 지점 고르기(app/m/[code]/ui.tsx) — 네 갈래 · 갈래당 5곳.
+           **안 건드린다.** 지점 후보 목록은 짧아야 고를 만하다.
+     홈    홈 화면 주변 탐색(app/홈) — 위 넷 + 주차장, **갈래당 갯수 제한 없음**
+           (2026-08-20 사용자 요청). 홈은 갈래 칩을 하나씩 켜 보는 자리라 한 번에
+           보이는 것은 한 갈래뿐이고, 그 갈래는 둘레에 있는 만큼 다 보여야 뜻이 있다. */
+export type 둘레변종 = '기본' | '홈';
+
+/* 카카오에 무엇을 물을 것인가. 갈래 코드가 있는 것은 카테고리 검색으로, 없는 것(술집)은
+   **낱말 검색**으로 묻는다 — 카카오의 갈래 코드는 음식점(FD6)까지고 술집은 그 안에 있어서,
+   FD6 안에서 골라내기만 하면 가까운 음식점 45곳에 낀 술집 몇 곳뿐이다. 따로 물으면
+   술집에도 제 몫의 45곳이 생긴다. */
+type 물음 = { 갈래코드: string } | { 낱말: string };
+
+const 변종표: Record<둘레변종, { 물음들: 물음[]; 갈래당: number | null; 열쇠칸: number }> = {
+  /* `갈래당: null` 은 '카카오가 주는 만큼 다' 다 — 아래 fromKakao 가 쪽을 넘겨 가며 받는다 */
+  기본: { 물음들: KAKAO_GROUPS.map((갈래코드) => ({ 갈래코드 })), 갈래당: 5, 열쇠칸: 0 },
+  홈: {
+    물음들: [...KAKAO_GROUPS.map((갈래코드) => ({ 갈래코드 })), { 갈래코드: 'PK6' }, { 낱말: '술집' }],
+    갈래당: null, 열쇠칸: 2,
+  },
+};
+
+/* 카카오 카테고리 검색의 한 쪽 크기와 쪽 수 상한. size 는 15가 최대이고 그 위로는 400 이 온다.
+   쪽은 끝(is_end)까지 넘기되 3쪽에서 멈춘다 — 카카오가 한 물음에 내주는 것이 45개까지다. */
+const 카카오한쪽 = 15;
+const 카카오최대쪽 = 3;
 
 /* 안 끊기는 것이 늦게 오는 것보다 나쁘다 — 바깥으로 나가는 것은 전부 시간을 걸어 둔다 */
 const T_KAKAO = 5_000;
@@ -64,8 +103,16 @@ const 목록 = (ps: Place[], partial: boolean): PlaceList => {
 /* ── 저장해 두기 (논의63) ──────────────────────────────────────
    geo_cache 와 같은 칸: 좌표를 소수 4자리(약 11m)로 잘라 나눈다.
    반경이 다르면 다른 목록이라 열쇠에 함께 넣는다 — 안 넣으면 300m 로 뜬 목록이 1km 요청에 그대로 나간다. */
-const key = (lat: number, lng: number, radius: number) => ({
-  gx: Math.round(lng * 10000), gy: Math.round(lat * 10000), r: Math.round(radius),
+/* 열쇠에 **무엇을 물었는가**까지 담는다 — 같은 자리·같은 반경이라도 홈(다섯 갈래·무제한)과
+   모임 화면(네 갈래·갈래당 5곳)은 서로 다른 목록이다. 한 칸에 담으면 먼저 쓴 쪽이 뒤엣것에게
+   반쪽짜리를 내민다.
+   ⚠ 표에 칸을 더하지 않고 `radius` 정수 안에 섞는다 — 이미 만들어진 places_cache 의
+   기본키(gx,gy,radius)까지 고쳐야 하는데, 이건 버려도 되는 캐시라 그 값이 없다.
+   반경은 50~5000 만 들어온다(app/api/places/route.ts 가 막는다) — 백만 단위는 안 겹친다. */
+const 열쇠칸너비 = 1_000_000;
+const key = (lat: number, lng: number, radius: number, 변종: 둘레변종) => ({
+  gx: Math.round(lng * 10000), gy: Math.round(lat * 10000),
+  r: Math.round(radius) + 변종표[변종].열쇠칸 * 열쇠칸너비,
 });
 
 /* 동 이름은 1년을 둬도 되지만 가게는 문을 닫고 새로 생긴다 — 하루를 두면 없어진 가게를 계속 내민다.
@@ -137,40 +184,66 @@ type KakaoOut =
   | { st: 'down' }                                    /* 넷 다 막혔다 */
   | { st: 'off' };                                    /* 키가 없다 — 실패가 아니라 안 쓰는 것 */
 
-async function fromKakao(lat: number, lng: number, radius: number): Promise<KakaoOut> {
+async function fromKakao(lat: number, lng: number, radius: number, 변종: 둘레변종): Promise<KakaoOut> {
   const k = process.env.KAKAO_REST_API_KEY;
   if (!k) return { st: 'off' };
+  const { 물음들, 갈래당 } = 변종표[변종];
+  /* 갈래당 상한이 있으면 한 쪽만, 없으면 카카오가 끝났다고 할 때까지 쪽을 넘긴다 */
+  const 한쪽 = 갈래당 ?? 카카오한쪽;
+  const 쪽수 = 갈래당 ? 1 : 카카오최대쪽;
   const out: Place[] = [];
   let 성공 = 0, 실패 = 0;
-  for (const g of KAKAO_GROUPS) {
-    try {
-      const r = await fetch(
-        `https://dapi.kakao.com/v2/local/search/category.json?category_group_code=${g}` +
-        `&x=${lng}&y=${lat}&radius=${radius}&sort=distance&size=5`,
-        { headers: { Authorization: `KakaoAK ${k}` }, cache: 'no-store', signal: AbortSignal.timeout(T_KAKAO) });
-      if (r.status === 429) return { st: 'quota' };  /* 한도 — 화면이 방장에게만 원인을 말한다 */
-      /* 한 갈래가 막혔다고 모아 둔 것을 버리지 않는다 — 있는 자리가 없는 자리가 된다 */
-      if (!r.ok) { 실패++; console.warn(`[places] 카카오 ${g} 응답 ${r.status}`); continue; }
-      for (const d of (await r.json()).documents ?? []) {
-        out.push({
-          id: `kakao:${d.id}`, name: d.place_name,
-          address: d.road_address_name || d.address_name || '',
-          lat: Number(d.y), lng: Number(d.x), category: d.category_group_name,
-        });
-      }
-      성공++;
-    } catch (e) { 실패++; console.warn(`[places] 카카오 ${g} 못 부름 — ${why(e)}`); }
+  for (const 물 of 물음들) {
+    const 이름 = '갈래코드' in 물 ? 물.갈래코드 : `낱말:${물.낱말}`;
+    /* 낱말 검색은 endpoint 도 파라미터 이름도 다르다 — 나머지(좌표·반경·정렬·쪽)는 같다 */
+    const 앞 = '갈래코드' in 물
+      ? `https://dapi.kakao.com/v2/local/search/category.json?category_group_code=${물.갈래코드}`
+      : `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(물.낱말)}`;
+    /* 한 갈래 안에서 쪽을 넘기다 막히면 거기서 멈추고 **모은 것은 남긴다** —
+       2쪽이 안 왔다고 1쪽까지 버리면 있는 자리가 없는 자리가 된다. */
+    let 갈래성공 = 0;
+    for (let 쪽 = 1; 쪽 <= 쪽수; 쪽++) {
+      try {
+        const r = await fetch(
+          `${앞}&x=${lng}&y=${lat}&radius=${radius}&sort=distance&size=${한쪽}&page=${쪽}`,
+          { headers: { Authorization: `KakaoAK ${k}` }, cache: 'no-store', signal: AbortSignal.timeout(T_KAKAO) });
+        if (r.status === 429) return { st: 'quota' };  /* 한도 — 화면이 방장에게만 원인을 말한다 */
+        /* 한 갈래가 막혔다고 모아 둔 것을 버리지 않는다 — 있는 자리가 없는 자리가 된다 */
+        if (!r.ok) { console.warn(`[places] 카카오 ${이름} ${쪽}쪽 응답 ${r.status}`); break; }
+        const j = await r.json();
+        for (const d of j.documents ?? []) {
+          out.push({
+            id: `kakao:${d.id}`, name: d.place_name,
+            address: d.road_address_name || d.address_name || '',
+            lat: Number(d.y), lng: Number(d.x),
+            category: d.category_group_name, categoryDetail: d.category_name,
+          });
+        }
+        갈래성공++;
+        /* 끝났다고 하면 더 안 묻는다 — 빈 쪽을 두 번 더 부르는 값이 없다 */
+        if (j.meta?.is_end !== false) break;
+      } catch (e) { console.warn(`[places] 카카오 ${이름} ${쪽}쪽 못 부름 — ${why(e)}`); break; }
+    }
+    if (갈래성공) 성공++; else 실패++;
   }
   if (!성공) return { st: 'down' };
   return { st: 'ok', places: out, partial: 실패 > 0 };
 }
 
 /* OSM 은 Overpass 로 묻는다. 느리니 한 번만, 반경도 좁게. null 은 '못 물어봤다'. */
-async function fromOsm(lat: number, lng: number, radius: number): Promise<Place[] | null> {
+async function fromOsm(lat: number, lng: number, radius: number, 변종: 둘레변종): Promise<Place[] | null> {
+  /* 홈은 주차장까지 묻고 갯수 상한도 넉넉히 둔다 — 카카오가 막힌 날에도 칩이 비지 않게.
+     ⚠ 문화시설(CT1)에 맞는 OSM 태그는 여기 없다 — 폴백일 때 홈 갈래 칩은 넷으로 줄어든다.
+     Overpass 는 쪽 넘기기가 없어 한 번에 받는 수로만 조절한다. */
+  const 홈인가 = 변종 === '홈';
+  /* bar·pub 은 예전부터 있었지만 `lib/장소갈래.ts` 가 음식점으로 모으고 있었다 —
+     2026-08-20 부터 술집 갈래로 간다. 질의는 그대로 두고 나누는 자리만 바뀐 것이다. */
+  const 편의 = 홈인가 ? 'restaurant|cafe|bar|pub|fast_food|parking' : 'restaurant|cafe|bar|pub|fast_food';
+  const 상한 = 홈인가 ? 200 : 20;
   const q = `[out:json][timeout:8];(
-    node["amenity"~"restaurant|cafe|bar|pub|fast_food"](around:${radius},${lat},${lng});
+    node["amenity"~"${편의}"](around:${radius},${lat},${lng});
     node["leisure"~"park"](around:${radius},${lat},${lng});
-  );out body 20;`;
+  );out body ${상한};`;
   /* Overpass 는 서버마다 막히는 데가 다르다 — 본진(overpass-api.de)이 이 회선에서
      21초 타임아웃이라 폴백이 늘 빈손이었다. 살아 있는 곳을 차례로 두드린다.
      User-Agent 도 필수다(없으면 406). */
@@ -216,13 +289,15 @@ async function fromOsm(lat: number, lng: number, radius: number): Promise<Place[
   } catch (e) { console.warn(`[places] overpass 응답을 못 읽었다 — ${why(e)}`); return null; }
 }
 
-export async function placesNear(lat: number, lng: number, radius: number): Promise<PlaceList | 'quota'> {
-  const { gx, gy, r } = key(lat, lng, radius);
+export async function placesNear(
+  lat: number, lng: number, radius: number, 변종: 둘레변종 = '기본',
+): Promise<PlaceList | 'quota'> {
+  const { gx, gy, r } = key(lat, lng, radius, 변종);
   /* 저장해 두는 것은 온전한 목록뿐이다(아래) — 꺼낸 것에 partial 을 달 일이 없다 */
   const 저장된 = await 캐시읽기(gx, gy, r);
   if (저장된) return 목록(저장된, false);
 
-  const k = await fromKakao(lat, lng, radius);
+  const k = await fromKakao(lat, lng, radius, 변종);
   /* 한도 초과는 저장하지 않는다 — 자정에 한도가 풀려도 몇 시간을 막힌 채로 굳는다 */
   if (k.st === 'quota') return 'quota';
   if (k.st === 'ok' && k.places.length) {
@@ -232,7 +307,7 @@ export async function placesNear(lat: number, lng: number, radius: number): Prom
     return 목록(ps, k.partial);
   }
 
-  const o = await fromOsm(lat, lng, radius);
+  const o = await fromOsm(lat, lng, radius, 변종);
   if (o?.length) {
     const ps = dedupe(o);
     const 반쪽 = k.st === 'ok' && k.partial;
