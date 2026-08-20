@@ -10,16 +10,16 @@
    (app/page.tsx · new/page.tsx · not-found.tsx · join/[code]/form.tsx ·
     m/[code]/ui.tsx 세 곳). 목업 것은 `transform` 으로 지도 위를 덮는 물건이고
    우리 것은 `max-height:56dvh` 로 위의 `.map`(flex:1)을 줄이는 물건이라 같이 못 산다.
-   `.tabbar`(fixed vs absolute) · `.note`(반지름 10/--bg vs 12/--surface-2) ·
+   `.tabbar`(fixed vs absolute) · `.note`(반지름·바탕이 다르다) ·
    `.badge`(브랜드 알약 vs 아바타) 도 마찬가지다.
    모듈로 두면 이름이 해시되어 **충돌 자체가 구조적으로 불가능하다.**
 
-   ⚠ **토큰을 `:root` 가 아니라 뿌리 클래스(.셸)에 얹는 까닭**
-   사람이 "토큰은 홈에만 한정" 이라고 정했다. 모임·모임목록·내정보·만들기는
-   오늘과 똑같이 보여야 한다. 여기 얹으면 홈 안에서만 새 값이 살고 밖은
-   `globals.css :root` 그대로다. 카카오 CustomOverlay 도 지도 상자 **안**에
-   붙으므로 상속이 닿는다(app/탐색/지도.tsx:257 이 이미 `s.내자리점` 을 오버레이
-   문자열에 실어 보내는 선례를 만들어 뒀다).
+   ⚠ **토큰은 여기 없다 — `globals.css` 의 `:root` 하나뿐이다 (2026-08-20)**
+   2026-08-20 까지는 있었다. 사람이 "토큰은 홈에만 한정" 이라고 정했었고, 목업을
+   이식하는 동안 모임·모임목록·내정보·만들기가 흔들리지 않게 친 울타리였다.
+   이식(A~E단계)이 끝나 **사람이 그 결정을 폐기했다** — 앱 전체가 한 벌의 색·글꼴·
+   움직임을 쓴다. 여기 남은 것은 홈에만 있는 자리 값(`--윗여백` 따위)뿐이다.
+   카카오 CustomOverlay 도 지도 상자 **안**에 붙으므로 `:root` 상속이 그대로 닿는다.
 
    목업 이름 → 여기 이름 (집안 규칙상 모듈 클래스는 한글이다. 목업과 견주려면 이 표를 본다)
      .device      → .셸          .top        → .윗칸        .searchwrap → .검색칸
@@ -42,33 +42,15 @@
    ============================================================ */
 
 .셸 {
-  /* 토큰 — 목업 `:root`(43–64)에서 가져왔다. globals.css 의 :root 는 안 건드린다. */
-  --brand: #2f6bff;
-  --brand-dark: #1e4fd8;
-  --danger: #e11d48;
-  --ink: #14182b;
-  --ink-2: #4a5169;
-  /* ⚠ 목업 값은 #858ba3 인데 **안 쓴다.** 흰 바탕 3.38:1 · 연회색 3.15:1 로
-     작은 글자 기준(4.5:1)에 못 미친다 — 이 저장소가 그릴링 논의30 ③ 에서 일부러
-     고쳐 놓은 자리다(globals.css:2 주석). 목업의 색조(H 228°)는 그대로 두고
-     그 기준을 넘는 가장 밝은 값으로 낮췄다: 흰 4.87:1 · 연회색 4.54:1.
-     지금 전역 값(#656b7d)보다는 4%p 밝아 목업 쪽으로 다가간다.
-     이 색을 다시 밝히려면 .작은글 · .패널줄 주소 · .손잡이 힌트 · .출발지칩 꼬리표를
-     먼저 재 봐라 — 전부 11~12.5px 이다. */
-  --ink-3: #6a708c;
-  --line: #e4e8f2;
-  --surface: #ffffff;
-  --surface-2: #f5f7fb;
-  --shadow-sm: 0 1px 3px rgba(20, 24, 43, .08), 0 1px 2px rgba(20, 24, 43, .04);
-  --shadow-md: 0 4px 16px rgba(20, 24, 43, .1);
-  --shadow-lg: 0 -6px 28px rgba(20, 24, 43, .16);
-  --ease: cubic-bezier(.32, .72, 0, 1);
-  --ok: #2e7d32;
-  --warn: #e5a400;
-  --warn-bg: #fff8e6;
-  --warn-ink: #8a6d00;
-  --ai: #6c5ce7;
-  --ai-bg: #f1edff;
+  /* ⚠ **여기에 색·그림자·움직임 토큰을 다시 두지 마라.** 전부 globals.css 의 `:root`
+     한 곳에 있다(2026-08-20). 전에는 목업 `:root`(43–64)를 그대로 베껴 온 한 벌이
+     여기 있었고, 그래서 같은 뜻의 값이 이름만 다르거나(--bg vs --surface-2) 값까지
+     달랐다(--ink #171a21 vs #14182b) — 홈과 다른 화면의 회색이 서로 안 맞았다.
+     여기 남는 것은 **홈에만 있는 자리 값**뿐이다.
+
+     같이 사라진 이름들: --brand-dark · --warn · --warn-bg · --warn-ink · --ai · --ai-bg.
+     여섯 다 정의만 있고 쓰는 자리가 한 곳도 없었다 — 전역으로 올리지 않고 지웠다.
+     쓸 일이 생기면 그때 `:root` 에 대비비와 함께 세운다. */
 
   /* 목업은 폰 껍데기 안이라 상태바가 늘 56px 이었다. 우리는 진짜 브라우저다 —
      노치가 있으면 그만큼, 없으면 최소값만 띄운다(app/layout.tsx 의 viewportFit:cover 가
@@ -98,7 +80,10 @@
      전역 탭바(10)는 셸(0) 위에 그대로 뜬다. */
   z-index: 0;
   overflow: hidden;
-  background: var(--surface-2);
+  /* 홈의 바탕은 곧 앱 배경이다. 전에는 이 자리에 `--surface-2` 를 적었는데, 그때는
+     그 한 이름이 '페이지 배경'과 '흰 면 위의 옅은 채움' 두 노릇을 겸했다 —
+     이제 둘이 갈렸다(globals.css 의 --bg / --surface-2). */
+  background: var(--bg);
   color: var(--ink);
   /* 글꼴 스택은 여기서 안 정한다 — globals.css 의 `--font-sans` 한 곳뿐이다.
      전에는 이 줄이 전역과 따로 놀아 홈만 "Pretendard" 를 한 칸 더 얹고 있었다.
@@ -125,7 +110,7 @@
      띠는 부품을 얹어 두는 자리일 뿐이고 빈 곳은 지도가 받아야 한다
      (globals.css:59–62 의 `.acts` 가 같은 사고를 겪고 남긴 교훈). */
   pointer-events: none;
-  transition: transform .3s var(--ease), opacity .22s ease;
+  transition: transform .3s var(--ease-out), opacity .22s ease;
 }
 .윗칸 > * { pointer-events: auto; }
 
@@ -144,7 +129,7 @@
   background: var(--surface);
   border-radius: 14px;
   padding: 0 14px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-2);
 }
 .검색바 svg { flex: none; color: var(--ink-3); }
 .검색바 input {
@@ -154,7 +139,7 @@
 }
 .검색바 input::placeholder { color: var(--ink-3); }
 .검색바 input:focus-visible { outline: none; }
-.검색칸:focus-within .검색바 { box-shadow: var(--shadow-md), 0 0 0 3px rgba(47, 107, 255, .14); }
+.검색칸:focus-within .검색바 { box-shadow: var(--shadow-2), 0 0 0 3px rgba(47, 107, 255, .14); }
 
 /* 로고는 이름이지 글이 아니다 — 옛 머리말(app/홈머리말.tsx)의 워드마크가 여기로 들어왔다.
    장식이라 손이 안 닿는다. */
@@ -173,7 +158,7 @@
   top: calc(100% + 6px); left: 0; right: 0;
   background: var(--surface);
   border-radius: 14px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-2);
   max-height: 300px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -206,7 +191,7 @@
 }
 .패널줄 .꼬리 {
   margin-left: auto; flex: none;
-  font-size: 12px; font-weight: 800; color: var(--brand);
+  font-size: 12px; font-weight: 800; color: var(--brand-ink);
 }
 .패널빔 {
   padding: 14px;
@@ -234,13 +219,13 @@
   padding: 0 4px 0 6px;
   background: var(--surface);
   border-radius: 20px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-1);
   white-space: nowrap;
 }
 /* 지금 눈이 가 있는 칩 — 지도가 그 자리로 가 있다는 표시다.
    `aria-pressed` 는 안쪽 단추에 붙으므로 상자는 `:has()` 로 따라간다. */
 .출발지칩:has(.칩속[aria-pressed="true"]) {
-  box-shadow: 0 0 0 2px var(--c) inset, var(--shadow-md);
+  box-shadow: 0 0 0 2px var(--c) inset, var(--shadow-2);
 }
 
 .칩속 {
@@ -313,7 +298,7 @@
   position: relative;
   width: 42px; height: 42px; border-radius: 50%;
   background: var(--surface); border: 0;
-  box-shadow: var(--shadow-md), 0 0 0 1px rgba(20, 24, 43, .04);
+  box-shadow: var(--shadow-2), 0 0 0 1px rgba(23, 23, 28, .04);
   display: grid; place-items: center;
   font: inherit; font-size: 13px; font-weight: 800; letter-spacing: .02em;
   color: var(--ink-2); cursor: pointer;
@@ -326,7 +311,7 @@
   transform: translate(-50%, -50%);
 }
 .AI단추:hover { color: var(--ink); }
-.AI단추:active { box-shadow: var(--shadow-sm); }
+.AI단추:active { box-shadow: var(--shadow-1); }
 .AI단추:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 /* 기준이 AI 로 켜져 있는 동안 — 칩 줄을 접어 둬도 지금 무엇을 보고 있는지 읽힌다 */
 .AI단추[aria-pressed="true"] { background: var(--brand); color: #fff; }
@@ -347,18 +332,18 @@
   position: relative;
   max-width: 46vw;
   padding: 7px 11px; border: 0; border-radius: 999px;
-  background: var(--surface); box-shadow: var(--shadow-sm);
+  background: var(--surface); box-shadow: var(--shadow-1);
   font: inherit; font-size: 12px; font-weight: 700; color: var(--ink-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   cursor: pointer;
 }
-.AI칩[aria-pressed="true"] { background: var(--brand); color: #fff; box-shadow: var(--shadow-md); }
+.AI칩[aria-pressed="true"] { background: var(--brand); color: #fff; box-shadow: var(--shadow-2); }
 .AI칩[data-끄기] { color: var(--ink-3); font-weight: 800; }
 .AI칩:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 /* 아직 할 말만 있는 때 — 칩처럼 보이되 눌리지 않는다 */
 .AI빔 {
   padding: 7px 11px; border-radius: 999px;
-  background: rgba(20, 24, 43, .06);
+  background: rgba(23, 23, 28, .06);
   font-size: 12px; font-weight: 700; color: var(--ink-3); white-space: nowrap;
 }
 
@@ -383,7 +368,7 @@
   min-height: 38px; padding: 0 14px;
   background: var(--surface);
   border: 0; border-radius: 19px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-1);
   font: inherit; font-size: 12.5px; font-weight: 700; color: var(--ink-2);
   white-space: nowrap; cursor: pointer;
 }
@@ -391,13 +376,13 @@
   content: ''; position: absolute; left: 0; right: 0; top: 50%;
   height: var(--tap); transform: translateY(-50%);
 }
-.갈래칩[aria-pressed="true"] { background: var(--brand); color: #fff; box-shadow: var(--shadow-md); }
+.갈래칩[aria-pressed="true"] { background: var(--brand); color: #fff; box-shadow: var(--shadow-2); }
 .갈래칩:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 /* 아직 못 받았거나 이 갈래가 비었을 때 — 자리를 비워 두면 '켰는데 아무 일도 안 났다'가 된다 */
 .갈래빔 {
   flex: none; align-self: center;
   padding: 8px 12px; border-radius: 19px;
-  background: rgba(20, 24, 43, .06);
+  background: rgba(23, 23, 28, .06);
   font-size: 12px; font-weight: 700; color: var(--ink-3); white-space: nowrap;
 }
 
@@ -422,10 +407,10 @@
   position: absolute; right: 14px; z-index: 7;
   width: 46px; height: 46px; border-radius: 50%;
   background: var(--surface); border: 0;
-  box-shadow: var(--shadow-md), 0 0 0 1px rgba(20, 24, 43, .04);
+  box-shadow: var(--shadow-2), 0 0 0 1px rgba(23, 23, 28, .04);
   display: grid; place-items: center;
   color: var(--ink-2); cursor: pointer;
-  transition: bottom .3s var(--ease), color .18s ease, background .18s ease, box-shadow .18s ease;
+  transition: bottom .3s var(--ease-out), color .18s ease, background .18s ease, box-shadow .18s ease;
 }
 /* 46px 이라 손가락 기준에 2px 모자란다 — 투명하게만 넓힌다 */
 .현위치::before, .탐색단추::before {
@@ -434,7 +419,7 @@
   transform: translate(-50%, -50%);
 }
 .현위치:hover, .탐색단추:hover { color: var(--ink); }
-.현위치:active, .탐색단추:active { box-shadow: var(--shadow-sm); }
+.현위치:active, .탐색단추:active { box-shadow: var(--shadow-1); }
 .현위치:focus-visible, .탐색단추:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .현위치[data-맞춤="내자리"], .현위치[data-맞춤="전체"] { color: var(--brand); }
 /* 전체 범위 모드에서는 바깥 링을 하나 더 둘러 상태를 구분한다 —
@@ -451,14 +436,14 @@
 /* 어떤 범위로 맞췄는지 잠깐 알려 주는 쪽지. 목업에서는 이것이 전역 토스트 노릇도 한다. */
 .쪽지 {
   position: absolute; right: 14px; z-index: 7;
-  background: rgba(20, 24, 43, .86); color: #fff;
+  background: rgba(23, 23, 28, .86); color: #fff;
   padding: 7px 12px; border-radius: 11px;
   font-size: 12px; font-weight: 700; white-space: nowrap;
   max-width: calc(100% - 28px);
   overflow: hidden; text-overflow: ellipsis;
   opacity: 0; transform: translateY(4px);
   pointer-events: none;
-  transition: opacity .18s ease, transform .18s ease, bottom .3s var(--ease);
+  transition: opacity .18s ease, transform .18s ease, bottom .3s var(--ease-out);
 }
 .쪽지[data-보임="예"] { opacity: 1; transform: translateY(0); }
 
@@ -473,11 +458,11 @@
   height: 86%;
   background: var(--surface);
   border-radius: 20px 20px 0 0;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-3);
   display: flex; flex-direction: column;
   z-index: 8;
 }
-.시트[data-움직임="예"] { transition: transform .32s var(--ease); }
+.시트[data-움직임="예"] { transition: transform .32s var(--ease-out); }
 
 .손잡이 {
   all: unset;
@@ -493,7 +478,7 @@
 .손잡이:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; border-radius: 20px 20px 0 0; }
 .손잡이 .집게 {
   display: block; width: 40px; height: 4px; border-radius: 99px;
-  background: #d3d8e6; margin: 0 auto 6px;
+  background: #d8d8d2; margin: 0 auto 6px;
 }
 
 /* 시트를 끝까지 내려도 이 줄은 남는다 — '지금 무엇을 보고 있는지' 가 안 사라진다 */
@@ -542,7 +527,7 @@
   width: var(--tap); height: var(--tap); border-radius: 50%;
   transform: translate(-50%, -50%);
 }
-.시트요약 .요약삭제:hover { color: var(--danger); background: rgba(225, 29, 72, .08); }
+.시트요약 .요약삭제:hover { color: var(--danger); background: rgba(216, 26, 68, .08); }
 .시트요약 .요약삭제:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 /* 마지막 한 곳은 못 뺀다 — 눌러도 안 되는 것은 눌러 보기 전에 보여야 한다 */
 .시트요약 .요약삭제:disabled { opacity: .35; cursor: not-allowed; }
@@ -615,7 +600,7 @@
   width: 14px; height: 14px; border-radius: 50%;
   background: var(--brand); border: 3px solid #fff;
   margin: 0 auto;
-  box-shadow: 0 2px 6px rgba(20, 24, 43, .35);
+  box-shadow: 0 2px 6px rgba(23, 23, 28, .35);
 }
 /* 점 자체는 14px 이라 그대로는 못 누른다. 목업은 -15px 로 44px 을 만들었는데
    그러면 손가락 기준(48)에 4px 모자란다 — -17px 로 48px 을 채워 예외 목록에 안 넣는다. */
@@ -656,7 +641,7 @@
   background: #fff; border: 2px solid var(--ink-3);
   display: grid; place-items: center;
   font-size: 16px; cursor: pointer;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-1);
 }
 .장소표식 { border: 2px solid var(--ink-3); }
 .장소표식[data-고름="예"] {
@@ -672,7 +657,7 @@
   transform: translate(-50%, -50%);
   width: 14px; height: 14px; border-radius: 50%;
   background: var(--brand); border: 2.5px solid #fff;
-  box-shadow: 0 0 0 1px rgba(20, 26, 40, .18), 0 2px 6px rgba(20, 26, 40, .28);
+  box-shadow: 0 0 0 1px rgba(23, 23, 28, .18), 0 2px 6px rgba(23, 23, 28, .28);
   pointer-events: none;
 }
 .내자리점::after {

@@ -5,7 +5,7 @@
 /* 머리말 오른쪽 — 만들기로 가는 길. 목록이 비어 있지 않을 때도 늘 보여야 한다 */
 .만들기 {
   flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px;
-  padding: 0 12px; border-radius: 999px; background: #eaf0ff; color: var(--brand);
+  padding: 0 12px; border-radius: 999px; background: var(--brand-weak); color: var(--brand-ink);
   font-size: 12.5px; font-weight: 800; text-decoration: none; white-space: nowrap;
   position: relative;
 }
@@ -35,7 +35,7 @@
   font-size: 12px; font-weight: 800; white-space: nowrap; cursor: pointer;
 }
 /* 켜진 칩은 이 앱의 강조색(파랑) 하나로 — 예전판은 초록이라 강조색이 둘이었다 */
-.칩[aria-pressed='true'] { border-color: var(--brand); background: #eaf0ff; color: var(--brand); }
+.칩[aria-pressed='true'] { border-color: var(--brand); background: var(--brand-weak); color: var(--brand-ink); }
 .칩:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
 
 /* ── 카드 ──────────────────────────────────────────────────── */
