@@ -50,7 +50,75 @@ const 개발중 = process.env.NODE_ENV !== 'production';
    클라이언트 비밀은 카카오 콘솔에서 꺼 둘 수 있어 REST 키 하나만 있으면 왕복은 시작된다. */
 export const 카카오준비됨 = () => !!process.env.KAKAO_REST_API_KEY;
 
+/* ── 로그인 세션을 서명할 비밀값 ────────────────────────────────
+   NextAuth 는 **프로덕션에서 이 값이 없으면 통째로 안 뜬다.** 설정 검사(`core/lib/assert.js`)가
+   가장 먼저 `MissingSecret` 을 돌려주고, 그때부터 `/api/auth/*` 가 전부 500 에
+   "There is a problem with the server configuration" 만 뱉는다 — 로그인 단추가 무엇을 하든
+   왕복을 시작조차 못 한다. 2026-08-20 Vercel 배포가 정확히 그 꼴이었다(실측).
+
+   전에는 이 값을 `NEXTAUTH_SECRET` 환경변수 하나에만 기댔다. 그런데 그 변수를 배포마다
+   빠뜨리면 화면이 죽는 것도 아니고 로그만 조용히 500 이라, 빠진 줄을 알아채기가 어렵다.
+   **그래서 없으면 이미 그 배포에만 있는 비밀값에서 뽑아 쓴다** — `DATABASE_URL` 이다.
+   한 방향 해시라 되돌려 DB 주소를 알아낼 수는 없고, 저장소를 본 사람도 못 지어낸다.
+
+   ⚠ 두 가지를 알고 써라.
+     · **`DATABASE_URL` 이 바뀌면 이 비밀값도 바뀐다** — 그 순간 이미 로그인해 있던 사람이
+       전부 튕긴다(다시 로그인하면 그만이다). Neon 비밀번호를 갈 때가 그때다.
+     · `NEXTAUTH_SECRET` 이 있으면 **그쪽이 이긴다.** 나중에 환경변수로 옮기고 싶으면
+       그 값만 넣으면 되고, 이 자리는 손댈 것이 없다.
+   여기 기본값('moimer-dev-secret')은 **둘 다 없는 로컬 개발에서만** 쓰인다 — 프로덕션에는
+   `DATABASE_URL` 이 반드시 있으므로 여기까지 내려오지 않는다. */
+const 로그인비밀 = (() => {
+  const 준값 = process.env.NEXTAUTH_SECRET;
+  if (준값) return 준값;
+  const db = process.env.DATABASE_URL;
+  if (db) return createHash('sha256').update(`moimer:nextauth:${db}`).digest('hex');
+  return 'moimer-dev-secret';
+})();
+
+/* ── 이 배포가 서 있는 주소 ────────────────────────────────────
+   Vercel 이 시스템 환경변수로 넣어 주는 값이라 사람이 등록할 것이 없다.
+   `VERCEL_URL` 은 **배포마다 달라지는** 주소(moimer-abc123.vercel.app)라 안 쓴다 —
+   그 주소는 카카오 콘솔에 등록돼 있을 리 없어서, 쓰는 순간 KOE006 이 된다.
+   쓰는 것은 `VERCEL_PROJECT_PRODUCTION_URL`(moimer-azure.vercel.app) 하나뿐이다. */
+function 배포주소(): string | null {
+  const 손으로 = process.env.NEXTAUTH_URL;
+  if (손으로) return 손으로.replace(/\/+$/, '');
+  const h = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  return h ? `https://${h}` : null;
+}
+
+/* 카카오에 보낼 되돌아올 주소. `.env` 의 값을 그대로 쓰되, **집만 갈아 끼운다.**
+
+   왜 필요한가 — 이 값은 로컬에서 `http://localhost:3000/...` 로 적어 두고 쓴다.
+   배포하면서 그대로 복사해 두면 로그인은 멀쩡히 끝나고 **다 끝난 뒤에 localhost 로 튕긴다.**
+   사람 눈에는 '로그인은 됐는데 안 됐다' 로 보이는 가장 짚기 어려운 모양이다.
+   여기서 길(path)은 콘솔에 등록된 그대로 두고 집(host)만 이 배포 주소로 바꾼다 —
+   이미 맞게 적혀 있으면 아무것도 안 바꾼다.
+
+   ⚠ 이것으로 못 고치는 것이 하나 있다: **카카오 콘솔에 이 주소가 등록돼 있어야 한다.**
+     카카오는 등록된 목록과 대조하므로 코드가 무엇을 보내든 등록이 없으면 KOE006 이다.
+     콘솔 > 카카오 로그인 > Redirect URI 에 사람이 한 번 넣어 줘야 한다. */
+function 되돌아올주소(): string | undefined {
+  const v = process.env.KAKAO_REDIRECT_URI;
+  if (!v) return undefined;
+  const 집 = 배포주소();
+  if (!집) return v;
+  try {
+    const 적힌것 = new URL(v, 집);
+    const 여기 = new URL(집);
+    if (적힌것.host === 여기.host) return 적힌것.toString();
+    return `${여기.origin}${적힌것.pathname}`;
+  } catch {
+    /* `http://` 없이 길만 적어 둔 사람도 있다 — 그건 그대로 집에 붙인다 */
+    return v.startsWith('/') ? `${집}${v}` : v;
+  }
+}
+
+const 콜백주소 = 되돌아올주소();
+
 export const authOptions: NextAuthOptions = {
+  secret: 로그인비밀,
   session: { strategy: 'jwt' },          /* 세션 테이블을 두지 않는다 — users 한 장만 */
   /* 로그인 화면도 오류 화면도 우리 것을 쓴다 (/me). NextAuth 가 들고 있는 기본 화면은
      영문이고 우리 말투 규칙 밖이다 — 카카오가 죽었을 때 사람이 보는 것이 그 화면이면 안 된다(논의57). */
@@ -76,10 +144,10 @@ export const authOptions: NextAuthOptions = {
 
          scope 를 빈 값으로 두는 것은 **NextAuth 의 기본 그대로**다(카카오는 동의 항목을 콘솔에서 정한다).
          여기서 params 를 새로 주면 그 기본이 통째로 날아가므로 빈 scope 를 손으로 다시 적어 준다. */
-      ...(process.env.KAKAO_REDIRECT_URI ? {
+      ...(콜백주소 ? {
         authorization: {
           url: 'https://kauth.kakao.com/oauth/authorize',
-          params: { scope: '', redirect_uri: process.env.KAKAO_REDIRECT_URI },
+          params: { scope: '', redirect_uri: 콜백주소 },
         },
         /* 토큰 교환은 **우리가 직접 한다.** NextAuth 에 맡기면 못 고치는 자리가 하나 있어서다:
            `provider.callbackUrl` 을 NextAuth 가 `${주소}/api/auth/callback/kakao` 로 **강제로 덮어쓰고**
@@ -97,7 +165,7 @@ export const authOptions: NextAuthOptions = {
             const 몸 = new URLSearchParams({
               grant_type: 'authorization_code',
               client_id: String(provider.clientId),
-              redirect_uri: process.env.KAKAO_REDIRECT_URI!,
+              redirect_uri: 콜백주소!,
               code: String(params.code ?? ''),
             });
             /* 콘솔에서 Client Secret 을 꺼 두면 이 값이 없다. **빈 값을 보내면 안 된다** —
