@@ -4,6 +4,19 @@
   --tap:48px;
   /* 아래 탭바 높이 — 본문 아래 여백도 이 값을 쓴다. 한 곳만 고치면 둘이 같이 따라온다 */
   --tabbar-h:58px;
+
+  /* ── 글꼴 ────────────────────────────────────────────────────
+     Spoqa Han Sans Neo (사람이 정했다, 2026-08-20). 파일은 app/폰트/ 에 있고
+     `--font-spoqa` 는 app/layout.tsx 의 next/font 가 <html> 에 얹어 준다.
+     대체 스택까지 그 변수 안에 들어 있다 — 여기서 또 적지 않는다.
+
+     next/font 가 아직 안 붙은 자리(예: 글꼴 없이 여는 정적 미리보기)에서도 글자가
+     보여야 하니 `var(...)` 에 대체값을 하나 달아 둔다.
+
+     ⚠ **이 글꼴의 가장 굵은 무게는 700 이다.** 800·900 을 적으면 브라우저가 가짜
+     굵게를 그려 획이 뭉갠다 — 앱 어디에도 800 이상을 새로 적지 마라.
+     더 굵어 보이게 하고 싶으면 크기나 색으로 말한다(app/폰트/받은곳.md). */
+  --font-sans: var(--font-spoqa, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif);
 }
 /* 층(z-index)은 여기 한 줄만 보면 된다 — 흩어 두면 새 것이 늘 때마다 값이 겹친다.
      지도 안 : 확정 지역 범위 1 · 경로선 2 · 저작권 3 · 점 3 · 핀 4 · 1위 핀 5 · 미리보기 5 · 타일 죽음 안내 6 · 확대축소 7
@@ -18,7 +31,10 @@
    깔리는 것이 목업과 같은 뜻이고, 그만큼 잘리는 양은 `--시트잘림` 이 메운다. */
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif}
+/* `font:` 단축 속성이라 무게가 400 으로 돌아간다 — 그게 본문의 기본값이라 그대로 둔다.
+   `-webkit-font-smoothing` 은 전에 홈 셸에만 있던 것을 여기로 올렸다: 글꼴이 앱 전체
+   한 벌이 됐는데 홈에서만 획이 얇게 보이면 화면을 옮길 때 글씨체가 바뀐 것처럼 읽힌다. */
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--font-sans);-webkit-font-smoothing:antialiased}
 button{font:inherit}
 .wrap{max-width:430px;margin:0 auto;min-height:100dvh;background:var(--surface);position:relative;display:flex;flex-direction:column}
 .hd{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}

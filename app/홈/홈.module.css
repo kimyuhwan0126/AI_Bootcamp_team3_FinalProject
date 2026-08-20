@@ -100,9 +100,10 @@
   overflow: hidden;
   background: var(--surface-2);
   color: var(--ink);
-  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-        "Pretendard", "Malgun Gothic", system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  /* 글꼴 스택은 여기서 안 정한다 — globals.css 의 `--font-sans` 한 곳뿐이다.
+     전에는 이 줄이 전역과 따로 놀아 홈만 "Pretendard" 를 한 칸 더 얹고 있었다.
+     `-webkit-font-smoothing` 도 전역으로 올라갔다(globals.css 의 body). */
+  font: 15px/1.6 var(--font-sans);
 }
 
 /* ---------- 지도 ---------- */
