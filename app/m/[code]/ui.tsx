@@ -40,7 +40,7 @@ function 목표핀만들기(name: string): HTMLDivElement {
   el.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:default';
   const label = document.createElement('div');
   label.textContent = name;
-  label.style.cssText = `background:#FF3B4E;color:#fff;font-size:12px;font-weight:800;
+  label.style.cssText = `background:#FF3B4E;color:#fff;font-size:12px;font-weight:700;
     padding:6px 13px;border-radius:999px;white-space:nowrap;
     box-shadow:0 2px 8px rgba(20,26,40,.28);margin-bottom:2px`;
   const tail = document.createElement('div');
@@ -701,7 +701,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
         el.style.cssText = `background:${first ? '#16307a' : '#fff'};color:${first ? '#fff' : '#171a21'};
           border:${mine ? `3px solid ${first ? '#8fb4ff' : '#2f6bff'}` : '1px solid #e2e6ee'};
           border-radius:999px;padding:${first ? '8px 16px' : '4px 10px'};
-          font-size:${first ? '15px' : '11.5px'};font-weight:800;
+          font-size:${first ? '15px' : '11.5px'};font-weight:700;
           box-shadow:0 2px 8px rgba(20,26,40,.16);white-space:nowrap;
           cursor:${canPing ? 'pointer' : 'default'}`;
         /* 핀은 좁아서 숫자만 둔다 — 읽어 주는 말에는 온전한 문장을 넣는다 (논의72) */
@@ -1003,7 +1003,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
       <div className="wrap">
         <div className="hd"><h1>{v.meeting.name}</h1></div>
         <div className="sheet" style={{ padding: 20 }}>
-          <p className="warn" style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>이 모임은 없어졌어요</p>
+          <p className="warn" style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>이 모임은 없어졌어요</p>
           <p className="mut" style={{ margin: '8px 0 18px' }}>여기서 할 수 있는 일은 더 없어요.</p>
           <a className="cta" style={{ textAlign: 'center', lineHeight: '48px', textDecoration: 'none' }}
             href="/">홈으로</a>
@@ -1018,7 +1018,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
       <div className="wrap">
         <div className="hd"><h1>{v.meeting.name}</h1></div>
         <div className="sheet" style={{ padding: 20 }}>
-          <p className={강퇴 ? 'warn' : undefined} style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
+          <p className={강퇴 ? 'warn' : undefined} style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
             {강퇴 ? '방장이 이 모임에서 내보냈어요' : '방장의 승인을 기다리는 중이에요'}
           </p>
           <p className="mut" style={{ margin: '8px 0 18px' }}>
@@ -1336,7 +1336,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                   <li key={p.id}>
                     <button className="row" disabled={busy} onClick={() => 지점검색고르기(p)}>
                       <span className="nm">{p.name}
-                        {p.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{p.address}</span>}
+                        {p.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{p.address}</span>}
                       </span>
                     </button>
                   </li>
@@ -1352,7 +1352,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             <button className="row" data-preview disabled={busy} onClick={후보로}
               aria-label={`미리보기 ${preview.name} — 다시 누르면 후보가 돼요`}>
               <span className="nm">미리보기 · {preview.name}
-                <span className="mut" style={{ display: 'block', fontWeight: 600 }}>
+                <span className="mut" style={{ display: 'block', fontWeight: 500 }}>
                   미리보기를 다시 누르면 후보가 돼요
                 </span>
               </span>
@@ -1382,7 +1382,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             {winner
               ? <><b>{winner.name}</b>에서 만나요
                   {/* 주소가 없어도 카드는 사라지지 않는다 (논의76) — 이름과 지도가 대신한다 */}
-                  <span className="mut" style={{ display: 'block', fontWeight: 600, marginTop: 4 }}>
+                  <span className="mut" style={{ display: 'block', fontWeight: 500, marginTop: 4 }}>
                     {/* 빈 문자열로 온 주소도 '없는 것' 이다 — ?? 만 쓰면 빈 줄이 남는다 */}
                     {winner.address || '주소가 없어요 — 위 지도에서 자리를 봐 주세요'}
                   </span></>
@@ -1399,7 +1399,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
             건마다 눌러서 펼친다(아코디언처럼 하나만 남기고 닫지 않는다, openRoutes). */}
         {done_ && v.meeting.winner_place_id && withOrigin.length > 0 && (
           <>
-            <p className="mut" style={{ margin: '10px 0 4px', fontWeight: 800, fontSize: 13 }}>오는 길</p>
+            <p className="mut" style={{ margin: '10px 0 4px', fontWeight: 700, fontSize: 13 }}>오는 길</p>
             <ul className="rows">
               {withOrigin.map((p) => {
                 const r = routes[p.id];
@@ -1420,7 +1420,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                           background: 경로색[p.transport], marginRight: 6, verticalAlign: 'middle',
                         }} />
                         {p.name}
-                        <span className="mut" style={{ display: 'block', fontWeight: 600 }}>
+                        <span className="mut" style={{ display: 'block', fontWeight: 500 }}>
                           {p.transport === 'car' ? '자차' : '대중교통'} · {말}
                         </span>
                       </span>
@@ -1482,7 +1482,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                     <li key={c.id}>
                       <div className="row" data-static data-win={c.id === winnerId || undefined}>
                         <span className="nm">{c.name}{c.id === winnerId && ' · 여기서 만나요'}
-                          <span className="mut" style={{ display: 'block', fontWeight: 600 }}>
+                          <span className="mut" style={{ display: 'block', fontWeight: 500 }}>
                             {고른사람 ? `${고른사람} 골랐어요` : '아무도 안 골랐어요'}
                           </span>
                         </span>
@@ -1512,14 +1512,14 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                         onClick={() => { if (!busy) toggle(c.id, mine); }}>
                         <span className="nm">{c.name}
                           {/* 같은 이름 지점이 둘일 수 있다 — 주소가 구별해 준다 (논의37 ①) */}
-                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{c.address}</span>}
+                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{c.address}</span>}
                         </span>
                         <span className="ct">{c.votes}</span>
                       </button>
                     ) : (
                       <div className="row" data-static data-win={isWinner || undefined}>
                         <span className="nm">{c.name}{isWinner && ' · 여기서 만나요'}
-                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{c.address}</span>}
+                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{c.address}</span>}
                         </span>
                         <span className="ct" aria-label={고른수(c.votes)}>{c.votes}</span>
                       </div>
@@ -1552,7 +1552,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                   <span className="nm">{p.name}
                     {isHostRow && <span className="tag">방장</span>}
                     {p.id === v.me.participantId && <span className="tag">나</span>}
-                    <span className="mut" style={{ display: 'block', fontWeight: 600 }}>
+                    <span className="mut" style={{ display: 'block', fontWeight: 500 }}>
                       {p.origin_name ?? '출발지 없음'}
                       {/* 미선택 문구는 화면 어디서나 한 가지 (논의72) */}
                       {gave ? ' · 골랐어요' : ` · ${아직}`}
@@ -1651,7 +1651,7 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                         lat: pl.lat, lng: pl.lng, address: pl.address });
                     }}>
                     <span className="nm">{pl.name}
-                      {pl.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{pl.address}</span>}
+                      {pl.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{pl.address}</span>}
                     </span>
                   </button>
                 </li>
@@ -1702,14 +1702,14 @@ export default function UI({ code, first }: { code: string; first: MeetingView }
                         aria-label={`${c.name} · ${고른수(c.votes)}. ${mine ? '내가 고른 곳 — 누르면 취소' : '누르면 선택'}`}
                         onClick={() => { if (busy) return; setClusterIds(null); toggle(c.id, mine); }}>
                         <span className="nm">{c.name}
-                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{c.address}</span>}
+                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{c.address}</span>}
                         </span>
                         <span className="ct">{c.votes}</span>
                       </button>
                     ) : (
                       <div className="row" data-static>
                         <span className="nm">{c.name}
-                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{c.address}</span>}
+                          {c.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{c.address}</span>}
                         </span>
                         <span className="ct" aria-label={고른수(c.votes)}>{c.votes}</span>
                       </div>

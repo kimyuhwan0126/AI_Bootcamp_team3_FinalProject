@@ -101,8 +101,8 @@ body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--font-sans);-webki
 button{font:inherit}
 .wrap{max-width:430px;margin:0 auto;min-height:100dvh;background:var(--surface);position:relative;display:flex;flex-direction:column}
 .hd{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
-.hd h1{font-size:16px;font-weight:800;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.badge{font-size:11.5px;font-weight:800;color:var(--brand-ink);background:var(--brand-weak);padding:4px 9px;border-radius:999px;white-space:nowrap}
+.hd h1{font-size:16px;font-weight:700;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:11.5px;font-weight:700;color:var(--brand-ink);background:var(--brand-weak);padding:4px 9px;border-radius:999px;white-space:nowrap}
 /* min-height 는 0 이어야 한다 — flex 기본값(auto)이나 고정 px 를 주면 시트를 크게
    끌어올릴 때(big 82dvh) .map 이 안 줄어들어 .wrap 전체 높이가 100dvh 를 넘는다.
    모바일은 그 넘친 만큼을 스크롤바 없이(오버레이) 삼켜 안 보였을 뿐 — 데스크톱 크롬은
@@ -114,12 +114,12 @@ button{font:inherit}
   transition:max-height .22s var(--ease-out)}
 @media (prefers-reduced-motion:reduce){.sheet{transition:none}}
 .note{background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--ink-2);margin:10px 0}
-.warn{color:var(--danger);font-weight:800}
+.warn{color:var(--danger);font-weight:700}
 .row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:7px;min-height:var(--tap);background:var(--surface);width:100%;text-align:left;cursor:pointer}
 .row[aria-pressed="true"]{border-color:var(--brand);background:var(--brand-faint)}
 .row .nm{font-weight:700;flex:1;min-width:0}
-.row .ct{font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
-.cta{display:block;width:100%;min-height:48px;border:0;border-radius:14px;background:var(--brand);color:#fff;font-size:15px;font-weight:800;cursor:pointer;margin-top:8px}
+.row .ct{font-weight:700;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+.cta{display:block;width:100%;min-height:48px;border:0;border-radius:14px;background:var(--brand);color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px}
 .cta[disabled]{opacity:.45;cursor:not-allowed}
 .cta.sub{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line)}
 /* 같은 단추가 링크일 때도 있다(홈의 '＋ 모임 만들기') — 화면마다 인라인으로 가운데를 맞추던 것을 여기로 모은다 */
@@ -162,7 +162,7 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
    "초대 링크 복사"(실측 132.5px)뿐인데 176px 를 그대로 뒀더니, 확정 단추 하나만
    떠 있을 때 유난히 크고 헐렁해 보였다(실제 화면 신고) — 지금 글자에 맞춰 줄인다. */
 .acts .fab{width:144px}
-.fab{min-height:var(--tap);border:0;border-radius:22px;background:var(--surface);box-shadow:0 4px 14px rgba(23, 23, 28,.16);padding:0 16px;font-weight:800;cursor:pointer}
+.fab{min-height:var(--tap);border:0;border-radius:22px;background:var(--surface);box-shadow:0 4px 14px rgba(23, 23, 28,.16);padding:0 16px;font-weight:700;cursor:pointer}
 .fab.primary{background:var(--brand);color:#fff}
 
 /* ── 방장 도구 — 스피드다이얼 FAB ─────────────────────────────
@@ -194,7 +194,7 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
 .dial>*{pointer-events:auto;flex:0 0 auto}
 .dial-item{display:flex;align-items:center;gap:8px;border:0;background:none;padding:0;cursor:pointer}
 .dial-item[disabled]{opacity:.5;cursor:not-allowed}
-.dial-item .lb{background:var(--surface);color:var(--ink);font-size:13px;font-weight:800;
+.dial-item .lb{background:var(--surface);color:var(--ink);font-size:13px;font-weight:700;
   padding:0 14px;height:36px;line-height:36px;border-radius:999px;
   box-shadow:0 4px 14px rgba(23, 23, 28,.16);white-space:nowrap}
 .dial-item .ic{width:var(--tap);height:var(--tap);flex:0 0 auto;border-radius:50%;
@@ -215,7 +215,10 @@ a.cta{display:flex;align-items:center;justify-content:center;text-decoration:non
   /* 홈 표시줄이 있는 폰에서 글자가 그 밑에 깔리지 않게. viewport-fit=cover 가 아니면 0 이다 */
   padding-bottom:env(safe-area-inset-bottom,0px)}
 .tab{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:3px;padding:6px 4px;color:var(--ink-3);font-size:11px;font-weight:800;text-decoration:none}
+  /* 안 고른 탭은 500 이다 — 아래 [aria-current] 가 700 으로 진해지는 그 한 칸을 만들려면
+     여기가 700 이면 안 된다. 전에는 800 vs 900 이었는데 이 글꼴의 끝이 700 이라 둘 다
+     700 으로 눌리면서 "색만으로 말하지 않는다"던 뜻이 사라질 뻔했다(아래 주석). */
+  gap:3px;padding:6px 4px;color:var(--ink-3);font-size:11px;font-weight:500;text-decoration:none}
 .tab svg{width:22px;height:22px;flex:0 0 auto}
 /* 아이콘 자리 — 점을 그 오른쪽 위에 얹으려면 기준이 될 상자가 있어야 한다 */
 .tabicon{position:relative;display:flex;line-height:0}
@@ -235,7 +238,7 @@ body[data-홈모드="숨김"] .tabbar{transform:translateX(-50%) translateY(100%
 @media (prefers-reduced-motion:reduce){.tabbar{transition:none}}
 
 /* 지금 있는 곳 — 색만으로 말하지 않는다. 글자도 같이 진해진다 */
-.tab[aria-current="page"]{color:var(--brand-ink);font-weight:900}
+.tab[aria-current="page"]{color:var(--brand-ink);font-weight:700}
 .tab:focus-visible{outline:3px solid var(--brand);outline-offset:-3px}
 /* 본문이 탭바 뒤에 숨으면 안 된다 — 탭바가 떠 있는 화면에만 그만큼 자리를 준다.
    `.wrap` 은 min-height:100dvh 라 여백을 줘도 화면이 더 길어지지는 않는다. */
@@ -243,7 +246,7 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 
 /* 돌아가는 길 (`/new` 처럼 탭바가 없는 화면의 머리말).
    보이는 크기는 작게 두고 손가락 자리만 48px 로 넓힌다 — 줄 높이가 늘면 머리말이 두꺼워진다 (논의54) */
-.back{position:relative;font-size:22px;font-weight:800;line-height:1;color:var(--ink-2);text-decoration:none}
+.back{position:relative;font-size:22px;font-weight:700;line-height:1;color:var(--ink-2);text-decoration:none}
 .back::before{content:'';position:absolute;left:50%;top:50%;
   width:var(--tap);height:var(--tap);transform:translate(-50%,-50%)}
 .back:focus-visible{outline:3px solid var(--brand);outline-offset:4px;border-radius:4px}
@@ -271,7 +274,7 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 .msheet label{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700;margin-bottom:12px}
 .msheet input{display:block;width:100%;box-sizing:border-box;margin-top:5px;min-height:var(--tap);border:1px solid var(--line);border-radius:12px;padding:0 12px;font:inherit;font-weight:700}
 .zone{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
-.zone button{border:0;background:none;color:var(--danger);font:inherit;font-weight:800;font-size:14px;padding:8px 0;cursor:pointer}
+.zone button{border:0;background:none;color:var(--danger);font:inherit;font-weight:700;font-size:14px;padding:8px 0;cursor:pointer}
 
 /* 오류는 화면 위에 잠시 (그릴링 논의26 ③) — 시트 아래에 두면 후보에 밀려 안 보였다 */
 .toast{position:fixed;left:50%;transform:translateX(-50%);top:64px;z-index:30;max-width:min(92vw,460px);
@@ -291,7 +294,7 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 .osm{position:absolute;inset:0;overflow:hidden;background:#e8e6e1;touch-action:none;cursor:grab}
 .osm img{pointer-events:none;user-select:none}
 .opin{position:absolute;transform:translate(-50%,-100%);border:1px solid #e2e6ee;border-radius:999px;
-  background:var(--surface);color:var(--ink);padding:4px 10px;font:inherit;font-size:11.5px;font-weight:800;
+  background:var(--surface);color:var(--ink);padding:4px 10px;font:inherit;font-size:11.5px;font-weight:700;
   box-shadow:0 2px 8px rgba(23, 23, 28,.16);white-space:nowrap;cursor:pointer;z-index:4}
 .opin[data-mine]{border:3px solid var(--brand)}
 .opin[data-first]{background:#16307a;color:#fff;font-size:15px;padding:8px 16px;z-index:5}
@@ -331,7 +334,7 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 .opin[data-goal]::before{
   content: attr(data-label);
   position:absolute; left:50%; bottom:100%; transform:translateX(-50%);
-  margin-bottom:11px; background:#FF3B4E; color:#fff; font-size:12px; font-weight:800;
+  margin-bottom:11px; background:#FF3B4E; color:#fff; font-size:12px; font-weight:700;
   padding:6px 13px; border-radius:999px; white-space:nowrap;
   box-shadow:0 2px 8px rgba(23, 23, 28,.28);
 }
@@ -369,13 +372,13 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
   display:flex;flex-direction:column;align-items:center;gap:3px;z-index:3}
 .ofrom .pt{width:15px;height:15px;border-radius:50%;background:var(--brand);
   border:3px solid #fff;box-shadow:0 2px 6px rgba(23, 23, 28,.35)}
-.ofrom .lb{font-size:11px;font-weight:800;color:#fff;background:var(--brand);
+.ofrom .lb{font-size:11px;font-weight:700;color:#fff;background:var(--brand);
   padding:2px 8px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 6px rgba(23, 23, 28,.25)}
 .ozoom{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;
   /* 6px 이면 두 단추의 손가락 자리(48px)가 서로를 먹는다 — 딱 붙되 겹치지는 않는 틈 */
   gap:12px;z-index:7}
 .ozoom button{width:36px;height:36px;border:0;border-radius:10px;background:var(--surface);
-  box-shadow:0 2px 8px rgba(23, 23, 28,.18);font-weight:800;font-size:16px;cursor:pointer}
+  box-shadow:0 2px 8px rgba(23, 23, 28,.18);font-weight:700;font-size:16px;cursor:pointer}
 /* 저작권 표시는 왼쪽 아래 — 오른쪽 아래는 버튼 자리다.
    전에는 z-index 7 로 버튼 위에 얹혀 '더보기' 클릭을 통째로 가로챘다.
    손가락 자리 48px 의 예외로 둔다(17px 그대로 — 그릴링 논의61에서 핀과 같이 예외로 적었다):
@@ -397,7 +400,7 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
    점선·회색 바탕으로 '아직 아니다'를 말하고, 굳히는 말(.ct)만 파랗게 남겨 다음 손짓을 가리킨다.
    지도에는 같은 자리에 회색 점선 동그라미(.opre)가 뜬다 — 두 곳의 결이 같아야 한 가지 일로 읽힌다. */
 .row[data-preview]{border-style:dashed;border-color:var(--ink-2);background:var(--surface-2);color:var(--ink-2)}
-.row[data-preview] .nm{font-weight:800;color:var(--ink)}
+.row[data-preview] .nm{font-weight:700;color:var(--ink)}
 
 /* '오는 길' 펼치기(모임 결과 화면, 2026-08-23 — 홈 화면 '출발지별 상세'와 같은 결로
    복구) — 펼친 자리는 .row 바로 밑에 붙는 별도 상자다. .row 가 이미 자기 테두리·
@@ -433,7 +436,7 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 
 /* 사람 줄의 작은 버튼 (그릴링 논의35 ②) */
 .tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--surface-2);
-  color:var(--ink-2);font-size:11px;font-weight:800;vertical-align:middle}
+  color:var(--ink-2);font-size:11px;font-weight:700;vertical-align:middle}
 .mini{min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);
   font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
 .mini.danger{color:var(--danger);border-color:#f2cfd8}
@@ -493,7 +496,7 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 .tpAmPm button{background:none;border:0;color:rgba(255,255,255,.6);font:inherit;padding:2px 0;
   cursor:pointer;text-align:left;min-height:0}
 .tpAmPm button[aria-pressed="true"]{color:#fff}
-.tpBig{display:flex;align-items:baseline;gap:2px;font-size:32px;font-weight:800;margin-left:auto}
+.tpBig{display:flex;align-items:baseline;gap:2px;font-size:32px;font-weight:700;margin-left:auto}
 .tpBig button{background:none;border:0;color:rgba(255,255,255,.55);font:inherit;cursor:pointer;
   padding:0 2px;border-radius:6px;min-height:0}
 .tpBig button[aria-pressed="true"]{color:#fff}
@@ -508,8 +511,8 @@ body:has(.tabbar) .wrap{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inse
 .tpcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:18px}
 .tpcal-grid button{aspect-ratio:1;border:0;background:none;border-radius:50%;font:inherit;
   font-size:13px;cursor:pointer;color:var(--ink);min-height:0}
-.tpcal-grid button[data-today]{font-weight:800;box-shadow:inset 0 0 0 1px var(--brand)}
-.tpcal-grid button[aria-pressed="true"]{background:var(--brand);color:#fff;font-weight:800;box-shadow:none}
+.tpcal-grid button[data-today]{font-weight:700;box-shadow:inset 0 0 0 1px var(--brand)}
+.tpcal-grid button[aria-pressed="true"]{background:var(--brand);color:#fff;font-weight:700;box-shadow:none}
 
 .tpclock{position:relative;width:236px;height:236px;margin:0 auto 12px;border-radius:50%;
   background:var(--surface-2);touch-action:none}

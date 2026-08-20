@@ -101,7 +101,7 @@ export default function OriginField({
           <li key={h.id}>
             <button className="row" onClick={() => { setOrigin(h); setHits(null); }}>
               <span className="nm">{h.name}
-                {h.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{h.address}</span>}
+                {h.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{h.address}</span>}
               </span>
             </button>
           </li>
@@ -154,7 +154,7 @@ export default function OriginField({
             else { setOrigin(null); setQ(''); }
           }}>
             <span className="nm">{origin.name}
-              {origin.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{origin.address}</span>}
+              {origin.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{origin.address}</span>}
             </span>
             <span className="mut">바꾸기</span>
           </button>
@@ -170,7 +170,7 @@ export default function OriginField({
                   <button className="row" aria-pressed={같은곳(o, origin)}
                     onClick={() => { setOrigin(o); set고르는중(false); }}>
                     <span className="nm">{o.name}
-                      {o.address && <span className="mut" style={{ display: 'block', fontWeight: 600 }}>{o.address}</span>}
+                      {o.address && <span className="mut" style={{ display: 'block', fontWeight: 500 }}>{o.address}</span>}
                     </span>
                   </button>
                 </li>

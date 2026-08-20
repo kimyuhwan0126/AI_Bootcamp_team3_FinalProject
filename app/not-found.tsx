@@ -9,7 +9,7 @@ export default function NotFound() {
       <div className="sheet" style={{ maxHeight: 'none', flex: 1, padding: 20 }}>
         {/* 지워진 모임과 처음부터 없던 코드를 여기서는 가릴 수 없다 — 둘 다 흔적이 남지 않는다.
             그래서 까닭을 짚지 않고 다음에 할 일만 말한다 (그릴링 논의112). */}
-        <p style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>이 모임은 없어요</p>
+        <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>이 모임은 없어요</p>
         <p className="mut" style={{ margin: '8px 0 18px' }}>
           없어졌거나, 초대 코드가 다를 수 있어요.
           코드가 여섯 자리인지, 대문자·숫자가 맞는지 다시 봐 주세요.

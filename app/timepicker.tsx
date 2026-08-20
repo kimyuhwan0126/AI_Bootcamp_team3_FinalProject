@@ -249,7 +249,7 @@ export default function TimePicker({ id, value, onChange, readOnly, hint }: Time
               <div className="right">
                 {value && <button type="button" className="ghost" onClick={비우기}>비우기</button>}
                 <button type="button" className="ghost" onClick={() => setOpen(false)}>취소</button>
-                <button type="button" className="ghost" style={{ color: 'var(--ink)', fontWeight: 800 }}
+                <button type="button" className="ghost" style={{ color: 'var(--ink)', fontWeight: 700 }}
                   onClick={확인}>확인</button>
               </div>
             </div>
